@@ -104,4 +104,10 @@ Invoke-Tool -Exe $Java -Arguments @("-jar", $SignerJar, "-a", $UnsignedApk, "-o"
 $signed = Get-ChildItem -Path $SignedDir -Filter "*.apk" | Select-Object -First 1
 if (-not $signed) { throw "No signed APK was produced in $SignedDir" }
 
+$ReleaseDir = Join-Path $RepoRoot "release"
+New-Item -ItemType Directory -Force -Path $ReleaseDir | Out-Null
+$ReleaseApk = Join-Path $ReleaseDir "prism-v-v1.0.0.apk"
+Copy-Item -Force $signed.FullName $ReleaseApk
+
 Write-Host "Build complete: $($signed.FullName)"
+Write-Host "Release copy ready: $ReleaseApk"

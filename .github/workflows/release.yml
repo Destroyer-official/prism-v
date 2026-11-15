@@ -6,26 +6,58 @@ on:
       - 'v*'
 
 jobs:
-  build-release:
-    name: Build Native CLI
-    runs-on: ubuntu-latest
+  build-release-binaries:
+    name: Build Native CLI (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: prism-linux-x86_64
+            binary_path: build/prism
+          - os: windows-latest
+            artifact_name: prism-windows-x86_64.exe
+            binary_path: build/prism.exe
+          - os: macos-latest
+            artifact_name: prism-macos-x86_64
+            binary_path: build/prism
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Setup Ninja
         uses: ashutoshvarma/setup-ninja@master
+        with:
+          version: 1.11.1
 
-      - name: Build Native CLI
+      - name: Configure CMake
         run: |
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=20
-          cmake --build build --config Release
+
+      - name: Build Native CLI
+        run: cmake --build build --config Release
 
       - name: Run Tests
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build --output-on-failure -C Release
 
-      - name: Upload Release Binary
+      - name: Rename Binary for Release
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "${{ matrix.binary_path }}" "dist/${{ matrix.artifact_name }}"
+
+      - name: Upload Binary Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: prism-cli-linux-x86_64
-          path: build/prism
+          name: ${{ matrix.artifact_name }}
+          path: dist/${{ matrix.artifact_name }}
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: dist/${{ matrix.artifact_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
