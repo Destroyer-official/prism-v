@@ -1,0 +1,9 @@
+[package]
+name = "prism-core"
+version = "0.1.0"
+edition = "2021"
+description = "Prism-V Next-Generation Video Compression Native Core"
+license = "Apache-2.0"
+
+[dependencies]
+sha2 = "0.10"

@@ -1,0 +1,11 @@
+[package]
+name = "prism-container"
+version = "0.1.0"
+edition = "2021"
+description = "Prism-V Container Parsers and Muxers (.pvloss and dual-track ISOBMFF)"
+license = "Apache-2.0"
+
+[dependencies]
+prism-core = { path = "../prism-core" }
+crc32fast = "1.4"
+sha2 = "0.10"

@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">Prism-V</string>
+    <string name="title_pareto_dial">4-Target Pareto Dial</string>
+    <string name="target_quality">Target Quality</string>
+    <string name="target_file_size">Target File Size</string>
+    <string name="max_speed">Max Speed</string>
+    <string name="battery_saver">Battery Saver</string>
+    <string name="social_export">Optimized Social Export (WhatsApp/Instagram)</string>
+    <string name="preflight_title">Preflight Pareto Analysis (0.3s Probe)</string>
+    <string name="compress_now">Compress Video (Zero Media Loss)</string>
+</resources>

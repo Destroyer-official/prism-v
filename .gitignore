@@ -1,0 +1,124 @@
+# ==============================================================================
+# Prism-V: Git Ignore Rules (Production Enterprise Grade)
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Build Systems & Compilers (C++ / CMake / Clang / GCC / MSVC)
+# ------------------------------------------------------------------------------
+build/
+bin/
+out/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+CTestTestfile.cmake
+Testing/
+*.o
+*.obj
+*.so
+*.dylib
+*.dll
+*.lib
+*.a
+*.exp
+*.ilk
+*.pdb
+*.exe
+.cache/
+
+# ------------------------------------------------------------------------------
+# Android & Gradle Build Artifacts
+# ------------------------------------------------------------------------------
+.gradle/
+build/
+android/build/
+android/.cxx/
+.cxx/
+android_app/bin/
+android_app/dex/
+android_app/signed/
+android_app/apk_root/build/
+*.apk
+*.ap_
+*.aab
+*.dex
+*.class
+local.properties
+.bundle/
+
+# ------------------------------------------------------------------------------
+# Rust / Cargo Build Output
+# ------------------------------------------------------------------------------
+rust/target/
+target/
+
+# ------------------------------------------------------------------------------
+# Large Media & Test Video Binaries (GitHub 100MB Hard Cap Protection)
+# ------------------------------------------------------------------------------
+sample_video/
+*.mp4
+*.mkv
+*.mov
+*.avi
+*.webm
+*.yuv
+*.h264
+*.h265
+*.hevc
+*.av1
+
+# ------------------------------------------------------------------------------
+# UI Automator & Live Device Test Dumps
+# ------------------------------------------------------------------------------
+*.xml.dump
+dump_*.xml
+uidump.xml
+window_dump*.xml
+test_log*.txt
+*.log
+
+# ------------------------------------------------------------------------------
+# Python & Scratch Script Caches
+# ------------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.pytest_cache/
+.venv/
+env/
+venv/
+
+# ------------------------------------------------------------------------------
+# IDEs & Developer Environment
+# ------------------------------------------------------------------------------
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+*.swp
+*.swo
+*~
+.directory
+
+# ------------------------------------------------------------------------------
+# Operating System Files
+# ------------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+[Dd]esktop.ini
+
+# ------------------------------------------------------------------------------
+# Keystores & Cryptographic Secrets
+# ------------------------------------------------------------------------------
+*.keystore
+*.jks
+*.p12
+*.key
+*.pem
