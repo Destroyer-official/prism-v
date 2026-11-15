@@ -83,7 +83,8 @@ public:
 
     /**
      * @brief 0.3-second Preflight Pareto Probe:
-     * Analyzes 5 representative 256x256 spatial patches to predict size and VMAF with +-5% accuracy.
+     * Samples up to 5 patches of 256x256 to adjust a heuristic VMAF estimate.
+     * The estimate is not a measured VMAF value and has no accuracy guarantee.
      */
     static DialResult run_preflight_probe(const uint8_t* frame_y,
                                          uint32_t width,

@@ -286,7 +286,7 @@ public final class GeminiClient {
         String p = prompt.toLowerCase(Locale.US);
 
         if (p.contains("whatsapp") || p.contains("16 mb") || p.contains("squish") || p.contains("share")) {
-            return "✦ **Prism On-Device Video Expert**:\n\n" +
+            return "**Prism On-Device Video Expert**:\n\n" +
                     "To guarantee smooth sharing on WhatsApp without video compression artifacts or 'file too large' blocks:\n\n" +
                     "• **Target Resolution**: 720p HD (1280x720) ensures pristine clarity on phone displays while slashing pixel area by 55% compared to 1080p.\n" +
                     "• **Recommended Bitrate**: 1,800 kbps (MediaCodec HEVC). This guarantees a 60-second clip will occupy ~13.5 MB, easily fitting under WhatsApp's strict 16 MB limit.\n" +
@@ -295,7 +295,7 @@ public final class GeminiClient {
         }
 
         if (p.contains("discord") || p.contains("25 mb") || p.contains("nitro")) {
-            return "✦ **Prism On-Device Video Expert**:\n\n" +
+            return "**Prism On-Device Video Expert**:\n\n" +
                     "For Discord free-tier upload compliance (25 MB limit):\n\n" +
                     "• **Target Resolution**: 1080p FHD (1920x1080) for full sharpness.\n" +
                     "• **Recommended Bitrate**: 2,800 kbps with 2-pass B-frame rate control.\n" +
@@ -304,7 +304,7 @@ public final class GeminiClient {
         }
 
         if (p.contains("lossless") || p.contains("archive") || p.contains("zero loss") || p.contains("bit-exact")) {
-            return "✦ **Prism On-Device Video Expert**:\n\n" +
+            return "**Prism On-Device Video Expert**:\n\n" +
                     "For 100% Cryptographic Lossless Preservation:\n\n" +
                     "• **Recommended Profile**: L-BBR (Lossless Bit-Exact) with rANS entropy packing.\n" +
                     "• **Fidelity**: 100.000% SHA-256 Bit-Exact match (Invariant 1 & 2 verified).\n" +
@@ -313,7 +313,7 @@ public final class GeminiClient {
         }
 
         if (p.contains("hdr") || p.contains("gray") || p.contains("color") || p.contains("tone")) {
-            return "✦ **Prism On-Device Video Expert**:\n\n" +
+            return "**Prism On-Device Video Expert**:\n\n" +
                     "Your video exhibits high dynamic range characteristics (10-bit BT.2020 / HDR10).\n\n" +
                     "• **Diagnosis**: Standard players and chat apps do not tone-map BT.2020 to Rec.709, making highlights blowout and shadows appear washed out gray.\n" +
                     "• **Solution**: Prism-V applies ACES Filmic Tone Mapping in hardware, converting 10-bit HDR to vibrant 8-bit SDR while preserving rich specular highlights.\n\n" +
@@ -321,11 +321,11 @@ public final class GeminiClient {
         }
 
         // General default recommendation
-        return "✦ **Prism On-Device Video Expert**:\n\n" +
+        return "**Prism On-Device Video Expert**:\n\n" +
                 "Analysis of your current video source:\n" +
                 "• **Resolution Balance**: 720p HD @ 2,500 kbps provides the optimal Pareto frontier between visual fidelity and storage reclaim.\n" +
                 "• **Estimated Storage Savings**: ~70% to 85% bandwidth reduction depending on content entropy.\n" +
-                "• **Perceptual Metric**: Expected VMAF score > 94.2 Gold (indistinguishable from master on mobile).\n\n" +
+                "• **Perceptual Metric**: VMAF is not measured by this app.\n\n" +
                 "[APPLY: width=1280, height=720, fps=30, bitrate=2500, format=MP4]";
     }
 }

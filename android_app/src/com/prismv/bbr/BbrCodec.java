@@ -7,9 +7,8 @@ import java.io.ByteArrayOutputStream;
 import java.util.Arrays;
 
 /**
- * Mode L-BBR (Bit-Exact Block Reconstruction) Compressor.
- * Strictly adheres to Invariant 1 (Lossless expansion prohibition) and
- * Invariant 2 (Deterministic integer arithmetic).
+ * BBR block compressor used by the standalone Java app.
+ * Header: "BBR1", 4-byte original length, 1-byte mode, payload.
  */
 public final class BbrCodec {
 
@@ -68,7 +67,7 @@ public final class BbrCodec {
         out.write(len & 0xFF);
 
         // Flag: 0 = compressed, 1 = uncompressed bypass
-        if (entropyData.length + 9 < rawData.length) {
+        if ((long) entropyData.length + 9 < (long) rawData.length) {
             out.write(0); // Compressed
             out.write(entropyData, 0, entropyData.length);
         } else {
@@ -84,8 +83,11 @@ public final class BbrCodec {
      * Decompresses BBR container back to bit-exact raw GOP data.
      */
     public static byte[] decompressGop(byte[] bbrData) {
-        if (bbrData == null || bbrData.length < 9) {
+        if (bbrData == null || bbrData.length == 0) {
             return new byte[0];
+        }
+        if (bbrData.length < 9) {
+            throw new IllegalArgumentException("BBR1 header is truncated");
         }
 
         int offset = 0;
@@ -98,23 +100,32 @@ public final class BbrCodec {
                       ((bbrData[offset++] & 0xFF) << 16) |
                       ((bbrData[offset++] & 0xFF) << 8) |
                       (bbrData[offset++] & 0xFF);
+        if (origLen < 0) {
+            throw new IllegalArgumentException("Invalid original length");
+        }
 
         int flag = bbrData[offset++] & 0xFF;
 
         if (flag == 1) {
-            // Bypass mode
+            if (offset + origLen > bbrData.length) {
+                throw new IllegalArgumentException("Bypass payload is truncated");
+            }
             return Arrays.copyOfRange(bbrData, offset, offset + origLen);
         }
+        if (flag != 0) {
+            throw new IllegalArgumentException("Unknown BBR1 mode: " + flag);
+        }
 
-        // Decompress entropy stream
         byte[] entropySlice = Arrays.copyOfRange(bbrData, offset, bbrData.length);
         byte[] residuals = Rans8Codec.decompress(entropySlice);
+        if (residuals.length != origLen) {
+            throw new IllegalArgumentException("Entropy payload length does not match the header");
+        }
 
-        // Invert differential prediction
         byte[] restored = new byte[origLen];
-        if (residuals.length > 0) {
+        if (origLen > 0) {
             restored[0] = residuals[0];
-            for (int i = 1; i < origLen && i < residuals.length; i++) {
+            for (int i = 1; i < origLen; i++) {
                 int val = ((restored[i - 1] & 0xFF) + (residuals[i] & 0xFF)) & 0xFF;
                 restored[i] = (byte) val;
             }

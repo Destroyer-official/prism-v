@@ -132,7 +132,7 @@ public class CompressedVideosView extends LinearLayout {
         headerRow.setPadding(0, 0, 0, dp(12));
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("📁 COMPRESSED VIDEOS LIBRARY");
+        tvTitle.setText("COMPRESSED VIDEOS LIBRARY");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -150,7 +150,7 @@ public class CompressedVideosView extends LinearLayout {
         headerRow.addView(tvTotalCount);
 
         Button btnOpenFolder = new Button(context);
-        btnOpenFolder.setText("📂 Folder");
+        btnOpenFolder.setText("Folder");
         btnOpenFolder.setTextColor(Color.WHITE);
         btnOpenFolder.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
         btnOpenFolder.setTypeface(Typeface.DEFAULT_BOLD);
@@ -204,7 +204,7 @@ public class CompressedVideosView extends LinearLayout {
         searchBox.setLayoutParams(sp);
 
         TextView tvSearchIcon = new TextView(context);
-        tvSearchIcon.setText("🔍");
+        tvSearchIcon.setText("");
         tvSearchIcon.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         tvSearchIcon.setPadding(0, 0, dp(8), 0);
         searchBox.addView(tvSearchIcon);
@@ -474,7 +474,7 @@ public class CompressedVideosView extends LinearLayout {
         rowSize.addView(tvBefore);
 
         TextView tvArrow = new TextView(context);
-        tvArrow.setText(" ➔ ");
+        tvArrow.setText(" ");
         tvArrow.setTextColor(ThemeStyles.COLOR_CYAN_TEXT);
         tvArrow.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         rowSize.addView(tvArrow);
@@ -496,14 +496,14 @@ public class CompressedVideosView extends LinearLayout {
         rowSize.addView(tvSaved);
         card.addView(rowSize);
 
-        // ROW 3: Action Buttons Row: [⚖️ COMPARE IN DUO] [▶ PLAY] [📤 SHARE] [🗑️ DELETE]
+        // ROW 3: Action Buttons Row: [COMPARE IN DUO] [▶ PLAY] [SHARE] [DELETE]
         LinearLayout rowBtns = new LinearLayout(context);
         rowBtns.setOrientation(HORIZONTAL);
         rowBtns.setPadding(0, dp(10), 0, 0);
 
         // 1. Compare in Duo Button (Primary Action)
         Button btnCompare = new Button(context);
-        btnCompare.setText("⚖️ COMPARE IN DUO");
+        btnCompare.setText("COMPARE IN DUO");
         btnCompare.setTextColor(Color.WHITE);
         btnCompare.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
         btnCompare.setTypeface(Typeface.DEFAULT_BOLD);
@@ -536,7 +536,7 @@ public class CompressedVideosView extends LinearLayout {
 
         // 3. Share Button
         Button btnShare = new Button(context);
-        btnShare.setText("📤");
+        btnShare.setText("");
         btnShare.setTextColor(Color.WHITE);
         btnShare.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         btnShare.setBackground(createRoundedDrawable(Color.parseColor("#121B2D"), ThemeStyles.COLOR_BORDER_SUBTLE, dp(1), dp(10)));
@@ -551,7 +551,7 @@ public class CompressedVideosView extends LinearLayout {
 
         // 4. Delete Button
         Button btnDel = new Button(context);
-        btnDel.setText("🗑️");
+        btnDel.setText("");
         btnDel.setTextColor(Color.parseColor("#EF4444"));
         btnDel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         btnDel.setBackground(createRoundedDrawable(Color.parseColor("#1A1118"), Color.parseColor("#7F1D1D"), dp(1), dp(10)));
@@ -627,10 +627,14 @@ public class CompressedVideosView extends LinearLayout {
     public static Dialog showLibraryDialog(Context context, OnCompareRequestedListener listener) {
         Dialog dialog = new Dialog(context);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setCancelable(true);
+        dialog.setCanceledOnTouchOutside(false);
         if (dialog.getWindow() != null) {
             dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
         }
+        DialogTracker.register(dialog);
+        dialog.setOnDismissListener(d -> DialogTracker.unregister(dialog));
 
         ScrollView scroll = new ScrollView(context);
         CompressedVideosView libView = new CompressedVideosView(context);
@@ -641,7 +645,7 @@ public class CompressedVideosView extends LinearLayout {
 
         // Add a close button at top of view
         Button btnClose = new Button(context);
-        btnClose.setText("✕ CLOSE LIBRARY");
+        btnClose.setText("CLOSE LIBRARY");
         btnClose.setTextColor(ThemeStyles.COLOR_TEXT_MUTED);
         btnClose.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         btnClose.setBackground(ThemeStyles.createRoundedDrawable(Color.TRANSPARENT, ThemeStyles.COLOR_BORDER_SUBTLE, ThemeStyles.dp(context, 1), ThemeStyles.dp(context, 10)));

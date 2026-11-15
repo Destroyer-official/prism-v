@@ -8,7 +8,9 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.text.InputType;
 import android.util.TypedValue;
+import android.util.Log;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
@@ -26,6 +28,28 @@ import java.util.Locale;
 public final class CustomDarkDialog {
 
     private CustomDarkDialog() {}
+
+    public static Dialog createDarkBaseDialog(Context context) {
+        final Dialog dialog = new Dialog(context);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setCancelable(true);
+        dialog.setCanceledOnTouchOutside(false);
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        }
+        DialogTracker.register(dialog);
+        dialog.setOnDismissListener(d -> DialogTracker.unregister(dialog));
+        dialog.setOnKeyListener((dialogInterface, keyCode, keyEvent) -> {
+            if (keyCode == KeyEvent.KEYCODE_BACK && keyEvent.getAction() == KeyEvent.ACTION_UP) {
+                Log.d("CustomDarkDialog", "[BACK] Modal dialog dismissed via dark dialog onKey");
+                dialogInterface.dismiss();
+                return true;
+            }
+            return false;
+        });
+        return dialog;
+    }
 
     private static int dp(Context context, int value) {
         return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value, context.getResources().getDisplayMetrics());
@@ -68,12 +92,7 @@ public final class CustomDarkDialog {
      * Display a dark glassmorphic single-choice selection dialog.
      */
     public static Dialog showSingleChoice(Context context, String title, String[] items, int selectedIndex, OnItemSelectedListener listener) {
-        Dialog dialog = new Dialog(context);
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        }
+        Dialog dialog = createDarkBaseDialog(context);
 
         ScrollView scroll = new ScrollView(context);
         LinearLayout root = new LinearLayout(context);
@@ -157,12 +176,7 @@ public final class CustomDarkDialog {
      * Display a dark glassmorphic multi-choice selection dialog with real checkboxes.
      */
     public static Dialog showMultiChoice(Context context, String title, String[] items, boolean[] initialChecked, OnMultiChoiceConfirmedListener listener) {
-        Dialog dialog = new Dialog(context);
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        }
+        Dialog dialog = createDarkBaseDialog(context);
 
         final boolean[] checked = new boolean[items.length];
         if (initialChecked != null) {
@@ -222,7 +236,7 @@ public final class CustomDarkDialog {
 
             TextView tvBox = new TextView(context);
             checkBoxes[index] = tvBox;
-            tvBox.setText(checked[index] ? "☑ " : "☐ ");
+            tvBox.setText(checked[index] ? "" : "");
             tvBox.setTextColor(checked[index] ? ThemeStyles.COLOR_CYAN_NEON : ThemeStyles.COLOR_TEXT_MUTED);
             tvBox.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
             itemRow.addView(tvBox);
@@ -237,7 +251,7 @@ public final class CustomDarkDialog {
 
             itemRow.setOnClickListener(v -> {
                 checked[index] = !checked[index];
-                tvBox.setText(checked[index] ? "☑ " : "☐ ");
+                tvBox.setText(checked[index] ? "" : "");
                 tvBox.setTextColor(checked[index] ? ThemeStyles.COLOR_CYAN_NEON : ThemeStyles.COLOR_TEXT_MUTED);
                 tvText.setTextColor(checked[index] ? Color.WHITE : ThemeStyles.COLOR_TEXT_SECONDARY);
                 tvText.setTypeface(checked[index] ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
@@ -249,7 +263,7 @@ public final class CustomDarkDialog {
 
         // Confirm Button
         Button btnConfirm = new Button(context);
-        btnConfirm.setText("✓  CONFIRM SELECTION");
+        btnConfirm.setText(" CONFIRM SELECTION");
         btnConfirm.setTextColor(Color.WHITE);
         btnConfirm.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         btnConfirm.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -291,12 +305,7 @@ public final class CustomDarkDialog {
      * Display a dark glassmorphic text input dialog (for custom FPS, Bitrate, etc).
      */
     public static Dialog showInputPrompt(Context context, String title, String subtitle, String initialValue, int inputType, OnInputConfirmedListener listener) {
-        Dialog dialog = new Dialog(context);
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        }
+        Dialog dialog = createDarkBaseDialog(context);
 
         LinearLayout root = new LinearLayout(context);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -385,12 +394,7 @@ public final class CustomDarkDialog {
         SkinManager.Skin[] skins = SkinManager.Skin.values();
         SkinManager.Skin active = SkinManager.getActiveSkin();
 
-        Dialog dialog = new Dialog(context);
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        }
+        Dialog dialog = createDarkBaseDialog(context);
 
         ScrollView scroll = new ScrollView(context);
         LinearLayout root = new LinearLayout(context);
@@ -400,7 +404,7 @@ public final class CustomDarkDialog {
         root.setBackground(createCardBackground(context));
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("🎨 STUDIO THEMES & HARDWARE SKINS");
+        tvTitle.setText("STUDIO THEMES & HARDWARE SKINS");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -545,12 +549,7 @@ public final class CustomDarkDialog {
      * Dark confirmation dialog with glowing accent buttons.
      */
     public static Dialog showConfirmation(Context context, String title, String message, String positiveText, String negativeText, Runnable onConfirmed) {
-        Dialog dialog = new Dialog(context);
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        }
+        Dialog dialog = createDarkBaseDialog(context);
 
         LinearLayout root = new LinearLayout(context);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -625,12 +624,7 @@ public final class CustomDarkDialog {
             Runnable onShare,
             Runnable onOpenGallery
     ) {
-        Dialog dialog = new Dialog(context);
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        }
+        Dialog dialog = createDarkBaseDialog(context);
 
         ScrollView scroll = new ScrollView(context);
         LinearLayout root = new LinearLayout(context);
@@ -645,7 +639,7 @@ public final class CustomDarkDialog {
         headerRow.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView tvBadge = new TextView(context);
-        tvBadge.setText("✨ OPTIMIZATION COMPLETED & VAULTED");
+        tvBadge.setText("OPTIMIZATION COMPLETED & VAULTED");
         tvBadge.setTextColor(ThemeStyles.COLOR_EMERALD_NEON);
         tvBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         tvBadge.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -678,14 +672,14 @@ public final class CustomDarkDialog {
 
         addDossierCol(context, metricsGrid, "ORIGINAL", String.format(Locale.US, "%.1f MB", origMb), "#94A3B8");
         addDossierCol(context, metricsGrid, "OPTIMIZED", String.format(Locale.US, "%.1f MB", compMb), "#38BDF8");
-        addDossierCol(context, metricsGrid, "FIDELITY", "VMAF > 95", "#34D399");
+        addDossierCol(context, metricsGrid, "FIDELITY", "VMAF not measured", "#34D399");
         root.addView(metricsGrid);
 
         // Output File Details
         TextView tvPath = new TextView(context);
         File f = (outPath != null) ? new File(outPath) : null;
         String name = (f != null) ? f.getName() : videoName;
-        tvPath.setText("📁 Saved to Movies/Prism-V/" + name + "\n✓ Indexed in Android MediaStore & Samsung Gallery");
+        tvPath.setText("Saved to Movies/Prism-V/" + name + "\nIndexed in Android MediaStore & Samsung Gallery");
         tvPath.setTextColor(ThemeStyles.COLOR_CYAN_TEXT);
         tvPath.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         tvPath.setTypeface(Typeface.MONOSPACE);
@@ -694,7 +688,7 @@ public final class CustomDarkDialog {
 
         // Action 1: Compare in Duo Player (Primary Emerald/Cyan Gradient)
         Button btnDuo = new Button(context);
-        btnDuo.setText("⚖️  COMPARE IN DUO PLAYER (0ms Sync)");
+        btnDuo.setText(" COMPARE IN DUO PLAYER (0ms Sync)");
         btnDuo.setTextColor(Color.WHITE);
         btnDuo.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         btnDuo.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -733,7 +727,7 @@ public final class CustomDarkDialog {
         rowAux.setLayoutParams(auxLp);
 
         Button btnGal = new Button(context);
-        btnGal.setText("🎬 GALLERY");
+        btnGal.setText("GALLERY");
         btnGal.setTextColor(ThemeStyles.COLOR_CYAN_TEXT);
         btnGal.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         btnGal.setTypeface(Typeface.DEFAULT_BOLD);

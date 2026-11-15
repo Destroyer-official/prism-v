@@ -28,8 +28,7 @@ public:
 
     int run_all() {
         std::cout << "========================================================\n";
-        std::cout << "  PRISM-V PRODUCTION SUITE: TEST-DRIVEN FALSIFICATION   \n";
-        std::cout << "  Verifying 7 Non-Negotiable Engineering Invariants     \n";
+        std::cout << "  Prism-V C++ unit tests                                \n";
         std::cout << "========================================================\n\n";
 
         size_t passed = 0;

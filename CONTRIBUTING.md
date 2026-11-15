@@ -1,64 +1,73 @@
 # Contributing to Prism-V
 
-Thank you for your interest in contributing to **Prism-V**! We are committed to building the highest-performance, zero-bloat, clean-room video compression engine and mobile studio.
+## License and source policy
 
----
+Prism-V is licensed under Apache-2.0. Contributions must be original work or
+derived from permissively licensed sources (for example ISO/IEC 14496-12,
+ITU-T H.264/H.265, or AOM specifications). Do not copy GPL or LGPL code,
+including FFmpeg, libav, x264, or x265.
 
-## 🏛️ Clean-Room Implementation Commitment
+Keep numeric paths integer-only where the existing code already does so
+(`detint.hpp`). Avoid introducing floating-point behavior into entropy coding,
+quantization, or rate-control code unless the change includes tests that pin
+the expected output.
 
-Prism-V is **100% Clean-Room Apache-2.0 Licensed**. We strictly prohibit any copy-pasting or derivative borrowing of GPL/LGPL licensed codebases (including FFmpeg, libav, x264, x265, or GPL plugins).
+## Prerequisites
 
-1. **Independent Formulation**: All code submitted must be an original work or derived exclusively from public standards (ISO/IEC 14496-12 ISOBMFF, AOM AV1 AFGS1, ITU-T H.264/H.265 specs, or academic papers with permissive licenses).
-2. **Deterministic Arithmetic**: Code modifying video entropy, quantization, or rate pacing must use fixed-point deterministic integer arithmetic (`detint.hpp`) to guarantee cross-architecture reproducibility across x86_64, ARM64, and Apple Silicon.
-3. **No Unbounded Memory**: All allocations in hot paths must be bounded or pool-managed (`HardwareRamBufferPool`).
+- C++20 compiler: Clang 16+, GCC 13+, or MSVC 2022+
+- CMake 3.20 or newer
+- Android NDK r26b or newer for Android native builds
+- JDK 17+ for the Java app
+- For the APK script: `android.jar`, `apktool.jar`, `r8lib.jar`, and
+  `uber-apk-signer.jar`
 
----
+## Build and test the native core
 
-## 🛠️ Development Workflow
-
-### Prerequisites
-- **C++20 Compiler**: Clang 16+, GCC 13+, or MSVC 2022+
-- **CMake**: Version 3.20 or newer
-- **Android NDK**: r26b or newer (mandatory 16 KB page-size linker compliance)
-- **JDK**: Version 17+
-- **Python**: 3.10+ (for test automation and verification tools)
-
-### Building Native Core & Tests
 ```bash
-# Configure CMake with Release flags
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=20
-
-# Compile targets (prism_core, prism_jni, prism_tests, prism CLI)
 cmake --build build --config Release
-
-# Run the 7/7 Invariant Test Suite
 ctest --test-dir build --output-on-failure
 ```
 
-### Building the Android Production APK
+`ctest` runs three targets: the 39-case unit test executable, the synthetic
+BBR experiment, and the synthetic lossy experiment. Run `build/prism_tests`
+directly to see per-test results.
+
+## Build the Android APK
+
+The packaged Java app is built without Gradle:
+
 ```powershell
-# Using the automated build script:
-.\build_apk.ps1
+$env:JAVA_HOME = "<jdk>"
+$env:PRISM_ANDROID_JAR = "<android.jar>"
+$env:PRISM_APKTOOL_JAR = "<apktool.jar>"
+$env:PRISM_R8_JAR = "<r8lib.jar>"
+$env:PRISM_SIGNER_JAR = "<uber-apk-signer.jar>"
+.\scripts\build_apk.ps1
 ```
 
----
+The script writes a debug-signed APK to `android_app/signed/`. The Kotlin
+module in `android/` has no Gradle wrapper in this repository; building it
+requires an Android SDK and a locally installed Gradle.
 
-## 📐 Coding Conventions & Standards
+## Coding conventions
 
-- **C++**: Follow Modern C++20 conventions. Use `std::span`, `std::unique_ptr`, `constexpr`, and fixed-width integers (`uint8_t`, `int64_t`). No raw owning pointers.
-- **Java/Kotlin**: Follow Android Jetpack & Material 3 guidelines. Ensure background services run with `mediaProcessing` foreground service types and implement `Service.onTimeout()`.
-- **Memory Safety**: No allocations in per-frame rendering or audio PTS loop. Keep direct buffer pools bounded ($\le$ 128 MB on mobile).
-- **Commit Messages**: Follow Conventional Commits format:
-  - `feat(core): implement BBR pacing state machine`
-  - `fix(engine): normalize first audio PTS on trim boundaries`
-  - `docs(readme): add dual-player benchmark receipts`
+- C++: C++20, standard containers, fixed-width integer types, no raw owning
+  pointers. Keep allocations out of per-frame loops.
+- Java/Kotlin: Material 3 widgets and existing app patterns. Background work
+  should use the foreground-service and worker classes already in the project.
+- Comments should explain a non-obvious constraint or invariant. Do not add
+  decorative banners, emoji, or restatements of the code.
+- Commit messages use the Conventional Commits form, for example
+  `fix(core): reject truncated pvloss index` or
+  `docs(readme): correct APK build path`.
 
----
+## Before submitting a pull request
 
-## 🧪 Testing Checklist Before Submitting PRs
-
-- [ ] All 7 native core test suites pass (`prism_tests`)
-- [ ] Memory sanitizer / AddressSanitizer passes without leaks
-- [ ] Android 16 KB page alignment confirmed via `-Wl,-z,max-page-size=16384`
-- [ ] No GPL code or dependencies introduced
-- [ ] Automated regression tests added for bug fixes
+- [ ] Native build succeeds and `ctest` passes.
+- [ ] New behavior has a test, especially for bounds checks and malformed input.
+- [ ] No GPL/LGPL code or dependencies are introduced.
+- [ ] Documentation matches the code; do not add unmeasured performance or
+      quality claims.
+- [ ] The Java app still compiles with `javac --release 17` against the Android
+      platform jar.

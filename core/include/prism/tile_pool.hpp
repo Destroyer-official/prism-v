@@ -36,7 +36,7 @@ struct SpatialTile {
  *
  * Enforces the Zero-Full-Frame-Heap Policy:
  * 12 slots x 82,944 samples x 2 bytes = 1.99 MB working RAM.
- * Prevents Android Low Memory Killer (LMK) eviction, keeping peak RSS <= 64 MB.
+ * Other process allocations are not included in this bound.
  */
 class TilePool {
 public:
@@ -49,8 +49,7 @@ public:
     TilePool& operator=(const TilePool&) = delete;
 
     /**
-     * @brief Acquire a free tile slot from the pre-allocated ring buffer.
-     * Blocks or reuses the oldest slot to guarantee memory bounded execution.
+     * @brief Acquire a tile slot, reusing the oldest slot when all are in use.
      */
     SpatialTile* acquire_slot(uint32_t tile_x, uint32_t tile_y);
 

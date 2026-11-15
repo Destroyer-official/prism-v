@@ -3,9 +3,40 @@
 #include <cstring>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 namespace prism {
+
+namespace {
+
+void validate_rgb_geometry(uint32_t width, uint32_t height, uint8_t bit_depth) {
+    if (bit_depth != 8) {
+        throw std::invalid_argument("PSC RGB path supports 8-bit input only");
+    }
+    if (width < 2 || height < 2 || (width % 2) != 0 || (height % 2) != 0) {
+        throw std::invalid_argument("PSC requires even dimensions of at least 2x2");
+    }
+    if (width > std::numeric_limits<size_t>::max() / height ||
+        static_cast<size_t>(width) * height > std::numeric_limits<size_t>::max() / 3) {
+        throw std::length_error("PSC frame dimensions overflow the addressable buffer size");
+    }
+}
+
+void validate_bayer_geometry(uint32_t width, uint32_t height, uint8_t bit_depth) {
+    if (bit_depth < 1 || bit_depth > 16) {
+        throw std::invalid_argument("Bayer CFA bit depth must be between 1 and 16");
+    }
+    if (width < 2 || height < 2 || (width % 2) != 0 || (height % 2) != 0) {
+        throw std::invalid_argument("Bayer CFA requires even dimensions of at least 2x2");
+    }
+    if (width > std::numeric_limits<size_t>::max() / height ||
+        static_cast<size_t>(width) * height > std::numeric_limits<size_t>::max() / sizeof(uint16_t)) {
+        throw std::length_error("Bayer CFA dimensions overflow the addressable buffer size");
+    }
+}
+
+} // namespace
 
 PscEngine::PscEngine() = default;
 
@@ -87,6 +118,11 @@ void PscEngine::inverse_legall53_1d(const int16_t* low, const int16_t* high, int
 }
 
 PscEngine::WaveletSubbands PscEngine::forward_wavelet_2d(const int16_t* plane, uint32_t width, uint32_t height) {
+    if (plane == nullptr) throw std::invalid_argument("Wavelet input plane is null");
+    if (width < 2 || height < 2 || (width % 2) != 0 || (height % 2) != 0) {
+        throw std::invalid_argument("Wavelet transform requires even dimensions of at least 2x2");
+    }
+
     uint32_t sub_w = width / 2;
     uint32_t sub_h = height / 2;
 
@@ -142,8 +178,20 @@ PscEngine::WaveletSubbands PscEngine::forward_wavelet_2d(const int16_t* plane, u
 }
 
 void PscEngine::inverse_wavelet_2d(const WaveletSubbands& bands, int16_t* plane, uint32_t width, uint32_t height) {
+    if (plane == nullptr) throw std::invalid_argument("Wavelet output plane is null");
+    if (width < 2 || height < 2 || (width % 2) != 0 || (height % 2) != 0) {
+        throw std::invalid_argument("Wavelet transform requires even dimensions of at least 2x2");
+    }
+
     uint32_t sub_w = bands.sub_w;
     uint32_t sub_h = bands.sub_h;
+
+    const size_t expected = static_cast<size_t>(sub_w) * sub_h;
+    if (sub_w != width / 2 || sub_h != height / 2 ||
+        bands.ll.size() != expected || bands.lh.size() != expected ||
+        bands.hl.size() != expected || bands.hh.size() != expected) {
+        throw std::invalid_argument("Wavelet subbands do not match the requested geometry");
+    }
 
     std::vector<int16_t> row_low(sub_w * height);
     std::vector<int16_t> row_high(sub_w * height);
@@ -199,6 +247,9 @@ int16_t PscEngine::med_predict(int16_t left, int16_t top, int16_t topleft) {
 }
 
 PscEngine::CompressedPscFrame PscEngine::compress_frame(const uint8_t* raw_rgb_or_yuv, const FrameGeometry& geom) {
+    if (raw_rgb_or_yuv == nullptr) throw std::invalid_argument("PSC input frame is null");
+    validate_rgb_geometry(geom.width, geom.height, geom.bit_depth);
+
     CompressedPscFrame frame;
     frame.geometry = geom;
 
@@ -221,8 +272,7 @@ PscEngine::CompressedPscFrame PscEngine::compress_frame(const uint8_t* raw_rgb_o
     // Forward 2D LeGall 5/3 Wavelet on Y plane
     WaveletSubbands y_bands = forward_wavelet_2d(y_plane.data(), geom.width, geom.height);
 
-    // Encode subband samples via MED + rANS
-    // To ensure 100% bijective preservation, encode residuals
+    // Encode subband residuals with MED prediction and rANS.
     std::vector<uint16_t> symbols;
     symbols.reserve(geom.width * geom.height * 6);
 
@@ -289,6 +339,11 @@ PscEngine::CompressedPscFrame PscEngine::compress_frame(const uint8_t* raw_rgb_o
 std::vector<uint8_t> PscEngine::decompress_frame(const CompressedPscFrame& frame) {
     uint32_t w = frame.geometry.width;
     uint32_t h = frame.geometry.height;
+    validate_rgb_geometry(w, h, frame.geometry.bit_depth);
+
+    if (frame.rans_payload.empty()) {
+        throw std::runtime_error("Compressed PSC frame has no payload");
+    }
 
     Rans8Codec::EncodedChunk rchunk = Rans8Codec::deserialize(frame.rans_payload.data(),
                                                              frame.rans_payload.size());
@@ -302,6 +357,12 @@ std::vector<uint8_t> PscEngine::decompress_frame(const CompressedPscFrame& frame
     }
     std::vector<uint16_t> cdf_table = Rans8Codec::build_cdf_lut(symbol_stats);
     std::vector<uint16_t> symbols = Rans8Codec::decode(rchunk, cdf_table, symbol_stats);
+
+    const size_t expected_symbols =
+        (static_cast<size_t>(w / 2) * (h / 2) * 4 + static_cast<size_t>(w) * h * 2) * 2;
+    if (symbols.size() != expected_symbols) {
+        throw std::runtime_error("PSC payload symbol count does not match the declared geometry");
+    }
 
     size_t sym_idx = 0;
     auto decode_uval = [&]() -> uint16_t {
@@ -397,6 +458,9 @@ PscEngine::BayerCfaSubplanes PscEngine::splice_bayer_cfa(const uint16_t* bayer_r
                                                         uint32_t width,
                                                         uint32_t height,
                                                         uint8_t bit_depth) {
+    if (bayer_raw == nullptr) throw std::invalid_argument("Bayer input frame is null");
+    validate_bayer_geometry(width, height, bit_depth);
+
     BayerCfaSubplanes planes;
     planes.sub_w = width / 2;
     planes.sub_h = height / 2;
@@ -427,7 +491,16 @@ void PscEngine::merge_bayer_cfa(const BayerCfaSubplanes& planes,
                                 uint16_t* out_bayer_raw,
                                 uint32_t width,
                                 uint32_t height) {
-    (void)height;
+    if (out_bayer_raw == nullptr) throw std::invalid_argument("Bayer output frame is null");
+    validate_bayer_geometry(width, height, planes.bit_depth);
+    if (planes.sub_w != width / 2 || planes.sub_h != height / 2) {
+        throw std::invalid_argument("Bayer subplane geometry does not match the output frame");
+    }
+    const size_t count = static_cast<size_t>(planes.sub_w) * planes.sub_h;
+    if (planes.r.size() != count || planes.g1.size() != count ||
+        planes.g2.size() != count || planes.b.size() != count) {
+        throw std::invalid_argument("Bayer subplane storage does not match its geometry");
+    }
     for (uint32_t y = 0; y < planes.sub_h; ++y) {
         for (uint32_t x = 0; x < planes.sub_w; ++x) {
             size_t sub_idx = static_cast<size_t>(y) * planes.sub_w + x;
@@ -444,8 +517,13 @@ void PscEngine::merge_bayer_cfa(const BayerCfaSubplanes& planes,
 
 PscEngine::BayerCfaSubplanes PscEngine::compute_bayer_temporal_delta(const BayerCfaSubplanes& curr,
                                                                     const BayerCfaSubplanes& ref) {
-    BayerCfaSubplanes delta = curr;
+    validate_bayer_geometry(curr.sub_w * 2, curr.sub_h * 2, curr.bit_depth);
     size_t count = static_cast<size_t>(curr.sub_w) * curr.sub_h;
+    if (ref.sub_w != curr.sub_w || ref.sub_h != curr.sub_h || ref.bit_depth != curr.bit_depth ||
+        ref.r.size() != count || ref.g1.size() != count || ref.g2.size() != count || ref.b.size() != count) {
+        throw std::invalid_argument("Bayer reference subplanes do not match the current frame");
+    }
+    BayerCfaSubplanes delta = curr;
     uint32_t mask = (1u << curr.bit_depth) - 1u;
 
     for (size_t i = 0; i < count; ++i) {
@@ -459,8 +537,13 @@ PscEngine::BayerCfaSubplanes PscEngine::compute_bayer_temporal_delta(const Bayer
 
 PscEngine::BayerCfaSubplanes PscEngine::apply_bayer_temporal_delta(const BayerCfaSubplanes& delta,
                                                                   const BayerCfaSubplanes& ref) {
-    BayerCfaSubplanes restored = delta;
+    validate_bayer_geometry(delta.sub_w * 2, delta.sub_h * 2, delta.bit_depth);
     size_t count = static_cast<size_t>(delta.sub_w) * delta.sub_h;
+    if (ref.sub_w != delta.sub_w || ref.sub_h != delta.sub_h || ref.bit_depth != delta.bit_depth ||
+        ref.r.size() != count || ref.g1.size() != count || ref.g2.size() != count || ref.b.size() != count) {
+        throw std::invalid_argument("Bayer reference subplanes do not match the delta frame");
+    }
+    BayerCfaSubplanes restored = delta;
     uint32_t mask = (1u << delta.bit_depth) - 1u;
 
     for (size_t i = 0; i < count; ++i) {
@@ -477,6 +560,9 @@ PscEngine::CompressedBayerFrame PscEngine::compress_bayer_frame(const uint16_t* 
                                                                 uint32_t height,
                                                                 uint8_t bit_depth,
                                                                 const BayerCfaSubplanes* ref_planes) {
+    if (bayer_raw == nullptr) throw std::invalid_argument("Bayer input frame is null");
+    validate_bayer_geometry(width, height, bit_depth);
+
     CompressedBayerFrame frame;
     frame.width = width;
     frame.height = height;
@@ -533,6 +619,11 @@ PscEngine::CompressedBayerFrame PscEngine::compress_bayer_frame(const uint16_t* 
 
 std::vector<uint16_t> PscEngine::decompress_bayer_frame(const CompressedBayerFrame& frame,
                                                         const BayerCfaSubplanes* ref_planes) {
+    validate_bayer_geometry(frame.width, frame.height, frame.bit_depth);
+    if (frame.rans_payload.empty()) {
+        throw std::runtime_error("Compressed Bayer frame has no payload");
+    }
+
     uint32_t sw = frame.width / 2;
     uint32_t sh = frame.height / 2;
 
@@ -549,6 +640,11 @@ std::vector<uint16_t> PscEngine::decompress_bayer_frame(const CompressedBayerFra
 
     std::vector<uint16_t> cdf_table = Rans8Codec::build_cdf_lut(symbol_stats);
     std::vector<uint16_t> symbols = Rans8Codec::decode(rchunk, cdf_table, symbol_stats);
+
+    const size_t expected_symbols = static_cast<size_t>(sw) * sh * 4 * 2;
+    if (symbols.size() != expected_symbols) {
+        throw std::runtime_error("Bayer payload symbol count does not match the declared geometry");
+    }
     size_t sym_idx = 0;
 
     auto decode_uval = [&]() -> uint16_t {

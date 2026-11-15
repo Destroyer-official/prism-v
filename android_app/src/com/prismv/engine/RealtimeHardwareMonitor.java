@@ -61,7 +61,7 @@ public final class RealtimeHardwareMonitor {
         }
 
         public String getThermalSummary() {
-            return String.format(Locale.US, "%.1f°C • %s%s", batteryTempC, thermalStatus, (isCharging ? " ⚡" : ""));
+            return String.format(Locale.US, "%.1f°C • %s%s", batteryTempC, thermalStatus, (isCharging ? "" : ""));
         }
 
         public String getEtaSummary() {

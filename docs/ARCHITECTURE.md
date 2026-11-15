@@ -1,80 +1,94 @@
-# Prism-V Architectural Specification
+# Architecture
 
-## 📐 High-Level Architecture Overview
+This document describes the code as it exists in this repository. Where a
+component is a prototype or a heuristic, that is stated explicitly.
 
-Prism-V is a clean-room, dual-layer media processing architecture combining a deterministic C++20 core library (`prism_core`) with an asynchronous hardware-accelerated Android MediaCodec pipeline and a Material 3 reactive control layer.
+## Layers
 
 ```
-+-------------------------------------------------------------------------+
-|                  Prism-V Material 3 Interface (30 Screens)              |
-|  [ Studio Tab ]  [ Duo Player ]  [ Toolbox Hub ]  [ Matrix ]  [ Settings] |
-+-------------------------------------------------------------------------+
-                                    |
-                                    v
-+-------------------------------------------------------------------------+
-|                    Android Media Processing Services                     |
-|  - PrismMediaProcessingService (FGS: mediaProcessing, onTimeout)         |
-|  - HardwareVideoCompressor (Asynchronous MediaCodec, Surface rendering) |
-|  - HardwareRamBufferPool (Bounded 128 MB Direct Off-Heap Allocations)   |
-|  - StorageStatsChecker & BatchTrashManager (Scoped Storage Android 16)  |
-+-------------------------------------------------------------------------+
-                                    |
-                            JNI Bridge (prism_jni)
-                                    |
-                                    v
-+-------------------------------------------------------------------------+
-|                     Prism-V Native Core (C++20 Engine)                  |
-|  +--------------------+--------------------+--------------------------+ |
-|  | bbr.cpp (BBR)      | rans8.cpp (rANS)   | coolchic.cpp (Neural)    | |
-|  | afgs1.cpp (Grain)  | psc.cpp (Metrics)  | detint.cpp (Fixed-Pt)    | |
-|  | isobmff.cpp (MP4)  | remux.cpp (Streams)| dedup_rabin.cpp (Chunks) | |
-|  | vfs_proxy.cpp(VFS) | router.cpp (HW/SW) | transaction.cpp (Atomic) | |
-|  +--------------------+--------------------+--------------------------+ |
-+-------------------------------------------------------------------------+
-                                    |
-                                    v
-+-------------------------------------------------------------------------+
-|                      Hardware & System Foundation                       |
-|   ARM64 / x86_64 Silicon  |  16 KB Page Alignment  |  Zero Telemetry   |
-+-------------------------------------------------------------------------+
+┌──────────────────────────────────────────────────────────────┐
+│ Android UI                                                   │
+│  android_app/  Java single-activity app (packaged via script)│
+│  android/      Kotlin Compose preview (not connected)        │
+└──────────────────────────────┬───────────────────────────────┘
+                               │ JNI (core/src/prism_jni.cpp)
+┌──────────────────────────────▼───────────────────────────────┐
+│ prism_core (C++20 static library)                            │
+│  rans8, bbr, psc, cont+pvloss, isobmff, remux, vfs_proxy,    │
+│  transaction, dedup_rabin, router, detint, coolchic, afgs1   │
+└──────────────────────────────┬───────────────────────────────┘
+                               │
+┌──────────────────────────────▼───────────────────────────────┐
+│ Host OS: filesystem, page size, optional MediaCodec/NDK      │
+└──────────────────────────────────────────────────────────────┘
 ```
 
----
+The CLI (`tools/prism_cli.cpp`) links against `prism_core` directly and is the
+most reliable way to exercise the native code.
 
-## 🧩 The 13 Native C++ Modules
+## Native modules
 
-| Module Header | Source | Responsibilities & Invariants |
-|---------------|--------|--------------------------------|
-| `detint.hpp` | `detint.cpp` | **Deterministic Integer Math**: Bit-exact 64-bit fixed-point arithmetic ($\text{scale} = 2^{16}$), eliminating floating-point non-determinism across ARM64, x86_64, and NEON/AVX2. |
-| `rans8.hpp` | `rans8.cpp` | **rANS 8-Bit Entropy Coder**: Streaming Asymmetric Numeral Systems entropy coder delivering Shannon-limit bit efficiency with single-cycle table lookups. |
-| `bbr.hpp` | `bbr.cpp` | **BBR Video Rate Controller**: Models hardware encoder queue buffer fullness as a network bottleneck; paces frame delivery to prevent buffer bloat and frame drops. |
-| `psc.hpp` | `psc.cpp` | **Perceptual Spatial Complexity**: Computes edge density, luminance variance, and high-frequency energy across macroblocks to bias QP dynamically. |
-| `tile_pool.hpp` | `tile_pool.cpp` | **Frame Tiling & SIMD Dispatcher**: Partitions video frames into cache-aligned tiles ($64 \times 64$) for parallel multi-threaded worker dispatch. |
-| `coolchic.hpp` | `coolchic.cpp` | **Neural Coordinate Entropy Engine**: Continuous-coordinate representation modeling spatial residuals using continuous coordinate neural decoders. |
-| `afgs1.hpp` | `afgs1.cpp` | **AOM Film Grain Synthesis 1**: Strips high-frequency noise prior to quantization, generating parametric synthesis metadata for client-side grain reconstruction. |
-| `container_pvloss.hpp` | `container_pvloss.cpp` | **Lossless Container Format**: Lightweight, header-compressed streaming container for intermediate atomic GOP caching. |
-| `isobmff.hpp` | `isobmff.cpp` | **Zero-Copy MP4 Atom Parser**: Parses and rewrites `ftyp`, `moov`, `mvhd`, `trak`, `mdia`, `minf`, `stbl`, `stco`/`co64`, and `mdat` boxes without copying video payloads. |
-| `vfs_proxy.hpp` | `vfs_proxy.cpp` | **Virtual In-Memory MP4 Proxy**: Allows ExoPlayer and media players to stream and seek through dynamically transcoded GOP chunks in RAM. |
-| `transaction.hpp` | `transaction.cpp` | **Two-Phase Atomic Commit Engine**: Manages atomic stage-verify-commit operations on local storage with rollbacks upon power failure or OOM. |
-| `dedup_rabin.hpp` | `dedup_rabin.cpp` | **Rabin Fingerprint Chunk Deduplication**: Identifies identical GOPs or duplicate scenes across multiple input videos using rolling hash boundaries. |
-| `remux.hpp` | `remux.cpp` | **Track Remuxer & Stream Sanitizer**: Extracts, sanitizes, and repackages AAC, Opus, and H.264/HEVC elementary streams into standard MP4 containers. |
-| `router.hpp` | `router.cpp` | **Adaptive HW/SW Router**: Queries device capabilities, SoC chipset profile, and thermal headroom to route GOPs to MediaCodec HW or native C++ fallback. |
+| Module | Source | Behavior |
+|---|---|---|
+| `detint` | `detint.cpp` | Integer dot products and a 512-entry sigmoid CDF lookup table. Used by the probability model. |
+| `rans8` | `rans8.cpp` | 8-lane rANS with 16-bit renormalization. Encoder validates contiguous symbol statistics that sum to 32,768. Decoder validates stream lengths, symbol indexes, and renormalization bounds. |
+| `bbr` | `bbr.cpp` | Splits each input byte into two nibbles, builds symbol statistics from a small integer model, rANS-codes them, and stores the raw bytes instead when coding would expand the payload. |
+| `psc` | `psc.cpp` | Reversible YCoCg-R + 2D LeGall 5/3 wavelet + MED predictor for 8-bit RGB frames, plus 4-plane Bayer CFA split/merge with temporal delta. Requires even dimensions of at least 2×2. |
+| `container_pvloss` | `container_pvloss.cpp` | `.pvloss` writer/reader: 72-byte header, CRC32C-framed chunks, and a 28-byte-per-entry seek index. The reader validates the index offset, entry count, and chunk ranges against the file size. |
+| `isobmff` | `isobmff.cpp` | Dual-track MP4 mux/demux for the project's own box layout and metadata ledger. |
+| `remux` | `remux.cpp` | Writes a minimal `ftyp`/`moov`/`mdat` file and parses it back. Box and sample ranges are bounded against the input buffer; malformed or trailing data returns `false`. |
+| `vfs_proxy` | `vfs_proxy.cpp` | Mounts a `.pvloss` file and serves reads from cached chunks. |
+| `transaction` | `transaction.cpp` | Stages a replacement, verifies it, then swaps it into place with a rollback journal. |
+| `dedup_rabin` | `dedup_rabin.cpp` | Content-defined chunking with a Rabin rolling hash and a hash-addressed block vault. Restore verifies each block's length and SHA-256 before writing. |
+| `router` | `router.cpp` | Heuristic media probe based on header magic (`ftyp`, `hvc1`, `av01`, TIFF/DNG) and a routing decision. The savings ratios are fixed defaults, not measurements. |
+| `coolchic` | `coolchic.cpp` | Prototype integer residual MLP plus heuristic Pareto target selection. The `predicted_vmaf` and energy fields are estimates. |
+| `afgs1` | `afgs1.cpp` | Parametric grain parameter container and synthesis helper. |
+| `tile_pool` | `tile_pool.cpp` | Fixed-size tile ring buffer used for memory-bounded processing. |
 
----
+## Lossless paths
 
-## ⚡ Android MediaCodec Hardware Pipeline
+### `.pvloss` + BBR
 
-### 1. Asynchronous Buffer Flow
-`HardwareVideoCompressor.java` utilizes the Android `MediaCodec` asynchronous callback mechanism (`setCallback(MediaCodec.Callback)`):
-1. **Extractor Input Queue**: Buffers read from `MediaExtractor` are passed to `codec.queueInputBuffer()`.
-2. **Surface Rendering**: Decoding renders directly to an `InputSurface` bound to the encoder, executing zero-copy GPU texture transfer.
-3. **Muxer Pacing**: Encoded samples are queued to `MediaMuxer` with strict monotonic PTS ordering.
+1. The CLI reads the input in 256 KiB chunks.
+2. `BbrEngine::compress` produces a coded payload or a raw bypass payload.
+3. `PvlossWriter` records each chunk with its CRC32C and virtual offset.
+4. `PvlossWriter::close` writes the seek index and finalizes the header.
+5. `prism decompress` reads each chunk, checks CRC32C, decompresses it, and
+   compares the result with the header's SHA-256.
 
-### 2. Timebase Normalization & Audio Synchronization
-- **Zero-Base Snapping**: `firstVideoPtsUs` and `firstAudioPtsUs` are recorded on the initial keyframe and subtracted from subsequent timestamps, guaranteeing that exported video starts at $PTS = 0\mu\text{s}$.
-- **Speed Multiplier Scaling**: Audio PTS values are scaled dynamically by $PTS_{\text{audio}}' = \frac{PTS_{\text{audio}}}{\text{speedMultiplier}}$ to remain in sample-exact lockstep with scaled video frames.
+### PSC image/Bayer
 
-### 3. Android 15 & 16 (API 36) Compliance
-- **Foreground Service Type**: Declared as `android:foregroundServiceType="mediaProcessing"`.
-- **Quota Timeout Guard**: Overrides `Service.onTimeout(int startId, int fgsType)` to perform clean GOP finalization and state flush before OS termination.
-- **Off-Heap RAM Budgeting**: `HardwareRamBufferPool` enforces a hard 128 MB direct memory ceiling with LRU reclamation.
+The PSC path is a library API. It is not exposed as a CLI file compressor.
+Decode verifies the reconstructed SHA-256 and throws on mismatch. Odd
+dimensions and invalid bit depths are rejected before any buffer access.
+
+### Remux
+
+`remux_to_clean_isobmff` preserves packet payload bytes and metadata boxes.
+`parse_and_verify_isobmff` is intentionally strict: invalid box sizes, sample
+lengths that exceed the `mdat` box, and trailing bytes all return `false`.
+
+## Android application
+
+`android_app/` is a Java application compiled with `javac`, dexed with D8, and
+packaged/signed by `scripts/build_apk.ps1`. Its packages include `engine`,
+`worker`, `storage`, `vfs`, `provider`, `thermal`, `history`, `scheduler`,
+`notification`, `ai`, and `ui`. The UI is a single activity with custom views
+and dialogs.
+
+The app's runtime behavior on a device is not verified in this repository.
+Features described in UI text (for example hardware transcode throughput,
+VMAF values, or deduplication savings) must be treated as unimplemented or
+unmeasured until reproduced.
+
+`android/` is a Kotlin/Compose preview module. It declares an Android
+application and native build, but there is no Gradle wrapper in the repository,
+and its button actions only show a Toast.
+
+## Build and platform notes
+
+- CMake sets `-Wall -Wextra -Wpedantic` for non-MSVC builds.
+- The JNI target is built when `JNI_FOUND` is set or when targeting Android.
+- Android 16 KiB page-size linker flags are added for Android and Linux.
+- `sample_video/` and media files are ignored by Git; the repository does not
+  ship test videos.

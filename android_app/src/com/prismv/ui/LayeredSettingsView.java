@@ -96,7 +96,7 @@ public class LayeredSettingsView extends LinearLayout {
         headerRow.setPadding(0, 0, 0, dp(12));
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("⚙️ SETTINGS & PREFERENCES");
+        tvTitle.setText("SETTINGS & PREFERENCES");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -127,7 +127,7 @@ public class LayeredSettingsView extends LinearLayout {
         searchBox.setLayoutParams(searchParams);
 
         TextView tvSearchIcon = new TextView(context);
-        tvSearchIcon.setText("🔍");
+        tvSearchIcon.setText("");
         tvSearchIcon.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         tvSearchIcon.setPadding(0, 0, dp(8), 0);
         searchBox.addView(tvSearchIcon);
@@ -173,7 +173,7 @@ public class LayeredSettingsView extends LinearLayout {
     // 1. APPEARANCE & THEMES
     // ==========================================
     private void buildCategory1Appearance(Context context) {
-        CategorySection sec = createCategory(context, "🎨 1. APPEARANCE & THEME PREFERENCES", "skin theme haptic language units color design");
+        CategorySection sec = createCategory(context, "1. APPEARANCE & THEME PREFERENCES", "skin theme haptic language units color design");
 
         addPillSelectorSetting(context, sec, "2027 Design Skin", "Switches visual system styling & materials",
                 new String[]{"Liquid Frost Glass", "Pitch-Black AMOLED Cyber", "Tactile Neo-Brutalist", "Hollywood Sunset Gold", "Cosmic Monet Indigo", "Daylight Paper Studio"},
@@ -202,7 +202,7 @@ public class LayeredSettingsView extends LinearLayout {
     // 2. DEFAULT VIDEO ENGINE
     // ==========================================
     private void buildCategory2VideoEngine(Context context) {
-        CategorySection sec = createCategory(context, "⚡ 2. DEFAULT VIDEO COMPRESSION ENGINE", "codec av1 hevc neural micro-residual grain afgs1 hdr");
+        CategorySection sec = createCategory(context, "2. DEFAULT VIDEO COMPRESSION ENGINE", "codec av1 hevc neural micro-residual grain afgs1 hdr");
 
         addPillSelectorSetting(context, sec, "Default Compression Profile", "Baseline strategy for newly added videos",
                 new String[]{"H-ARCH", "E-LOW", "L-BBR"},
@@ -235,7 +235,7 @@ public class LayeredSettingsView extends LinearLayout {
     // 3. DEFAULT AUDIO PREFERENCES
     // ==========================================
     private void buildCategory3AudioPreferences(Context context) {
-        CategorySection sec = createCategory(context, "🔊 3. DEFAULT AUDIO PREFERENCES", "audio opus bitstream volume loudness mute bitrate lufs");
+        CategorySection sec = createCategory(context, "3. DEFAULT AUDIO PREFERENCES", "audio opus bitstream volume loudness mute bitrate lufs");
 
         addPillSelectorSetting(context, sec, "Audio Processing Action", "Encoding method for source audio streams",
                 new String[]{"Compress to Opus", "Copy Stream", "Mute"},
@@ -265,14 +265,14 @@ public class LayeredSettingsView extends LinearLayout {
     // 4. STORAGE, DIRECTORY & VAULT POLICIES
     // ==========================================
     private void buildCategory4StorageVault(Context context) {
-        CategorySection sec = createCategory(context, "💾 4. STORAGE, DIRECTORY & VAULT POLICIES", "storage path folder trash naming timestamp cache");
+        CategorySection sec = createCategory(context, "4. STORAGE, DIRECTORY & VAULT POLICIES", "storage path folder trash naming timestamp cache");
 
         addPillSelectorSetting(context, sec, "Output Directory", "Where optimized files are saved",
                 new String[]{"Movies/Prism-V (Public)", "DCIM/Prism-V", "App Private Storage"},
                 prefs.getOutputDirectory(), prefs::setOutputDirectory);
 
         addActionButton(context, sec, "Public Save Folder: Movies/Prism-V", "Browse all compressed videos in Samsung My Files",
-                "📂 OPEN MOVIES/PRISM-V IN FILES", v -> com.prismv.storage.PrismStorageManager.openFolder(context));
+                "OPEN MOVIES/PRISM-V IN FILES", v -> com.prismv.storage.PrismStorageManager.openFolder(context));
 
         addPillSelectorSetting(context, sec, "Original Replacement Policy", "Safety behavior when replacing source videos",
                 new String[]{"Move to 30-Day Trash", "Keep Both Files"},
@@ -287,7 +287,7 @@ public class LayeredSettingsView extends LinearLayout {
 
         // Cache Quota & Clear Cache Button
         addActionButton(context, sec, "Thumbnail Cache Quota: 500 MB", "Reclaims temporary frame probe and preview thumbnails",
-                "🧹 CLEAR THUMBNAIL CACHE", v -> {
+                "CLEAR THUMBNAIL CACHE", v -> {
                     File cacheDir = getContext().getCacheDir();
                     long bytesFreed = clearFolder(cacheDir);
                     if (getContext() instanceof Activity) {
@@ -300,7 +300,7 @@ public class LayeredSettingsView extends LinearLayout {
     // 5. PRIVACY & SOCIAL SHARING PRESETS
     // ==========================================
     private void buildCategory5PrivacySecurity(Context context) {
-        CategorySection sec = createCategory(context, "🛡️ 5. PRIVACY & SOCIAL SHARING PRESETS", "privacy gps location serial imei exif security vault biometric");
+        CategorySection sec = createCategory(context, "5. PRIVACY & SOCIAL SHARING PRESETS", "privacy gps location serial imei exif security vault biometric");
 
         addSwitchSetting(context, sec, "Social Privacy Shield", "Auto-strips GPS coordinates & camera EXIF metadata on export",
                 prefs.isSocialPrivacyShield(), prefs::setSocialPrivacyShield);
@@ -319,7 +319,7 @@ public class LayeredSettingsView extends LinearLayout {
     // 6. HARDWARE, BATTERY & THERMAL GUARDS
     // ==========================================
     private void buildCategory6HardwareThermal(Context context) {
-        CategorySection sec = createCategory(context, "🔋 6. HARDWARE ALLOCATION & POWER", "battery thermal ram power cpu gpu profile fgs background allocation cores");
+        CategorySection sec = createCategory(context, "6. HARDWARE ALLOCATION & POWER", "battery thermal ram power cpu gpu profile fgs background allocation cores");
 
         long totalRamBytes = prefs.getTotalDeviceRamBytes(context);
         double totalRamGb = totalRamBytes / (1024.0 * 1024.0 * 1024.0);
@@ -411,7 +411,7 @@ public class LayeredSettingsView extends LinearLayout {
     // 7. AUTOMATION & BUTLER MODE
     // ==========================================
     private void buildCategory7AutomationButler(Context context) {
-        CategorySection sec = createCategory(context, "🤖 7. AUTOMATION & BUTLER MODE", "automation butler hot folder watcher overnight schedule");
+        CategorySection sec = createCategory(context, "7. AUTOMATION & BUTLER MODE", "automation butler hot folder watcher overnight schedule");
 
         addSwitchSetting(context, sec, "Overnight Charging Butler", "Runs scheduled batch maintenance while you sleep",
                 prefs.isOvernightButler(), prefs::setOvernightButler);
@@ -427,7 +427,7 @@ public class LayeredSettingsView extends LinearLayout {
     // 8. NOTIFICATIONS & HAPTIC FEEDBACK
     // ==========================================
     private void buildCategory8NotificationsHaptics(Context context) {
-        CategorySection sec = createCategory(context, "🔔 8. NOTIFICATIONS & HAPTIC FEEDBACK", "notifications live chip progress sound chime vibration haptic");
+        CategorySection sec = createCategory(context, "8. NOTIFICATIONS & HAPTIC FEEDBACK", "notifications live chip progress sound chime vibration haptic");
 
         addSwitchSetting(context, sec, "Live Status Bar Chip (Android 16+)", "Shows compact live progress pill in the system status bar",
                 prefs.isStatusBarChipEnabled(), prefs::setStatusBarChipEnabled);
@@ -440,7 +440,7 @@ public class LayeredSettingsView extends LinearLayout {
     // 9. DEVELOPER & EXPERIMENTAL LABS
     // ==========================================
     private void buildCategory9DeveloperLabs(Context context) {
-        CategorySection sec = createCategory(context, "🔬 9. DEVELOPER & EXPERIMENTAL LABS", "developer 16kb page simd sme2 kleidiai telemetry debug reset");
+        CategorySection sec = createCategory(context, "9. DEVELOPER & EXPERIMENTAL LABS", "developer 16kb page simd sme2 kleidiai telemetry debug reset");
 
         addPillSelectorSetting(context, sec, "Force SIMD Vector Path", "Selects low-level assembly SIMD dispatch kernels",
                 new String[]{"Auto Detect", "Force SME2", "Force NEON DotProd", "Scalar"},
@@ -452,12 +452,12 @@ public class LayeredSettingsView extends LinearLayout {
 
         addActionButton(context, sec, "Google Gemini AI Engine",
                 "Device Native Gemini & Neural Copilot Active • No API Key Required",
-                "🚀 LAUNCH DEVICE GEMINI", v -> {
+                "LAUNCH DEVICE GEMINI", v -> {
                     com.prismv.ai.GeminiCopilot.openDeviceGemini(getContext(), new com.prismv.ai.GeminiCopilot.VideoContext(), null);
                 });
 
         addActionButton(context, sec, "16 KB Page Alignment Diagnostic", "Mandated by Android 15/16 for modern ARM64 silicon",
-                "🔬 VERIFY 16 KB PAGE COMPLIANCE", v -> {
+                "VERIFY 16 KB PAGE COMPLIANCE", v -> {
                     long pageSize = 4096;
                     try {
                         pageSize = Os.sysconf(OsConstants._SC_PAGESIZE);
@@ -469,10 +469,10 @@ public class LayeredSettingsView extends LinearLayout {
                 });
 
         addActionButton(context, sec, "Export Diagnostic Telemetry Report", "Generates debug JSON containing silicon capability benchmarks",
-                "📊 EXPORT RUN TELEMETRY JSON", v -> exportTelemetryReport());
+                "EXPORT RUN TELEMETRY JSON", v -> exportTelemetryReport());
 
         addActionButton(context, sec, "Factory Reset All 52 Settings", "Restores all settings and personas to factory default state",
-                "⚠️ RESTORE FACTORY SETTINGS", v -> {
+                "RESTORE FACTORY SETTINGS", v -> {
                     CustomDarkDialog.showConfirmation(getContext(),
                             "Restore Factory Settings?",
                             "This will reset all 52 configuration parameters to their initial specification defaults.",
@@ -729,7 +729,7 @@ public class LayeredSettingsView extends LinearLayout {
                     "  \"powerProfile\": \"" + prefs.getPowerProfile() + "\",\n" +
                     "  \"ramBudgetMb\": " + prefs.getRamBudgetMb() + ",\n" +
                     "  \"privacyShield\": " + prefs.isSocialPrivacyShield() + ",\n" +
-                    "  \"invariantsVerified\": [1, 2, 3, 4, 5, 6, 7]\n" +
+                    "  \"invariantsVerified\": []\n" +
                     "}";
 
             try (FileOutputStream fos = new FileOutputStream(jsonFile)) {

@@ -232,12 +232,14 @@ public class PrismMediaProcessingService extends Service {
             final boolean autoDetectPerVideo = (targetWidth <= 0 || targetHeight <= 0);
 
             HardwareVideoCompressor.CompressionOptions options = new HardwareVideoCompressor.CompressionOptions(profile);
-            options.targetWidth = (targetWidth > 0) ? targetWidth : 1920;
-            options.targetHeight = (targetHeight > 0) ? targetHeight : 1080;
+            options.targetWidth = (targetWidth > 0) ? targetWidth : 0; // 0 = match native source video
+            options.targetHeight = (targetHeight > 0) ? targetHeight : 0; // 0 = match native source video
             options.targetBitrateKbps = targetBitrate;
-            options.targetFps = targetFps;
+            options.targetFps = (targetFps > 0) ? targetFps : 0; // 0 = match native source fps
             options.aspectRatio = aspectRatio;
             options.outputFormat = outputFormat;
+            options.audioChannel = "Original"; // Preserve source audio quality
+            options.audioBitrateKbps = 0; // Bit-exact passthrough
             options.ramBudgetMb = PrismPreferences.getAllocatedRamBudgetMb(this);
 
             int totalVideos = inputPaths.size();
@@ -261,23 +263,10 @@ public class PrismMediaProcessingService extends Service {
                 }
 
                 if (autoDetectPerVideo) {
-                    try {
-                        android.media.MediaMetadataRetriever mmr = new android.media.MediaMetadataRetriever();
-                        mmr.setDataSource(inPath);
-                        String wStr = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH);
-                        String hStr = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT);
-                        String rStr = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION);
-                        mmr.release();
-                        int w = (wStr != null) ? Integer.parseInt(wStr) : 1920;
-                        int h = (hStr != null) ? Integer.parseInt(hStr) : 1080;
-                        int r = (rStr != null) ? Integer.parseInt(rStr) : 0;
-                        if (r == 90 || r == 270) { int t = w; w = h; h = t; }
-                        options.targetWidth = w;
-                        options.targetHeight = h;
-                    } catch (Exception ignored) {
-                        options.targetWidth = 1920;
-                        options.targetHeight = 1080;
-                    }
+                    // Match native resolution & framerate per video
+                    options.targetWidth = 0;
+                    options.targetHeight = 0;
+                    options.targetFps = 0;
                 }
 
                 totalOriginalBytes += inFile.length();
@@ -448,8 +437,8 @@ public class PrismMediaProcessingService extends Service {
 
         String etaBadge = (etaString != null && !etaString.isEmpty() && !"Calculating...".equals(etaString)) ? " • ⏳ " + etaString : "";
         String title = (totalItems > 1) ?
-                String.format(Locale.US, "⚡ Batch [%d/%d]: %s (%d%%%s)", itemIdx, totalItems, itemName, percent, etaBadge) :
-                String.format(Locale.US, "⚡ Transcoding %s (%d%%%s)", itemName, percent, etaBadge);
+                String.format(Locale.US, "Batch [%d/%d]: %s (%d%%%s)", itemIdx, totalItems, itemName, percent, etaBadge) :
+                String.format(Locale.US, "Transcoding %s (%d%%%s)", itemName, percent, etaBadge);
 
         String contentText = String.format(Locale.US, "⏳ %s • %.1f FPS • %.1f°C • RAM: %.0f MB",
                 (etaString != null ? etaString : "Calculating..."), fps, tempC, ramMB);

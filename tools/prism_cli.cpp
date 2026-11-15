@@ -18,6 +18,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <chrono>
 
 namespace fs = std::filesystem;
@@ -25,53 +26,69 @@ using namespace prism;
 
 void print_banner() {
     std::cout << "===============================================================\n";
-    std::cout << " Prism-V: Next-Generation Android Video Compression System    \n";
-    std::cout << " Target Silicon: Snapdragon, Dimensity, Tensor (2026/2027+)   \n";
-    std::cout << " Production Reference Binary: libprism_core v1.0.0            \n";
+    std::cout << " Prism-V command-line interface\n";
+    std::cout << " Lossless bitstream, image, and container tooling              \n";
     std::cout << "===============================================================\n\n";
 }
 
 void print_usage() {
     std::cout << "Usage: prism <command> [options]\n\n"
               << "Commands:\n"
-              << "  compress   <input> <output> [--contract bbr|psc|lossy]\n"
+              << "  compress   <input> <output> [--contract bbr]\n"
               << "  decompress <input.pvloss> <output_file>\n"
               << "  vfs-mount  <file.pvloss>\n"
               << "  dedup      <input_video> <vault_dir> <manifest_out>\n"
               << "  restore    <manifest_in> <vault_dir> <output_video>\n"
               << "  route      <input_file> [--lossless|--lossy]\n"
               << "  remux      <input_mp4> <output_mp4>\n"
-              << "  audit      Run cross-silicon integer determinism & memory audit\n"
+              << "  audit      Check integer bounds, page size, tile budget, and CDF LUT\n"
               << "  help       Show this help message\n";
 }
 
 int cmd_audit() {
-    std::cout << "[AUDIT] Starting Prism-V Class A Determinism & Silicon Audit...\n";
+    std::cout << "[AUDIT] Local build and invariant checks\n";
+    bool all_ok = true;
 
-    // 1. Integer determinism proof check
-    int32_t dot = DetInt::dot_product(std::vector<int16_t>(512, 32767).data(),
-                                      std::vector<int8_t>(512, 127).data(), 512);
-    std::cout << "  [1/4] Class A Math Max Dot Product: " << dot
-              << " (Bound: < 2,147,483,647) -> "
-              << (dot < INT32_MAX ? "PASS (No Overflow)" : "FAIL") << "\n";
+    // 1. Integer determinism bound check
+    std::vector<int16_t> lhs(512, 32767);
+    std::vector<int8_t> rhs(512, 127);
+    int32_t dot = DetInt::dot_product(lhs.data(), rhs.data(), 512);
+    bool dot_ok = dot >= 0;
+    all_ok = all_ok && dot_ok;
+    std::cout << "  [1/4] Max dot product: " << dot
+              << " (INT32_MAX " << INT32_MAX << ") -> "
+              << (dot_ok ? "PASS" : "FAIL") << "\n";
 
-    // 2. Memory page alignment check
+    // 2. Page size check
     size_t ps = DetInt::query_system_page_size();
-    std::cout << "  [2/4] Mandated Page Size Alignment: " << ps << " bytes -> "
-              << (ps >= PAGE_SIZE_16KB ? "PASS (Android 15+ 16 KB Compliant)" : "WARNING") << "\n";
+    bool page_ok = ps >= PAGE_SIZE_16KB;
+    all_ok = all_ok && page_ok;
+    std::cout << "  [2/4] System page size: " << ps << " bytes -> "
+              << (page_ok ? "PASS" : "FAIL (below 16 KB)") << "\n";
 
-    // 3. Tile Pool RSS Footprint check
+    // 3. Configured tile ring budget (not measured RSS)
     size_t tile_mem = MAX_TILE_SLOTS * SpatialTile::PIXEL_COUNT * sizeof(int16_t);
-    std::cout << "  [3/4] 12-Slot Tile Ring Buffer RSS: " << (tile_mem / (1024 * 1024.0))
-              << " MB -> PASS (Strictly <= 64 MB Peak RSS Ceiling)\n";
+    bool tile_ok = tile_mem <= 64u * 1024u * 1024u;
+    all_ok = all_ok && tile_ok;
+    std::cout << "  [3/4] Configured tile ring: " << (tile_mem / (1024.0 * 1024.0))
+              << " MB (limit 64 MB) -> " << (tile_ok ? "PASS" : "FAIL") << "\n";
 
-    // 4. Static LUT Monotonicity check
-    bool lut_ok = (DetInt::CDF_SIGMOID_LUT[0] == 0 && DetInt::CDF_SIGMOID_LUT[511] == 32768);
-    std::cout << "  [4/4] Normative 512-Byte Sigmoid LUT: "
-              << (lut_ok ? "PASS (Monotonic [0..32768])" : "FAIL") << "\n";
+    // 4. CDF LUT monotonicity check
+    bool lut_ok = true;
+    for (size_t i = 1; i < DetInt::CDF_SIGMOID_LUT.size(); ++i) {
+        if (DetInt::CDF_SIGMOID_LUT[i] < DetInt::CDF_SIGMOID_LUT[i - 1]) {
+            lut_ok = false;
+            break;
+        }
+    }
+    lut_ok = lut_ok && DetInt::CDF_SIGMOID_LUT.front() == 0 &&
+             DetInt::CDF_SIGMOID_LUT.back() == 32768;
+    all_ok = all_ok && lut_ok;
+    std::cout << "  [4/4] Sigmoid CDF LUT monotonic on [0, 32768] -> "
+              << (lut_ok ? "PASS" : "FAIL") << "\n";
 
-    std::cout << "[AUDIT] System Status: 100% SPEC COMPLIANT WITH INVARIANTS 1-7.\n";
-    return 0;
+    std::cout << "[AUDIT] Result: " << (all_ok ? "all checks passed" : "one or more checks failed") << "\n";
+    return all_ok ? 0 : 1;
 }
 
 int cmd_compress(int argc, char* argv[]) {
@@ -94,11 +111,24 @@ int cmd_compress(int argc, char* argv[]) {
         std::cerr << "Error: Input file does not exist: " << input_path << "\n";
         return 1;
     }
+    if (!fs::is_regular_file(input_path)) {
+        std::cerr << "Error: Input path is not a regular file: " << input_path << "\n";
+        return 1;
+    }
+    if (contract_str != "bbr") {
+        std::cerr << "Error: Unsupported contract '" << contract_str
+                  << "'. This build implements only 'bbr' for file compression.\n";
+        return 1;
+    }
 
     std::cout << "[COMPRESS] Ingesting: " << input_path << "\n";
     std::cout << "[COMPRESS] Selected Contract: " << contract_str << "\n";
 
     std::ifstream in(input_path, std::ios::binary);
+    if (!in.is_open()) {
+        std::cerr << "Error: Failed to open input file: " << input_path << "\n";
+        return 1;
+    }
     std::vector<uint8_t> data((std::istreambuf_iterator<char>(in)),
                               std::istreambuf_iterator<char>());
     in.close();
@@ -106,36 +136,36 @@ int cmd_compress(int argc, char* argv[]) {
     Sha256Digest orig_sha = BbrEngine::compute_sha256(data.data(), data.size());
     std::cout << "  Original Size: " << data.size() << " bytes\n";
 
-    if (contract_str == "bbr") {
-        BbrEngine engine;
-        PvlossWriter writer;
+    BbrEngine engine;
+    PvlossWriter writer;
 
-        PvlossHeader hdr;
-        hdr.lossless_mode = LosslessContract::CONTRACT_A_BBR;
-        hdr.source_codec_id = SourceCodecId::CODEC_H264;
-        hdr.orig_file_size = data.size();
-        hdr.orig_sha256 = orig_sha;
+    PvlossHeader hdr;
+    hdr.lossless_mode = LosslessContract::CONTRACT_A_BBR;
+    hdr.source_codec_id = SourceCodecId::CODEC_H264;
+    hdr.orig_file_size = data.size();
+    hdr.orig_sha256 = orig_sha;
 
-        writer.open(output_path, hdr);
+    writer.open(output_path, hdr);
 
-        // Partition into 256 KB virtual chunks
-        size_t chunk_size = 256 * 1024;
-        for (size_t offset = 0; offset < data.size(); offset += chunk_size) {
-            size_t len = std::min(chunk_size, data.size() - offset);
-            BbrChunk bchunk = engine.compress(data.data() + offset, len, SourceCodecId::CODEC_H264);
-            writer.write_chunk(bchunk.rans_payload.data(),
-                               static_cast<uint32_t>(bchunk.rans_payload.size()),
-                               static_cast<uint32_t>(len),
-                               offset);
-        }
-        writer.close();
+    // Partition into 256 KB virtual chunks
+    constexpr size_t chunk_size = 256 * 1024;
+    for (size_t offset = 0; offset < data.size(); offset += chunk_size) {
+        size_t len = std::min(chunk_size, data.size() - offset);
+        BbrChunk bchunk = engine.compress(data.data() + offset, len, SourceCodecId::CODEC_H264);
+        writer.write_chunk(bchunk.rans_payload.data(),
+                           static_cast<uint32_t>(bchunk.rans_payload.size()),
+                           static_cast<uint32_t>(len),
+                           offset);
+    }
+    writer.close();
 
-        uintmax_t out_size = fs::file_size(output_path);
-        double ratio = (1.0 - (static_cast<double>(out_size) / data.size())) * 100.0;
-        std::cout << "  Output .pvloss: " << out_size << " bytes (Saved: "
-                  << std::fixed << std::setprecision(2) << ratio << "% bit-exact)\n";
+    uintmax_t out_size = fs::file_size(output_path);
+    if (data.empty()) {
+        std::cout << "  Output .pvloss: " << out_size << " bytes (empty input)\n";
     } else {
-        std::cout << "Contract " << contract_str << " executed via Prism Native Core.\n";
+        double ratio = (1.0 - (static_cast<double>(out_size) / static_cast<double>(data.size()))) * 100.0;
+        std::cout << "  Output .pvloss: " << out_size << " bytes (Saved: "
+                  << std::fixed << std::setprecision(2) << ratio << "%)\n";
     }
 
     return 0;
@@ -161,8 +191,11 @@ int cmd_decompress(int argc, char* argv[]) {
     }
 
     const auto& hdr = reader.header();
+    const char* mode_name = "Unknown";
+    if (hdr.lossless_mode == LosslessContract::CONTRACT_A_BBR) mode_name = "Contract A (L-BBR)";
+    else if (hdr.lossless_mode == LosslessContract::CONTRACT_C_PSC) mode_name = "Contract C (L-PSC)";
     std::cout << "[DECOMPRESS] Ingesting .pvloss container: " << in_path << "\n"
-              << "  Lossless Mode: " << (hdr.lossless_mode == LosslessContract::CONTRACT_A_BBR ? "Contract A (L-BBR)" : "Contract C (L-PSC)") << "\n"
+              << "  Lossless Mode: " << mode_name << "\n"
               << "  Source Codec: " << static_cast<int>(hdr.source_codec_id) << "\n"
               << "  Target Virtual Size: " << hdr.orig_file_size << " bytes\n"
               << "  Chunks: " << reader.index().size() << "\n";
@@ -175,7 +208,9 @@ int cmd_decompress(int argc, char* argv[]) {
 
     BbrEngine bbr;
     std::vector<uint8_t> all_restored;
-    all_restored.reserve(static_cast<size_t>(hdr.orig_file_size));
+    if (hdr.orig_file_size <= std::numeric_limits<size_t>::max()) {
+        all_restored.reserve(static_cast<size_t>(hdr.orig_file_size));
+    }
 
     for (const auto& entry : reader.index()) {
         std::vector<uint8_t> payload = reader.read_chunk_payload(entry);
@@ -189,14 +224,19 @@ int cmd_decompress(int argc, char* argv[]) {
 
     out.write(reinterpret_cast<const char*>(all_restored.data()), all_restored.size());
     out.close();
+    if (!out) {
+        std::cerr << "Error: Failed to write output file: " << out_path << "\n";
+        return 1;
+    }
 
     Sha256Digest restored_sha = BbrEngine::compute_sha256(all_restored.data(), all_restored.size());
-    bool bit_exact = (restored_sha == hdr.orig_sha256);
+    bool bit_exact = (restored_sha == hdr.orig_sha256) &&
+                     (all_restored.size() == hdr.orig_file_size);
 
     std::cout << "  Restored Size: " << all_restored.size() << " bytes\n"
               << "  Expected SHA-256: " << RabinCdcEngine::hash_to_hex(hdr.orig_sha256) << "\n"
               << "  Restored SHA-256: " << RabinCdcEngine::hash_to_hex(restored_sha) << "\n"
-              << "  Status: " << (bit_exact ? "100.000% BIT-EXACT SHA-256 MATCH (PASS)" : "FAIL") << "\n";
+              << "  SHA-256 match: " << (bit_exact ? "YES" : "NO") << "\n";
 
     return bit_exact ? 0 : 1;
 }
@@ -219,32 +259,35 @@ int cmd_vfs_mount(int argc, char* argv[]) {
     }
 
     uint64_t virtual_size = vfs.on_get_size();
-    std::cout << "[VFS] Mounted .pvloss successfully in Prism-VFS RAM bridge:\n"
+    std::cout << "[VFS] Mounted .pvloss in the Prism-VFS proxy:\n"
               << "  File: " << in_path << "\n"
               << "  Virtual MP4 Size: " << virtual_size << " bytes ("
               << (virtual_size / (1024.0 * 1024.0)) << " MB)\n"
-              << "  Running simulated random-access seek benchmark (100 reads of 64 KB)...\n";
+              << "  Running 100 random 64 KB reads...\n";
 
     std::vector<uint8_t> buf(64 * 1024);
     auto t_start = std::chrono::high_resolution_clock::now();
-    size_t iterations = 100;
+    constexpr size_t iterations = 100;
+    size_t completed_reads = 0;
     for (size_t i = 0; i < iterations; ++i) {
-        uint64_t offset = (i * 262147ULL) % (virtual_size > 65536 ? virtual_size - 65536 : 1);
-        vfs.on_read(offset, static_cast<int32_t>(buf.size()), buf.data());
+        uint64_t range = (virtual_size > buf.size()) ? (virtual_size - buf.size()) : 1;
+        uint64_t offset = (i * 262147ULL) % range;
+        if (vfs.on_read(offset, static_cast<uint32_t>(buf.size()), buf.data()) > 0) {
+            ++completed_reads;
+        }
     }
     auto t_end = std::chrono::high_resolution_clock::now();
     double total_us = std::chrono::duration<double, std::micro>(t_end - t_start).count();
-    double avg_latency_us = total_us / iterations;
+    double avg_latency_us = total_us / static_cast<double>(iterations);
 
     auto stats = vfs.get_stats();
     uint64_t total_ops = stats.cache_hits + stats.cache_misses;
     double hit_pct = (total_ops > 0) ? (static_cast<double>(stats.cache_hits) / total_ops * 100.0) : 0.0;
-    std::cout << "  Average Read/Seek Latency: " << std::fixed << std::setprecision(2)
-              << avg_latency_us << " µs ("
-              << (avg_latency_us < 1200.0 ? "PASS < 1.2 ms target" : "WARNING") << ")\n"
+    std::cout << "  Completed Reads: " << completed_reads << "/" << iterations << "\n"
+              << "  Mean read/seek latency: " << std::fixed << std::setprecision(2)
+              << avg_latency_us << " us\n"
               << "  Cache Hits: " << stats.cache_hits << ", Misses: " << stats.cache_misses
-              << " (Hit Ratio: " << std::fixed << std::setprecision(1) << hit_pct << "%)\n"
-              << "  Peak RSS Overhead: < 32 MB RSS (Zero temporary disk usage)\n";
+              << " (Hit Ratio: " << std::fixed << std::setprecision(1) << hit_pct << "%)\n";
 
     vfs.unmount();
     return 0;
@@ -259,8 +302,8 @@ int cmd_dedup(int argc, char* argv[]) {
     std::string vault_dir = argv[3];
     std::string manifest_out = argv[4];
 
-    if (!fs::exists(in_path)) {
-        std::cerr << "Error: File not found: " << in_path << "\n";
+    if (!fs::exists(in_path) || !fs::is_regular_file(in_path)) {
+        std::cerr << "Error: Input file not found: " << in_path << "\n";
         return 1;
     }
 
@@ -314,12 +357,22 @@ int cmd_restore(int argc, char* argv[]) {
         std::cerr << "Error: Manifest not found: " << manifest_in << "\n";
         return 1;
     }
+    if (!fs::exists(vault_dir) || !fs::is_directory(vault_dir)) {
+        std::cerr << "Error: Vault directory not found: " << vault_dir << "\n";
+        return 1;
+    }
 
-    std::ifstream in(manifest_in, std::ios::binary);
+    std::ifstream in(manifest_in, std::ios::binary | std::ios::ate);
     if (!in.is_open()) {
         std::cerr << "Error: Failed to open manifest: " << manifest_in << "\n";
         return 1;
     }
+    std::streamoff manifest_size = in.tellg();
+    if (manifest_size < 51) {
+        std::cerr << "Error: Manifest is too small to be valid.\n";
+        return 1;
+    }
+    in.seekg(0, std::ios::beg);
 
     char magic[8] = {0};
     in.read(magic, 7);
@@ -333,11 +386,28 @@ int cmd_restore(int argc, char* argv[]) {
     in.read(reinterpret_cast<char*>(manifest.original_file_sha256.data()), 32);
     uint32_t count = 0;
     in.read(reinterpret_cast<char*>(&count), sizeof(uint32_t));
+    if (!in) {
+        std::cerr << "Error: Manifest header is truncated.\n";
+        return 1;
+    }
+
+    constexpr uint64_t kManifestHeader = 7 + 8 + 32 + 4;
+    constexpr uint64_t kChunkRecord = 8 + 4 + 32;
+    uint64_t available = static_cast<uint64_t>(manifest_size) - kManifestHeader;
+    if (static_cast<uint64_t>(count) > available / kChunkRecord) {
+        std::cerr << "Error: Manifest chunk count exceeds the file size.\n";
+        return 1;
+    }
+
     manifest.chunks.resize(count);
     for (uint32_t i = 0; i < count; ++i) {
         in.read(reinterpret_cast<char*>(&manifest.chunks[i].offset), sizeof(uint64_t));
         in.read(reinterpret_cast<char*>(&manifest.chunks[i].length), sizeof(uint32_t));
         in.read(reinterpret_cast<char*>(manifest.chunks[i].hash.data()), 32);
+    }
+    if (!in) {
+        std::cerr << "Error: Manifest chunk records are truncated.\n";
+        return 1;
     }
     in.close();
 
@@ -353,13 +423,14 @@ int cmd_restore(int argc, char* argv[]) {
     out_file.close();
 
     Sha256Digest restored_sha = BbrEngine::compute_sha256(restored_data.data(), restored_data.size());
-    bool bit_exact = (restored_sha == manifest.original_file_sha256);
+    bool bit_exact = (restored_sha == manifest.original_file_sha256) &&
+                     (restored_data.size() == manifest.original_file_size);
 
-    std::cout << "[RESTORE] Gallery Chunk Reconstruction Complete:\n"
+    std::cout << "[RESTORE] Chunk reconstruction complete:\n"
               << "  Restored File: " << out_video << " (" << restored_data.size() << " bytes)\n"
               << "  Expected SHA-256: " << RabinCdcEngine::hash_to_hex(manifest.original_file_sha256) << "\n"
               << "  Restored SHA-256: " << RabinCdcEngine::hash_to_hex(restored_sha) << "\n"
-              << "  Status: " << (bit_exact ? "100.000% BIT-EXACT SHA-256 MATCH (PASS)" : "FAIL") << "\n";
+              << "  SHA-256 match: " << (bit_exact ? "YES" : "NO") << "\n";
 
     return bit_exact ? 0 : 1;
 }
@@ -436,35 +507,50 @@ int cmd_remux(int argc, char* argv[]) {
 }
 
 int main(int argc, char* argv[]) {
-    print_banner();
+    if (!std::cout) return 1;
 
-    if (argc < 2) {
+    std::string cmd = (argc > 1) ? argv[1] : "";
+    if (cmd == "help" || cmd == "--help" || cmd == "-h" || cmd.empty()) {
+        print_banner();
         print_usage();
-        return 0;
+        return cmd.empty() ? 1 : 0;
     }
 
-    std::string cmd = argv[1];
-    if (cmd == "audit") {
-        return cmd_audit();
-    } else if (cmd == "compress") {
-        return cmd_compress(argc, argv);
-    } else if (cmd == "decompress") {
-        return cmd_decompress(argc, argv);
-    } else if (cmd == "vfs-mount") {
-        return cmd_vfs_mount(argc, argv);
-    } else if (cmd == "dedup") {
-        return cmd_dedup(argc, argv);
-    } else if (cmd == "restore") {
-        return cmd_restore(argc, argv);
-    } else if (cmd == "route") {
-        return cmd_route(argc, argv);
-    } else if (cmd == "remux") {
-        return cmd_remux(argc, argv);
-    } else if (cmd == "help" || cmd == "--help" || cmd == "-h") {
-        print_usage();
-        return 0;
-    } else {
-        std::cout << "Command '" << cmd << "' recognized. Executing...\n";
-        return cmd_audit();
+    try {
+        if (cmd == "audit") {
+            print_banner();
+            return cmd_audit();
+        } else if (cmd == "compress") {
+            print_banner();
+            return cmd_compress(argc, argv);
+        } else if (cmd == "decompress") {
+            print_banner();
+            return cmd_decompress(argc, argv);
+        } else if (cmd == "vfs-mount") {
+            print_banner();
+            return cmd_vfs_mount(argc, argv);
+        } else if (cmd == "dedup") {
+            print_banner();
+            return cmd_dedup(argc, argv);
+        } else if (cmd == "restore") {
+            print_banner();
+            return cmd_restore(argc, argv);
+        } else if (cmd == "route") {
+            print_banner();
+            return cmd_route(argc, argv);
+        } else if (cmd == "remux") {
+            print_banner();
+            return cmd_remux(argc, argv);
+        }
+    } catch (const std::exception& ex) {
+        std::cerr << "Error: " << ex.what() << "\n";
+        return 1;
+    } catch (...) {
+        std::cerr << "Error: unknown failure\n";
+        return 1;
     }
+
+    std::cerr << "Error: Unknown command '" << cmd << "'.\n\n";
+    print_usage();
+    return 1;
 }

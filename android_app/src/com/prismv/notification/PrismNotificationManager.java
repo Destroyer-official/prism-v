@@ -26,12 +26,12 @@ import java.util.Locale;
  * 1. Ongoing Transcoding Progress Notifications (IMPORTANCE_DEFAULT, silent, unminimized in Samsung One UI).
  *    - Real-time progress bar.
  *    - Transcode FPS, Device Temperature (°C), RSS RAM.
- *    - 1-Tap [❌ Cancel] Action.
+ *    - 1-Tap [Cancel] Action.
  * 2. High-Priority Completion Notifications (IMPORTANCE_HIGH, Heads-Up alert, Vibration & Sound).
  *    - Exact Storage Reclaimed (+MB, -%).
  *    - Exact Public Save Location (Movies/Prism-V/).
- *    - Action 1: [⚖️ Compare in Duo] -> Launches Duo Lockstep Player directly.
- *    - Action 2: [🎬 Play in Gallery] -> Launches Samsung Gallery / Video Player.
+ *    - Action 1: [Compare in Duo] -> Launches Duo Lockstep Player directly.
+ *    - Action 2: [Play in Gallery] -> Launches Samsung Gallery / Video Player.
  *    - Action 3: [↗ Share Video] -> Shares via secure PrismFileProvider.
  */
 public final class PrismNotificationManager {
@@ -67,7 +67,7 @@ public final class PrismNotificationManager {
             // Channel 1: Ongoing Transcode Progress (Prominent but silent on updates)
             NotificationChannel progChan = new NotificationChannel(
                     CHANNEL_PROGRESS,
-                    "⚡ Active Transcoding Progress",
+                    "Active Transcoding Progress",
                     NotificationManager.IMPORTANCE_DEFAULT
             );
             progChan.setDescription("Shows live hardware compression progress, FPS, and battery temperature.");
@@ -83,7 +83,7 @@ public final class PrismNotificationManager {
             // Channel 2: High-Priority Completion Alerts (Sound, Vibration, Heads-up)
             NotificationChannel compChan = new NotificationChannel(
                     CHANNEL_COMPLETE,
-                    "🎉 Compression Completed Alerts",
+                    "Compression Completed Alerts",
                     NotificationManager.IMPORTANCE_HIGH
             );
             compChan.setDescription("High-priority alert with sound and vibration when video processing completes.");
@@ -140,8 +140,8 @@ public final class PrismNotificationManager {
         );
 
         String title = (totalCount > 1) ?
-                String.format(Locale.US, "⚡ Prism-V • Batch [%d/%d]: %s", currentIndex, totalCount, videoName) :
-                String.format(Locale.US, "⚡ Prism-V • Transcoding %s", videoName);
+                String.format(Locale.US, "Prism-V • Batch [%d/%d]: %s", currentIndex, totalCount, videoName) :
+                String.format(Locale.US, "Prism-V • Transcoding %s", videoName);
 
         String contentText = String.format(Locale.US, "%d%% • %.1f FPS • %.1f°C • RAM: %.1f MB",
                 percent, fps, tempC, ramMB);
@@ -215,7 +215,7 @@ public final class PrismNotificationManager {
         double compMB = compSize / (1024.0 * 1024.0);
         double savedMB = Math.max(0, origMB - compMB);
 
-        String title = String.format(Locale.US, "🎉 Video Optimized: %s", videoName);
+        String title = String.format(Locale.US, "Video Optimized: %s", videoName);
         String body = String.format(Locale.US, "Reclaimed +%.1f MB (Saved -%.1f%%) • Saved to Movies/Prism-V/", savedMB, percentSaved);
 
         Notification.Builder builder;
@@ -243,7 +243,7 @@ public final class PrismNotificationManager {
 
         File compFile = restoredMp4Path != null ? new File(restoredMp4Path) : null;
         String bigText = String.format(Locale.US,
-                "• Reclaimed: +%.1f MB (Saved -%.1f%%)\n• Output: %.1f MB (VMAF > 95 Gold)\n• Location: Movies/Prism-V/%s",
+                "• Reclaimed: +%.1f MB (Saved -%.1f%%)\n• Output: %.1f MB (quality not measured)\n• Location: Movies/Prism-V/%s",
                 savedMB, percentSaved, compMB, compFile != null ? compFile.getName() : videoName);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
@@ -251,12 +251,12 @@ public final class PrismNotificationManager {
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) {
-            // Action 1: [⚖️ Compare in Duo]
+            // Action 1: [Compare in Duo]
             Notification.Action duoAction = new Notification.Action.Builder(
-                    android.R.drawable.ic_media_play, "⚖️ Duo Compare", duoPending).build();
+                    android.R.drawable.ic_media_play, "Duo Compare", duoPending).build();
             builder.addAction(duoAction);
 
-            // Action 2: [🎬 Play in Gallery]
+            // Action 2: [Play in Gallery]
             if (compFile != null && compFile.exists()) {
                 Intent playIntent = new Intent(Intent.ACTION_VIEW);
                 Uri fileUri = PrismFileProvider.getUriForFile(context, PrismFileProvider.AUTHORITY, compFile);
@@ -267,7 +267,7 @@ public final class PrismNotificationManager {
                         Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0
                 );
                 Notification.Action playAction = new Notification.Action.Builder(
-                        android.R.drawable.ic_menu_slideshow, "🎬 Play in Gallery", playPending).build();
+                        android.R.drawable.ic_menu_slideshow, "Play in Gallery", playPending).build();
                 builder.addAction(playAction);
 
                 // Action 3: [↗ Share]
@@ -323,7 +323,7 @@ public final class PrismNotificationManager {
         double outMB = Math.max(0, origMB - savedMB);
         double pct = (origMB > 0) ? (savedMB / origMB) * 100.0 : 0.0;
 
-        String title = String.format(Locale.US, "🎉 Batch Complete: %d Videos Optimized!", videoCount);
+        String title = String.format(Locale.US, "Batch Complete: %d Videos Optimized!", videoCount);
         String body = String.format(Locale.US, "Reclaimed +%.1f MB (Saved -%.1f%%) • Saved to Movies/Prism-V/", savedMB, pct);
 
         Notification.Builder builder;
@@ -359,7 +359,7 @@ public final class PrismNotificationManager {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) {
             Notification.Action duoAction = new Notification.Action.Builder(
-                    android.R.drawable.ic_media_play, "⚖️ Duo Compare", duoPending).build();
+                    android.R.drawable.ic_media_play, "Duo Compare", duoPending).build();
             builder.addAction(duoAction);
 
             if (lastCompressedPath != null) {
@@ -374,7 +374,7 @@ public final class PrismNotificationManager {
                             Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0
                     );
                     Notification.Action playAction = new Notification.Action.Builder(
-                            android.R.drawable.ic_menu_slideshow, "🎬 Play Latest", playPending).build();
+                            android.R.drawable.ic_menu_slideshow, "Play Latest", playPending).build();
                     builder.addAction(playAction);
                 }
             }

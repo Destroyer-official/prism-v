@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-release:
-    name: Build Native & Standalone Binaries
+    name: Build Native CLI
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -18,10 +18,13 @@ jobs:
 
       - name: Build Native CLI
         run: |
-          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=20
           cmake --build build --config Release
 
-      - name: Upload Release Binaries
+      - name: Run Tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Upload Release Binary
         uses: actions/upload-artifact@v4
         with:
           name: prism-cli-linux-x86_64

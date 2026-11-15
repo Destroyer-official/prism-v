@@ -62,10 +62,14 @@ public final class CompletionDossierDialog {
 
         Dialog dialog = new Dialog(context);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setCancelable(true);
+        dialog.setCanceledOnTouchOutside(false);
         if (dialog.getWindow() != null) {
             dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         }
+        DialogTracker.register(dialog);
+        dialog.setOnDismissListener(unused -> DialogTracker.unregister(dialog));
 
         ScrollView scroll = new ScrollView(context);
         LinearLayout root = new LinearLayout(context);
@@ -80,7 +84,7 @@ public final class CompletionDossierDialog {
         rowPill.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView tvBadge = new TextView(context);
-        tvBadge.setText("🎉 COMPRESSION COMPLETE");
+        tvBadge.setText("COMPRESSION COMPLETE");
         tvBadge.setTextColor(ThemeStyles.COLOR_EMERALD_NEON);
         tvBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         tvBadge.setTypeface(Typeface.DEFAULT_BOLD);
@@ -138,7 +142,7 @@ public final class CompletionDossierDialog {
         rowSizes.addView(tvOrig);
 
         TextView tvArrow = new TextView(context);
-        tvArrow.setText("   ➔   ");
+        tvArrow.setText("     ");
         tvArrow.setTextColor(ThemeStyles.COLOR_CYAN_TEXT);
         tvArrow.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         rowSizes.addView(tvArrow);
@@ -166,9 +170,9 @@ public final class CompletionDossierDialog {
         tvDetails.setPadding(0, 0, 0, dp(context, 14));
         root.addView(tvDetails);
 
-        // 5. Hero Action: [⚖️ COMPARE IN DUO PLAYER]
+        // 5. Hero Action: [COMPARE IN DUO PLAYER]
         Button btnDuo = new Button(context);
-        btnDuo.setText("⚖️  COMPARE SIDE-BY-SIDE IN DUO PLAYER");
+        btnDuo.setText(" COMPARE SIDE-BY-SIDE IN DUO PLAYER");
         btnDuo.setTextColor(Color.WHITE);
         btnDuo.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         btnDuo.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -184,13 +188,13 @@ public final class CompletionDossierDialog {
         });
         root.addView(btnDuo);
 
-        // 6. Secondary Action Row: [📁 VIEW LIBRARY] [▶ PLAY] [📤 SHARE]
+        // 6. Secondary Action Row: [VIEW LIBRARY] [▶ PLAY] [SHARE]
         LinearLayout rowSecBtns = new LinearLayout(context);
         rowSecBtns.setOrientation(LinearLayout.HORIZONTAL);
         rowSecBtns.setWeightSum(3);
 
         Button btnLib = new Button(context);
-        btnLib.setText("📁 LIBRARY");
+        btnLib.setText("LIBRARY");
         btnLib.setTextColor(Color.WHITE);
         btnLib.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         btnLib.setBackground(createRoundedDrawable(Color.parseColor("#121B2D"), ThemeStyles.COLOR_CYAN_PRIMARY, dp(context, 1), dp(context, 12)));
@@ -228,7 +232,7 @@ public final class CompletionDossierDialog {
         rowSecBtns.addView(btnPlay);
 
         Button btnShare = new Button(context);
-        btnShare.setText("📤 SHARE");
+        btnShare.setText("SHARE");
         btnShare.setTextColor(Color.WHITE);
         btnShare.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         btnShare.setBackground(createRoundedDrawable(Color.parseColor("#121B2D"), ThemeStyles.COLOR_BORDER_SUBTLE, dp(context, 1), dp(context, 12)));

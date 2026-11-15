@@ -1,6 +1,8 @@
 #include "prism/remux.hpp"
 #include <cstring>
 #include <algorithm>
+#include <cstdint>
+#include <stdexcept>
 
 namespace prism {
 
@@ -57,6 +59,18 @@ Sha256Digest RemuxEngine::compute_payload_hash(const std::vector<RemuxPacket>& p
 
 std::vector<uint8_t> RemuxEngine::remux_to_clean_isobmff(const RemuxPackage& pkg) {
     std::vector<uint8_t> out;
+
+    uint64_t payload_bytes = 0;
+    for (const auto& pkt : pkg.packets) {
+        if (pkt.payload.size() > UINT32_MAX) {
+            throw std::length_error("Remux packet payload exceeds the 32-bit box size field");
+        }
+        payload_bytes += 8 + pkt.payload.size();
+    }
+    // Leave headroom for ftyp/moov before the 32-bit mdat size is finalized.
+    if (payload_bytes > UINT32_MAX - 65536) {
+        throw std::length_error("Remux output exceeds the 32-bit ISOBMFF box size field");
+    }
 
     // 1. Write ftyp box
     size_t ftyp_start = out.size();
@@ -242,32 +256,41 @@ std::vector<uint8_t> RemuxEngine::remux_to_clean_isobmff(const RemuxPackage& pkg
 }
 
 bool RemuxEngine::parse_and_verify_isobmff(const uint8_t* mp4_data, size_t size, RemuxPackage& out_pkg) {
-    if (size < 16) return false;
+    if (mp4_data == nullptr || size < 16) return false;
 
     out_pkg.packets.clear();
+    out_pkg.metadata = IsoMp4Engine::MetadataLedger{};
     out_pkg.video_packet_count = 0;
     out_pkg.audio_packet_count = 0;
 
     size_t offset = 0;
     while (offset + 8 <= size) {
         uint32_t box_size = read_u32_be(mp4_data + offset);
-        if (box_size < 8 || offset + box_size > size) break;
+        if (box_size == 0) {
+            size_t remaining = size - offset;
+            if (remaining > UINT32_MAX) return false;
+            box_size = static_cast<uint32_t>(remaining); // extends to EOF
+        }
+
+        if (box_size < 8 || box_size > size - offset) return false;
 
         uint32_t box_type = read_u32_be(mp4_data + offset + 4);
 
         if (box_type == 0x6D6F6F76) { // 'moov'
             size_t moov_end = offset + box_size;
             size_t inner = offset + 8;
-            while (inner + 8 <= moov_end) {
+            while (moov_end - inner >= 8) {
                 uint32_t inner_size = read_u32_be(mp4_data + inner);
                 uint32_t inner_type = read_u32_be(mp4_data + inner + 4);
+                if (inner_size < 8 || inner_size > moov_end - inner) return false;
 
                 if (inner_type == 0x7472616B) { // 'trak'
                     size_t trak_end = inner + inner_size;
                     size_t sub = inner + 8;
-                    while (sub + 8 <= trak_end) {
+                    while (trak_end - sub >= 8) {
                         uint32_t sub_size = read_u32_be(mp4_data + sub);
                         uint32_t sub_type = read_u32_be(mp4_data + sub + 4);
+                        if (sub_size < 8 || sub_size > trak_end - sub) return false;
 
                         if (sub_type == 0x746B6864 && sub_size >= 84) {
                             const uint8_t* mat_ptr = mp4_data + sub + 48;
@@ -300,23 +323,21 @@ bool RemuxEngine::parse_and_verify_isobmff(const uint8_t* mp4_data, size_t size,
                             out_pkg.metadata.pasp.v_spacing = read_u32_be(mp4_data + sub + 12);
                         }
 
-                        if (sub_size < 8) break;
                         sub += sub_size;
                     }
                 }
-                if (inner_size < 8) break;
                 inner += inner_size;
             }
         } else if (box_type == 0x6D646174) { // 'mdat'
             size_t mdat_end = offset + box_size;
             size_t s_offset = offset + 8;
 
-            while (s_offset + 8 <= mdat_end) {
+            while (mdat_end - s_offset >= 8) {
                 uint32_t marker = read_u32_be(mp4_data + s_offset);
                 uint32_t sample_len = read_u32_be(mp4_data + s_offset + 4);
                 s_offset += 8;
 
-                if (s_offset + sample_len > mdat_end) break;
+                if (sample_len > mdat_end - s_offset) return false;
 
                 RemuxPacket pkt;
                 if (marker == 0x564E414C) { // 'VNAL'
@@ -333,10 +354,13 @@ bool RemuxEngine::parse_and_verify_isobmff(const uint8_t* mp4_data, size_t size,
 
                 s_offset += sample_len;
             }
+            if (s_offset != mdat_end) return false;
         }
 
         offset += box_size;
     }
+
+    if (offset != size) return false;
 
     out_pkg.payload_hash = compute_payload_hash(out_pkg.packets);
     return true;

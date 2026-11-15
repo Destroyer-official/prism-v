@@ -1,9 +1,18 @@
 #include "prism/container_pvloss.hpp"
 #include <cstring>
+#include <limits>
 #include <stdexcept>
 #include <algorithm>
 
 namespace prism {
+
+namespace {
+
+constexpr uint64_t kPvlossHeaderSize = 0x48;
+constexpr uint64_t kPidxEntrySize = 8 + 8 + 4 + 4 + 4;
+constexpr uint64_t kChunkFrameSize = sizeof(uint32_t) * 2;
+
+} // namespace
 
 // Standard CRC32C (Castagnoli 0x82F63B78) table
 static const std::array<uint32_t, 256> CRC32C_TABLE = []() {
@@ -36,9 +45,9 @@ void PvlossWriter::open(const std::string& filepath, const PvlossHeader& header)
     index_entries_.clear();
 
     // Reserve space for fixed 0x48 (72-byte) header
-    std::vector<uint8_t> blank_header(0x48, 0);
+    std::vector<uint8_t> blank_header(kPvlossHeaderSize, 0);
     out_.write(reinterpret_cast<const char*>(blank_header.data()), blank_header.size());
-    current_file_offset_ = 0x48;
+    current_file_offset_ = kPvlossHeaderSize;
     is_open_ = true;
 }
 
@@ -47,6 +56,12 @@ void PvlossWriter::write_chunk(const uint8_t* compressed_data,
                               uint32_t uncomp_size,
                               uint64_t virtual_offset) {
     if (!is_open_) throw std::runtime_error("PvlossWriter is not open");
+    if (compressed_data == nullptr && comp_size > 0) {
+        throw std::invalid_argument("PvlossWriter received a null chunk payload");
+    }
+    if (current_file_offset_ > std::numeric_limits<uint64_t>::max() - kChunkFrameSize - comp_size) {
+        throw std::length_error("Pvloss container exceeds addressable file size");
+    }
 
     PidxEntry entry;
     entry.virtual_byte_offset = virtual_offset;
@@ -59,8 +74,9 @@ void PvlossWriter::write_chunk(const uint8_t* compressed_data,
     out_.write(reinterpret_cast<const char*>(&comp_size), sizeof(uint32_t));
     out_.write(reinterpret_cast<const char*>(&entry.crc32c), sizeof(uint32_t));
     out_.write(reinterpret_cast<const char*>(compressed_data), comp_size);
+    if (!out_) throw std::runtime_error("Failed to write .pvloss chunk payload");
 
-    current_file_offset_ += sizeof(uint32_t) * 2 + comp_size;
+    current_file_offset_ += kChunkFrameSize + comp_size;
     index_entries_.push_back(entry);
 }
 
@@ -68,6 +84,11 @@ void PvlossWriter::close() {
     if (!is_open_) return;
 
     // Write pidx table at current offset
+    if (index_entries_.size() > std::numeric_limits<uint32_t>::max()) {
+        out_.close();
+        is_open_ = false;
+        throw std::length_error("Pvloss index exceeds the 32-bit entry count");
+    }
     uint64_t pidx_offset = current_file_offset_;
     uint32_t num_entries = static_cast<uint32_t>(index_entries_.size());
     out_.write(reinterpret_cast<const char*>(&num_entries), sizeof(uint32_t));
@@ -84,7 +105,7 @@ void PvlossWriter::close() {
     header_.index_offset = pidx_offset;
     out_.seekp(0, std::ios::beg);
 
-    std::vector<uint8_t> hbuf(0x48, 0);
+    std::vector<uint8_t> hbuf(kPvlossHeaderSize, 0);
     std::memcpy(hbuf.data() + 0x00, header_.magic.data(), 8);
     hbuf[0x08] = static_cast<uint8_t>(header_.lossless_mode);
     hbuf[0x09] = static_cast<uint8_t>(header_.source_codec_id);
@@ -100,6 +121,8 @@ void PvlossWriter::close() {
     std::memcpy(hbuf.data() + 0x40, &header_.index_offset, sizeof(uint64_t));
 
     out_.write(reinterpret_cast<const char*>(hbuf.data()), hbuf.size());
+    out_.flush();
+    if (!out_) throw std::runtime_error("Failed to finalize .pvloss header");
     out_.close();
     is_open_ = false;
 }
@@ -110,16 +133,28 @@ PvlossReader::~PvlossReader() {
 
 bool PvlossReader::open(const std::string& filepath) {
     close();
-    in_.open(filepath, std::ios::binary);
+    in_.open(filepath, std::ios::binary | std::ios::ate);
     if (!in_.is_open()) return false;
 
+    std::streamoff end_pos = in_.tellg();
+    if (end_pos < 0) {
+        in_.close();
+        return false;
+    }
+    file_size_ = static_cast<uint64_t>(end_pos);
+
     // Read fixed 0x48 header
-    std::vector<uint8_t> hbuf(0x48);
+    std::vector<uint8_t> hbuf(kPvlossHeaderSize);
+    in_.seekg(0, std::ios::beg);
     in_.read(reinterpret_cast<char*>(hbuf.data()), hbuf.size());
-    if (in_.gcount() < 0x48) return false;
+    if (in_.gcount() < static_cast<std::streamsize>(hbuf.size())) {
+        in_.close();
+        return false;
+    }
 
     // Verify magic
     if (std::memcmp(hbuf.data(), PVLOSS_MAGIC.data(), 8) != 0) {
+        in_.close();
         return false;
     }
 
@@ -139,18 +174,47 @@ bool PvlossReader::open(const std::string& filepath) {
     header_.chroma_format = geom[5];
     std::memcpy(&header_.index_offset, hbuf.data() + 0x40, sizeof(uint64_t));
 
+    if (header_.index_offset < kPvlossHeaderSize ||
+        header_.index_offset + sizeof(uint32_t) > file_size_) {
+        in_.close();
+        return false;
+    }
+
     // Read pidx table
-    in_.seekg(header_.index_offset, std::ios::beg);
+    in_.seekg(static_cast<std::streamoff>(header_.index_offset), std::ios::beg);
     uint32_t num_entries = 0;
     in_.read(reinterpret_cast<char*>(&num_entries), sizeof(uint32_t));
+    if (in_.gcount() != sizeof(uint32_t)) {
+        in_.close();
+        return false;
+    }
+
+    uint64_t available = file_size_ - header_.index_offset - sizeof(uint32_t);
+    if (static_cast<uint64_t>(num_entries) > available / kPidxEntrySize) {
+        in_.close();
+        return false;
+    }
 
     index_entries_.resize(num_entries);
     for (uint32_t i = 0; i < num_entries; ++i) {
-        in_.read(reinterpret_cast<char*>(&index_entries_[i].virtual_byte_offset), sizeof(uint64_t));
-        in_.read(reinterpret_cast<char*>(&index_entries_[i].file_byte_offset), sizeof(uint64_t));
-        in_.read(reinterpret_cast<char*>(&index_entries_[i].compressed_size), sizeof(uint32_t));
-        in_.read(reinterpret_cast<char*>(&index_entries_[i].uncompressed_size), sizeof(uint32_t));
-        in_.read(reinterpret_cast<char*>(&index_entries_[i].crc32c), sizeof(uint32_t));
+        auto& entry = index_entries_[i];
+        in_.read(reinterpret_cast<char*>(&entry.virtual_byte_offset), sizeof(uint64_t));
+        in_.read(reinterpret_cast<char*>(&entry.file_byte_offset), sizeof(uint64_t));
+        in_.read(reinterpret_cast<char*>(&entry.compressed_size), sizeof(uint32_t));
+        in_.read(reinterpret_cast<char*>(&entry.uncompressed_size), sizeof(uint32_t));
+        in_.read(reinterpret_cast<char*>(&entry.crc32c), sizeof(uint32_t));
+        if (!in_) {
+            index_entries_.clear();
+            in_.close();
+            return false;
+        }
+        if (entry.file_byte_offset > file_size_ ||
+            kChunkFrameSize > file_size_ - entry.file_byte_offset ||
+            entry.compressed_size > file_size_ - entry.file_byte_offset - kChunkFrameSize) {
+            index_entries_.clear();
+            in_.close();
+            return false;
+        }
     }
 
     is_open_ = true;
@@ -162,6 +226,8 @@ void PvlossReader::close() {
         in_.close();
         is_open_ = false;
     }
+    index_entries_.clear();
+    file_size_ = 0;
 }
 
 const PidxEntry* PvlossReader::find_entry_for_offset(uint64_t virtual_offset) const {
@@ -183,10 +249,24 @@ const PidxEntry* PvlossReader::find_entry_for_offset(uint64_t virtual_offset) co
 std::vector<uint8_t> PvlossReader::read_chunk_payload(const PidxEntry& entry) {
     if (!is_open_) return {};
 
-    // Seek to chunk offset + 8 bytes (skipping framing uint32 size and crc)
-    in_.seekg(entry.file_byte_offset + sizeof(uint32_t) * 2, std::ios::beg);
+    if (entry.file_byte_offset > file_size_ ||
+        kChunkFrameSize > file_size_ - entry.file_byte_offset ||
+        entry.compressed_size > file_size_ - entry.file_byte_offset - kChunkFrameSize) {
+        throw std::runtime_error("Pvloss chunk entry points outside the container");
+    }
+
+    // Seek past the framing size and CRC words to the payload.
+    in_.clear();
+    in_.seekg(static_cast<std::streamoff>(entry.file_byte_offset + kChunkFrameSize), std::ios::beg);
+    if (!in_) throw std::runtime_error("Failed to seek to .pvloss chunk payload");
+
     std::vector<uint8_t> payload(entry.compressed_size);
-    in_.read(reinterpret_cast<char*>(payload.data()), entry.compressed_size);
+    if (entry.compressed_size > 0) {
+        in_.read(reinterpret_cast<char*>(payload.data()), entry.compressed_size);
+        if (in_.gcount() != static_cast<std::streamsize>(entry.compressed_size)) {
+            throw std::runtime_error("Truncated chunk payload in .pvloss container");
+        }
+    }
 
     // Verify CRC32C integrity
     uint32_t actual_crc = PvlossWriter::compute_crc32c(payload.data(), payload.size());

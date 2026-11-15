@@ -1,28 +1,35 @@
 # Security Policy
 
-## 🔒 Commitment to Privacy & Zero-Telemetry
+## Scope
 
-Prism-V is engineered from the ground up on an uncompromising privacy doctrine:
-- **100% On-Device Execution**: Every frame transcode, neural entropy estimation, audio normalization, and container remuxing operation runs locally on silicon.
-- **Zero Telemetry**: Prism-V contains **no tracking libraries, no analytics SDKs, and no external phoning-home beacons**.
-- **Cryptographic File Transactions**: File modifications utilize atomic stage-verify-commit workflows with rollback protection to prevent corruption or data loss.
+Prism-V is a local media toolchain. The native core and the standalone Android
+app do not include analytics or advertising SDKs. The Kotlin preview module
+declares standard AndroidX and Media3 dependencies; review
+`android/build.gradle.kts` before shipping it.
 
----
+File replacement in the native core uses a stage/verify/commit sequence with a
+rollback path (`core/src/transaction.cpp`). This protects against verification
+failure and ordinary write errors. It has not been tested against power loss or
+a process kill during the swap.
 
-## 🛡️ Supported Versions
+## Supported versions
 
-| Version | Supported          | Security Maintenance Status |
-| ------- | ------------------ | --------------------------- |
-| 1.0.x   | :white_check_mark: | Active Support              |
-| < 1.0   | :x:                | Deprecated                  |
+The repository does not currently publish versioned releases. Security fixes
+are applied to the `main` branch.
 
----
+## Reporting a vulnerability
 
-## 🚨 Reporting a Vulnerability
+Report suspected vulnerabilities privately through GitHub Security Advisories
+for this repository, or by contacting the maintainer listed on the repository
+page. Do not open a public issue for an unfixed vulnerability.
 
-If you discover a security vulnerability or memory leak in Prism-V, please report it responsibly:
+Include:
 
-1. **Do not create a public GitHub issue**.
-2. Email security inquiries directly to the project maintainers via the contact listed on GitHub or open a private GitHub Security Advisory.
-3. Include detailed steps to reproduce, sample media files (if safe to share), architecture details (ARM64 vs x86_64), and expected vs actual behavior.
-4. We acknowledge receipt within 48 hours and provide patches within standard disclosure timelines.
+- Steps to reproduce
+- The affected component (`core/`, `android_app/`, `android/`, or `rust/`)
+- Host platform and compiler, or Android version and device
+- Expected and actual behavior
+- A minimal input file if the issue depends on one
+
+There is no guaranteed response time. Confirmed issues will be fixed on
+`main` and noted in the commit message.

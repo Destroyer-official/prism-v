@@ -19,7 +19,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup CMake & Ninja
+      - name: Setup Ninja
         uses: ashutoshvarma/setup-ninja@master
         with:
           version: 1.11.1
@@ -33,11 +33,11 @@ jobs:
       - name: Build All Targets
         run: cmake --build build --config Release
 
-      - name: Run Test Invariant Suite
+      - name: Run Native Tests
         run: ctest --test-dir build --output-on-failure -C Release
 
-  android-verify:
-    name: Android Lint & Gradle Verification
+  java-app-compile:
+    name: Compile Standalone Java App
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -49,9 +49,17 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Validate Gradle Wrapper
-        uses: gradle/actions/wrapper-validation@v3
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Check Java & Kotlin Compilation
+      - name: Install Android Platform
+        run: sdkmanager "platforms;android-35"
+
+      - name: Compile Java Sources
         run: |
-          echo "Verifying Android build configuration..."
+          mkdir -p build/java-check
+          find android_app/src -name '*.java' > build/java-sources.txt
+          javac --release 17 -encoding UTF-8 \
+            -cp "$ANDROID_SDK_ROOT/platforms/android-35/android.jar" \
+            -d build/java-check \
+            @build/java-sources.txt

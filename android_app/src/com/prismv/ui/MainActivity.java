@@ -53,10 +53,10 @@ import java.util.Locale;
  * Implements the Full Material 3 Expressive UI Specification:
  * - Top Bar with 4-Tier User Personas (Basic, Creator, Matrix/Dev, Butler)
  * - 4-Tab Navigation Hub:
- *     1. 🎛️ STUDIO & COMPRESSION (Visual resolution cards, aspect pills, format pills)
- *     2. ⚖️ DUO COMPARISON PLAYER (Synchronized dual comparison engine)
- *     3. ✂️ TOOLBOX & UTILITIES (Trimmer, Privacy shield, Fit-to-Size, Dedup)
- *     4. 🔬 DEV MATRIX (CABAC histogram, rANS throughput, 7-Invariant suite)
+ *     1.STUDIO & COMPRESSION (Visual resolution cards, aspect pills, format pills)
+ *     2.DUO COMPARISON PLAYER (Synchronized dual comparison engine)
+ *     3.TOOLBOX & UTILITIES (Trimmer, Privacy shield, Fit-to-Size, Dedup)
+ *     4. DEV MATRIX (CABAC histogram, rANS throughput, 7-Invariant suite)
  * - 0.3s Pre-Flight Simulation Engine Matrix
  * - Live compression telemetry, Hero Dossier Card, video sharing & playback.
  */
@@ -68,7 +68,7 @@ public class MainActivity extends Activity {
     private ThermalGearShifter gearShifter;
 
     // Top Navigation Tabs
-    private int currentTab = 0; // 0 = Studio, 1 = Duo, 2 = Toolbox, 3 = Matrix, 4 = Settings
+    private int currentTab = -1; // 0 = Studio, 1 = Duo, 2 = Toolbox, 3 = Matrix, 4 = Settings
     private FrameLayout rootContainer;
     private LinearLayout mainLayout;
     private FrameLayout contentArea;
@@ -85,6 +85,15 @@ public class MainActivity extends Activity {
     private LayeredSettingsView layeredSettingsView;
     private PrismPreferences prefs;
 
+    // Navigation & Back Stack
+    private final java.util.Stack<Integer> tabHistory = new java.util.Stack<>();
+    private long lastBackHandledTimestamp = 0;
+    private long lastBackToStudioTimestamp = 0;
+    private long lastBackPressTime = 0;
+    private boolean isMoControlsExpanded = false;
+    private View moContentLayout = null;
+    private TextView tvMoToggleBtn = null;
+
 
 
     // Video Source
@@ -94,6 +103,7 @@ public class MainActivity extends Activity {
     private TextView chipFps;
     private TextView chipDuration;
     private TextView chipSize;
+    private android.widget.ImageView ivVideoThumbnail; // thumbnail preview after video pick
     private String selectedVideoName = null;
     private Uri selectedVideoUri = null;
     private String selectedVideoPath = null;
@@ -123,6 +133,7 @@ public class MainActivity extends Activity {
         public String colorStandard = "BT.709 SDR";
         public String codec = "H.264 / AVC";
         public String aspectRatio = "16:9 Landscape";
+        public android.graphics.Bitmap thumbnail = null;
     }
 
     private final List<BatchVideoItem> batchVideoList = new ArrayList<>();
@@ -154,6 +165,7 @@ public class MainActivity extends Activity {
     private TextView[] tvMethodSpeed;
     private int selectedPreFlightMethod = 0; // 0 = Smart Compression (Keep Res & FPS) by default
     private TextView tvPreFlightBatchBadge;
+    private Button btnPickFile; // class-level ref so we can update its label after video is chosen
 
     // Real-Time Process & Hardware Resource Monitor Deck UI
     private LinearLayout cardProcessVisual;
@@ -254,6 +266,7 @@ public class MainActivity extends Activity {
         }
 
         mainHandler = new Handler(Looper.getMainLooper());
+        setupBackInvokedDispatcher();
         fgsReceiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
@@ -288,7 +301,7 @@ public class MainActivity extends Activity {
                                 heroDossierCard.setVisibility(View.VISIBLE);
                                 tvHeroSavedPercent.setText(String.format(Locale.US, "-%.1f%%", pctSaved));
                                 tvSavedSize.setText(String.format(Locale.US, "+%.1f MB", freedMB));
-                                tvFidelityBadge.setText("📁 Saved to Movies/Prism-V/" + currentRestoredFile.getName());
+                                tvFidelityBadge.setText("Saved to Movies/Prism-V/" + currentRestoredFile.getName());
                                 if (tvBeforeSize != null) tvBeforeSize.setText(String.format(Locale.US, "%.1f MB", origMB));
                                 if (tvAfterSize != null) tvAfterSize.setText(String.format(Locale.US, "%.1f MB", outMB));
                                 tvDossierDetails.setText(String.format(Locale.US, "Output: %s (%.1f MB) • VMAF > 95 Gold • Public Storage", currentRestoredFile.getName(), outMB));
@@ -340,8 +353,11 @@ public class MainActivity extends Activity {
                             studioScrollView.post(() -> studioScrollView.smoothScrollTo(0, heroDossierCard.getTop()));
                         }
                         ThemeStyles.performSuccessHaptic(btnStartCompress);
-                        PrismHud.showSuccess(MainActivity.this, String.format(Locale.US, "🎉 Reclaimed +%.1f MB! Saved to Movies/Prism-V/", freedMB));
+                        PrismHud.showSuccess(MainActivity.this, String.format(Locale.US, "Reclaimed +%.1f MB! Saved to Movies/Prism-V/", freedMB));
                         appendLog("[FGS] Compression completed. File indexed in Samsung Gallery.");
+
+                        // Reset VIDEO SOURCE card to empty state
+                        resetSourceState();
                     } else {
                         updateProcessVisualProgress(percent, String.format(Locale.US, "[%d/%d] %s • %.1f FPS • %.1f°C", idx, total, itemName != null ? itemName : "", fps, tempC), broadcastEta);
                     }
@@ -379,7 +395,7 @@ public class MainActivity extends Activity {
         navTabs.setBackgroundColor(ThemeStyles.COLOR_BG_TOPBAR);
         navTabs.setPadding(dp(10), statusBarHeight + dp(6), dp(10), dp(8));
 
-        String[] tabTitles = new String[]{"🎛️ Studio", "⚖️ Duo", "✂️ Tools", "🔬 Matrix", "⚙️ Settings"};
+        String[] tabTitles = new String[]{"Studio", "Duo", "Tools", "Matrix", "Settings"};
         navTabButtons = new TextView[5];
 
         for (int i = 0; i < 5; i++) {
@@ -411,6 +427,7 @@ public class MainActivity extends Activity {
 
         // Tab 0: Studio ScrollView
         studioScrollView = buildStudioTab();
+        studioScrollView.setVisibility(View.GONE);
         contentArea.addView(studioScrollView);
 
         // Tab 1: Duo Comparison Player ScrollView
@@ -437,7 +454,8 @@ public class MainActivity extends Activity {
         setContentView(rootContainer);
 
         // Set default tab styling
-        switchTab(0);
+        currentTab = -1;
+        switchTab(0, false);
 
         updateStatusDisplays();
         appendLog("Prism-V Control Center Ready. Hardware: " + Build.MODEL);
@@ -661,6 +679,24 @@ public class MainActivity extends Activity {
     }
 
     private void switchTab(int tabIndex) {
+        switchTab(tabIndex, true);
+    }
+
+    private void switchTab(int tabIndex, boolean addToHistory) {
+        Log.d(TAG, "[TAB] switchTab: " + currentTab + " -> " + tabIndex + " (addToHistory=" + addToHistory + ", stack=" + tabHistory + ")");
+        if (currentTab == tabIndex) {
+            return;
+        }
+
+        if (addToHistory && currentTab >= 0) {
+            tabHistory.removeElement(Integer.valueOf(tabIndex));
+            tabHistory.removeElement(Integer.valueOf(currentTab));
+            tabHistory.push(currentTab);
+            if (tabHistory.size() > 20) {
+                tabHistory.remove(0);
+            }
+        }
+
         currentTab = tabIndex;
         for (int i = 0; i < navTabButtons.length; i++) {
             boolean active = (i == tabIndex);
@@ -695,11 +731,7 @@ public class MainActivity extends Activity {
                         );
                     }
                 } else if (duoPlayerView.getCompressedUri() == null) {
-                    // Auto-load latest valid compression record into Duo Player
-                    CompressionHistoryManager.Record latest = CompressionHistoryManager.get(this).getLatestRecord();
-                    if (latest != null && latest.isCompressedFileExisting()) {
-                        duoPlayerView.loadFromHistoryRecord(latest);
-                    }
+                    duoPlayerView.loadDefaultSampleFiles();
                 }
             }
         }
@@ -792,11 +824,12 @@ public class MainActivity extends Activity {
         }
 
         // 3. Rebuild all tab viewports preserving currentTab
-        int targetTab = currentTab;
+        int targetTab = currentTab >= 0 ? currentTab : 0;
         if (contentArea != null) {
             contentArea.removeAllViews();
 
             studioScrollView = buildStudioTab();
+            studioScrollView.setVisibility(View.GONE);
             contentArea.addView(studioScrollView);
 
             duoScrollView = buildDuoTab();
@@ -815,7 +848,8 @@ public class MainActivity extends Activity {
             settingsScrollView.setVisibility(View.GONE);
             contentArea.addView(settingsScrollView);
 
-            switchTab(targetTab);
+            currentTab = -1;
+            switchTab(targetTab, false);
         }
 
 
@@ -865,7 +899,7 @@ public class MainActivity extends Activity {
 
         // Hardware Silicon Acceleration Badge (Real HW status, zero gimmick)
         TextView tvHwBadge = new TextView(this);
-        tvHwBadge.setText("⚡ HW ASIC ACTIVE");
+        tvHwBadge.setText("HW ASIC ACTIVE");
         tvHwBadge.setTextColor(ThemeStyles.COLOR_EMERALD_NEON);
         tvHwBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
         tvHwBadge.setTypeface(Typeface.MONOSPACE);
@@ -878,7 +912,7 @@ public class MainActivity extends Activity {
 
         // Copilot Quick Button
         TextView tvCopilotBtn = new TextView(this);
-        tvCopilotBtn.setText("✦ AI COPILOT");
+        tvCopilotBtn.setText("AI COPILOT");
         tvCopilotBtn.setTextColor(Color.WHITE);
         tvCopilotBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
         tvCopilotBtn.setTypeface(Typeface.DEFAULT_BOLD);
@@ -961,7 +995,7 @@ public class MainActivity extends Activity {
         btnShareVideo.setOnClickListener(v -> shareVideo(currentRestoredFile));
         rowHeroActions.addView(btnShareVideo);
 
-        btnOpenInDuo = createSmallActionButton("⚖️ DUO A/B", "#7C3AED", "#A855F7");
+        btnOpenInDuo = createSmallActionButton("DUO A/B", "#7C3AED", "#A855F7");
         btnOpenInDuo.setOnClickListener(v -> openLatestInDuoPlayer());
         rowHeroActions.addView(btnOpenInDuo);
         heroDossierCard.addView(rowHeroActions);
@@ -973,7 +1007,7 @@ public class MainActivity extends Activity {
         rha2p.setMargins(0, dp(6), 0, 0);
         rowHeroActions2.setLayoutParams(rha2p);
 
-        Button btnGalleryPlay = createSmallActionButton("🎬 PLAY IN GALLERY", "#0284C7", "#38BDF8");
+        Button btnGalleryPlay = createSmallActionButton("PLAY IN GALLERY", "#0284C7", "#38BDF8");
         btnGalleryPlay.setOnClickListener(v -> {
             if (currentRestoredFile != null && currentRestoredFile.exists()) {
                 PrismStorageManager.openVideoInGallery(this, currentRestoredFile);
@@ -983,7 +1017,7 @@ public class MainActivity extends Activity {
         });
         rowHeroActions2.addView(btnGalleryPlay);
 
-        Button btnOpenFolder = createSmallActionButton("📂 OPEN PRISM-V FOLDER", "#0E7490", "#06B6D4");
+        Button btnOpenFolder = createSmallActionButton("OPEN PRISM-V FOLDER", "#0E7490", "#06B6D4");
         btnOpenFolder.setOnClickListener(v -> PrismStorageManager.openFolder(this));
         rowHeroActions2.addView(btnOpenFolder);
 
@@ -1031,11 +1065,31 @@ public class MainActivity extends Activity {
         rowVideoChips.addView(chipSize);
         cardStudio.addView(rowVideoChips);
 
-        Button btnPickFile = createGradientButton("📁 CHOOSE VIDEO(S) FROM DEVICE", "#0284C7", "#06B6D4");
+        // Video thumbnail preview (shown after video is selected)
+        ivVideoThumbnail = new android.widget.ImageView(this);
+        ivVideoThumbnail.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+        ivVideoThumbnail.setBackground(createRoundedDrawable(Color.parseColor("#0F172A"), Color.parseColor("#334155"), dp(1), dp(10)));
+        LinearLayout.LayoutParams thumbLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(140));
+        thumbLp.setMargins(0, 0, 0, dp(8));
+        ivVideoThumbnail.setLayoutParams(thumbLp);
+        ivVideoThumbnail.setVisibility(View.GONE);
+        cardStudio.addView(ivVideoThumbnail);
+
+        btnPickFile = new Button(this);
+        LinearLayout.LayoutParams pickFileLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(48));
+        pickFileLp.setMargins(0, dp(8), 0, dp(4));
+        btnPickFile.setLayoutParams(pickFileLp);
+        btnPickFile.setText("CHOOSE VIDEO(S) FROM DEVICE");
+        btnPickFile.setTextColor(Color.WHITE);
+        btnPickFile.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        btnPickFile.setTypeface(Typeface.DEFAULT_BOLD);
+        btnPickFile.setBackground(createRoundedDrawable(Color.parseColor("#0284C7"), Color.parseColor("#06B6D4"), dp(1), dp(14)));
         btnPickFile.setOnClickListener(v -> launchFilePicker());
         cardStudio.addView(btnPickFile);
 
-        Button btnOpenLibrary = createOutlinedButton("📂 COMPRESSED VIDEOS VAULT & HISTORY");
+        Button btnOpenLibrary = createOutlinedButton("COMPRESSED VIDEOS VAULT & HISTORY");
         btnOpenLibrary.setTextColor(ThemeStyles.COLOR_CYAN_TEXT);
         btnOpenLibrary.setOnClickListener(v -> CompressedVideosView.showLibraryDialog(this, record -> {
             if (record.isCompressedFileExisting()) {
@@ -1052,14 +1106,15 @@ public class MainActivity extends Activity {
         cardVideoDna.setVisibility(View.GONE);
         cardStudio.addView(cardVideoDna);
 
-        // Pre-Flight Method Matrix (Hidden to maintain clean studio focus)
+        // Compression Profiles Matrix — ALWAYS VISIBLE, sits between VIDEO SOURCE card and CTA
         cardPreFlightMatrix = buildPreFlightMatrixCard();
-        cardPreFlightMatrix.setVisibility(View.GONE);
+        cardPreFlightMatrix.setVisibility(View.VISIBLE);
+        root.addView(cardPreFlightMatrix);
 
         // ==========================================
         // PRIMARY CTA BUTTON & REAL-TIME PROCESS VISUALIZATION
         // ==========================================
-        btnStartCompress = createBigCtaButton("⚡  CHOOSE VIDEO(S) TO OPTIMIZE");
+        btnStartCompress = createBigCtaButton(" CHOOSE VIDEO(S) TO OPTIMIZE");
         btnStartCompress.setOnClickListener(v -> {
             if (selectedVideoUri == null && batchVideoList.isEmpty()) {
                 launchFilePicker();
@@ -1088,7 +1143,7 @@ public class MainActivity extends Activity {
         moHeader.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView tvMoTitle = new TextView(this);
-        tvMoTitle.setText("⚙️ ADVANCED MANUAL CONTROLS");
+        tvMoTitle.setText("ADVANCED MANUAL CONTROLS");
         tvMoTitle.setTextColor(Color.WHITE);
         tvMoTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         tvMoTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -1118,11 +1173,13 @@ public class MainActivity extends Activity {
         moContent.setPadding(0, dp(8), 0, 0);
         moContent.setVisibility(View.GONE);
 
-        final boolean[] isMoExpanded = new boolean[]{false};
+        moContentLayout = moContent;
+        tvMoToggleBtn = tvMoToggle;
+        isMoControlsExpanded = false;
         View.OnClickListener toggleMoListener = v -> {
-            isMoExpanded[0] = !isMoExpanded[0];
-            moContent.setVisibility(isMoExpanded[0] ? View.VISIBLE : View.GONE);
-            tvMoToggle.setText(isMoExpanded[0] ? "▴ HIDE CONTROLS" : "▾ SHOW CONTROLS");
+            isMoControlsExpanded = !isMoControlsExpanded;
+            moContent.setVisibility(isMoControlsExpanded ? View.VISIBLE : View.GONE);
+            tvMoToggle.setText(isMoControlsExpanded ? "▴ HIDE CONTROLS" : "▾ SHOW CONTROLS");
         };
         tvMoToggle.setOnClickListener(toggleMoListener);
         moHeader.setOnClickListener(toggleMoListener);
@@ -1142,8 +1199,8 @@ public class MainActivity extends Activity {
         cardPresets.addView(tvGridSub);
 
         // 2-Column Grid of 6 sleek resolution cards
-        String[] resTitles = new String[]{"1080p FHD", "720p HD", "480p SD", "320p QVGA", "176p 3G", "Source Size"};
-        String[] resSubtitles = new String[]{"1920x1080 • 3.8 Mbps", "1280x720 • 3.0 Mbps", "854x480 • 1.2 Mbps", "320x240 • 600 kbps", "176x144 • 300 kbps", "Original Dimensions"};
+        String[] resTitles = new String[]{"1080p FHD", "720p HD", "480p SD", "320p QVGA", "176p 3G", "Source Size (Default)"};
+        String[] resSubtitles = new String[]{"1920x1080 • 3.8 Mbps", "1280x720 • 3.0 Mbps", "854x480 • 1.2 Mbps", "320x240 • 600 kbps", "176x144 • 300 kbps", "Keep Native Res & Audio"};
         final int[][] resDimensions = new int[][]{
                 {1920, 1080, 30, 3800},
                 {1280, 720, 29, 3000},
@@ -1196,24 +1253,37 @@ public class MainActivity extends Activity {
                     int kbps = resDimensions[idx][3];
 
                     if (w > 0 && h > 0) {
+                        // Swap to match source orientation
                         if (sourceHeight > sourceWidth && w > h) {
                             int swap = w; w = h; h = swap;
                         }
-                        customTargetWidth = w;
-                        customTargetHeight = h;
-                        tvCustomResolution.setText(w + " X " + h);
+                        // Preserve source aspect ratio within the chosen preset box
+                        if (sourceWidth > 0 && sourceHeight > 0) {
+                            float srcAspect = (float) sourceWidth / (float) sourceHeight;
+                            int derivedH = Math.round(w / srcAspect);
+                            int derivedW = Math.round(h * srcAspect);
+                            if (derivedH <= h) {
+                                h = derivedH;   // width is limiting axis
+                            } else {
+                                w = derivedW;   // height is limiting axis
+                            }
+                        }
+                        customTargetWidth = (w / 2) * 2;   // even-align
+                        customTargetHeight = (h / 2) * 2;
+                        tvCustomResolution.setText(customTargetWidth + " X " + customTargetHeight);
                     } else {
+                        // "Source Size" — use native dims
                         customTargetWidth = sourceWidth;
                         customTargetHeight = sourceHeight;
                         tvCustomResolution.setText(sourceWidth + " X " + sourceHeight);
                     }
-                    customTargetFps = fps;
+                    customTargetFps = (idx == 5 && sourceFps > 0) ? sourceFps : fps;
                     customTargetBitrateKbps = kbps;
-                    tvCustomFrameRate.setText(String.valueOf(fps));
+                    tvCustomFrameRate.setText(String.valueOf(customTargetFps));
                     tvCustomBitRate.setText(String.valueOf(kbps));
                     activeQualityPreset = resTitles[idx];
                     updateCtaButtonText();
-                    appendLog("Selected Preset: " + resTitles[idx]);
+                    appendLog("Selected Preset: " + resTitles[idx] + " → " + customTargetWidth + "x" + customTargetHeight);
                 });
 
                 resGridCards[idx] = card;
@@ -1337,9 +1407,9 @@ public class MainActivity extends Activity {
         // ==========================================
         LinearLayout cardModes = createSectionCard(moContent, "OPTIMIZATION ENGINE PROFILE", "#A855F7");
 
-        cardModeHarch = createModeCard("🚀 H-ARCH (Hybrid Neural)", "★ Recommended: 70%+ Storage Savings • Crystal-Clear Quality", "H-ARCH", true);
-        cardModeElow = createModeCard("⚡ E-LOW (Eco Speed)", "Fast Battery Saver: 55%+ Savings • Instant HW Base", "E-LOW", false);
-        cardModeBbr = createModeCard("🔒 L-BBR (Lossless Bit-Exact)", "Preservation: 100% Cryptographic SHA-256 Parity", "L-BBR", false);
+        cardModeHarch = createModeCard("H-ARCH (Hybrid Neural)", "Recommended: 70%+ Storage Savings • Crystal-Clear Quality", "H-ARCH", true);
+        cardModeElow = createModeCard("E-LOW (Eco Speed)", "Fast Battery Saver: 55%+ Savings • Instant HW Base", "E-LOW", false);
+        cardModeBbr = createModeCard("L-BBR (Lossless Bit-Exact)", "Preservation: 100% Cryptographic SHA-256 Parity", "L-BBR", false);
 
         cardModeHarch.setOnClickListener(v -> selectMode("H-ARCH"));
         cardModeElow.setOnClickListener(v -> selectMode("E-LOW"));
@@ -1482,7 +1552,7 @@ public class MainActivity extends Activity {
         root.setPadding(dp(16), dp(16), dp(16), dp(36));
 
         TextView tvTitle = new TextView(this);
-        tvTitle.setText("✂️ PRISM-V ADVANCED TOOLBOX");
+        tvTitle.setText("PRISM-V ADVANCED TOOLBOX");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -1496,7 +1566,7 @@ public class MainActivity extends Activity {
         root.addView(tvSub);
 
         addToolboxCard(root,
-                "✂️ IN-APP VIDEO TRIMMER",
+                "IN-APP VIDEO TRIMMER",
                 "Cut unwanted intro/outro frames to reduce size before compression.",
                 "LOSSLESS CUT", "#059669", "#10B981", "OPEN VIDEO TRIMMER",
                 v -> ToolboxDialogs.showTrimmerDialog(this, selectedVideoUri, sourceDurationSec, (s, e, cutOut) -> {
@@ -1504,13 +1574,13 @@ public class MainActivity extends Activity {
                 }));
 
         addToolboxCard(root,
-                "🛡️ PRIVACY & METADATA SHIELD",
+                "PRIVACY & METADATA SHIELD",
                 "Strip GPS coordinates, camera serial numbers, and device tags.",
                 "EXIF CLEANER", "#2563EB", "#38BDF8", "CONFIGURE PRIVACY SHIELD",
                 v -> ToolboxDialogs.showPrivacySanitizerDialog(this, selectedVideoUri));
 
         addToolboxCard(root,
-                "🎯 EXACT FIT-TO-SIZE CALCULATOR",
+                "EXACT FIT-TO-SIZE CALCULATOR",
                 "Target strict upload limits: WhatsApp (16MB/64MB), Discord (25MB), Gmail.",
                 "SMART BITRATE", "#D97706", "#F59E0B", "CALCULATE TARGET MB",
                 v -> ToolboxDialogs.showFitToSizeDialog(this, sourceDurationSec, (bitrate, mb) -> {
@@ -1518,19 +1588,19 @@ public class MainActivity extends Activity {
                 }));
 
         addToolboxCard(root,
-                "📡 GALLERY DEDUPLICATION RADAR",
+                "GALLERY DEDUPLICATION RADAR",
                 "Rabin Content-Defined Chunk scanner finds burst shots and duplicate takes.",
                 "RABIN CHUNKS", "#7C3AED", "#A855F7", "SCAN & RECLAIM STORAGE",
                 v -> ToolboxDialogs.showDeduplicationRadar(this));
 
         addToolboxCard(root,
-                "✦ GOOGLE GEMINI 1.5 FLASH AI COPILOT",
+                "GOOGLE GEMINI 1.5 FLASH AI COPILOT",
                 "100% Real Google Gemini AI assistant with live chat, video DNA context and 1-tap preset application.",
                 "GEMINI FLASH", "#4338CA", "#A5B4FC", "LAUNCH GEMINI AI",
                 v -> openGeminiCopilot());
 
         addToolboxCard(root,
-                "📁 SAVED VIDEOS EXPLORER & VAULT",
+                "SAVED VIDEOS EXPLORER & VAULT",
                 "Browse all compressed videos on chip in Movies/Prism-V, play in gallery, share, or compare in Duo.",
                 "PUBLIC VAULT", "#0E7490", "#06B6D4", "EXPLORE SAVED VIDEOS",
                 v -> CompressedVideosView.showLibraryDialog(this, record -> {
@@ -1543,97 +1613,97 @@ public class MainActivity extends Activity {
                 }));
 
         addToolboxCard(root,
-                "🎬 VIDEO CLIP MERGER & STITCHER",
+                "VIDEO CLIP MERGER & STITCHER",
                 "Combine multiple takes with Media3 auto-normalization and 50ms audio crossfades.",
                 "MEDIA3 COMPOSITION", "#0284C7", "#38BDF8", "OPEN CLIP MERGER",
                 v -> ToolboxDialogs.showMergerDialog(this, batchVideoList));
 
         addToolboxCard(root,
-                "📸 FRAME GRABBER & GIF/WEBP STUDIO",
+                "FRAME GRABBER & GIF/WEBP STUDIO",
                 "Extract Ultra HDR JPEG/AVIF still photos and generate animated WebP/GIF stickers.",
                 "FRAME & GIF", "#D97706", "#F59E0B", "LAUNCH STUDIO",
                 v -> ToolboxDialogs.showFrameAndGifStudioDialog(this, selectedVideoUri));
 
         addToolboxCard(root,
-                "👁️ PRIVACY BLUR & REDACTION BRUSH",
+                "PRIVACY BLUR & REDACTION BRUSH",
                 "Motion-tracked GPU bounding boxes to blur bystander faces, plates and text.",
                 "GPU REDACTION", "#DC2626", "#F87171", "OPEN REDACTION BRUSH",
                 v -> ToolboxDialogs.showPrivacyBlurDialog(this, selectedVideoUri));
 
         addToolboxCard(root,
-                "🎨 HDR-TO-SDR & ACES TONE-MAPPER",
+                "HDR-TO-SDR & ACES TONE-MAPPER",
                 "Convert 10-bit HDR10/Dolby Vision to vibrant 8-bit SDR without gray wash-out.",
                 "ACES FILMIC", "#7C3AED", "#C084FC", "APPLY TONE-MAPPER",
                 v -> ToolboxDialogs.showColorToneMapDialog(this, selectedVideoUri));
 
         addToolboxCard(root,
-                "🌐 HOT-FOLDER & LOCAL PC/NAS TRANSFER",
+                "HOT-FOLDER & LOCAL PC/NAS TRANSFER",
                 "Zero-cloud Wi-Fi HTTP/WebDAV/SMB server & folder auto-optimization watcher.",
                 "LOCAL NAS", "#0D9488", "#2DD4BF", "OPEN TRANSFER & WATCHER",
                 v -> ToolboxDialogs.showLanNasTransferDialog(this));
 
         addToolboxCard(root,
-                "📋 ACTIVE BATCH QUEUE MANAGER",
+                "ACTIVE BATCH QUEUE MANAGER",
                 "Multi-video compression queue with per-item pause/skip and dynamic disk guard.",
                 "BATCH QUEUE", "#2563EB", "#60A5FA", "VIEW ACTIVE QUEUE",
                 v -> ToolboxDialogs.showBatchQueueDialog(this, batchVideoList));
 
         addToolboxCard(root,
-                "🗑️ 30-DAY TRASH & BIOMETRIC VAULT",
+                "30-DAY TRASH & BIOMETRIC VAULT",
                 "Safe 30-day original recovery net + biometric encrypted private storage.",
                 "SAFE VAULT", "#4F46E5", "#818CF8", "OPEN VAULT & TRASH",
                 v -> ToolboxDialogs.showTrashVaultDialog(this));
 
         addToolboxCard(root,
-                "🎙️ EBU R128 AUDIO ENHANCER & BOOSTER",
+                "EBU R128 AUDIO ENHANCER & BOOSTER",
                 "Standardized broadcast loudness (-14 LUFS), +6dB anti-clip volume boost, and vocal presence lift.",
                 "EBU R128", "#059669", "#10B981", "ENHANCE AUDIO",
                 v -> ToolboxDialogs.showAudioEnhancerDialog(this, selectedVideoUri));
 
         addToolboxCard(root,
-                "⚡ ON-CHIP SILICON CAPABILITY BENCHMARK",
+                "ON-CHIP SILICON CAPABILITY BENCHMARK",
                 "5-second hardware diagnostic verifying hardware video codecs, vector SIMD, and awarded Silicon Tier.",
                 "BENCHMARK", "#4F46E5", "#818CF8", "RUN BENCHMARK",
                 v -> ToolboxDialogs.showSiliconBenchmarkDialog(this));
 
         addToolboxCard(root,
-                "🎛️ CUSTOM WORKFLOW RECIPES & PRESETS",
+                "CUSTOM WORKFLOW RECIPES & PRESETS",
                 "Save, load, and QR-share encoding presets for WhatsApp, Discord, YouTube, and Archival.",
                 "RECIPES", "#0284C7", "#38BDF8", "MANAGE PRESETS",
                 v -> ToolboxDialogs.showPresetManagerDialog(this));
 
         addToolboxCard(root,
-                "📊 SYSTEM HARDWARE & THERMAL TELEMETRY",
+                "SYSTEM HARDWARE & THERMAL TELEMETRY",
                 "Real-time RSS working RAM gauge, CPU cluster dispatch, ADPF thermal headroom, and power limits.",
                 "TELEMETRY", "#D97706", "#F59E0B", "OPEN TELEMETRY",
                 v -> ToolboxDialogs.showSystemResourceManagerDialog(this));
 
         addToolboxCard(root,
-                "📱 SYSTEM OS INTEGRATION MANAGER",
+                "SYSTEM OS INTEGRATION MANAGER",
                 "Android 16 ProgressStyle status bar live chip, Picture-in-Picture window, and foldable tabletop.",
                 "OS INTEGRATION", "#0D9488", "#2DD4BF", "CONFIGURE INTEGRATION",
                 v -> ToolboxDialogs.showSystemIntegrationDialog(this));
 
         addToolboxCard(root,
-                "🎬 PRISM 120Hz CINEMA PLAYER",
+                "PRISM 120Hz CINEMA PLAYER",
                 "Cinema viewport with live AI Track-2 Cool-chic neural residual toggle, 8x zoom, and frame stepper.",
                 "CINEMA PLAYER", "#7C3AED", "#A855F7", "OPEN CINEMA PLAYER",
                 v -> ToolboxDialogs.showPrismPlayerDialog(this, selectedVideoUri));
 
         addToolboxCard(root,
-                "⚡ FIRST-LAUNCH ONBOARDING & SILICON CALIBRATION",
+                "FIRST-LAUNCH ONBOARDING & SILICON CALIBRATION",
                 "Zero-permission privacy promise, 3-second hardware micro-benchmark, and Persona tier selector.",
                 "CALIBRATION", "#0284C7", "#00E5FF", "RUN CALIBRATION",
                 v -> ToolboxDialogs.showOnboardingCalibrationDialog(this, null));
 
         addToolboxCard(root,
-                "🎵 AUDIO & SUBTITLE STUDIO",
+                "AUDIO & SUBTITLE STUDIO",
                 "Extract audio to Opus/M4A/MP3/FLAC, transcode bitrates, and inject soft or burned-in subtitles.",
                 "AUDIO & SUBS", "#065F46", "#10B981", "OPEN AUDIO STUDIO",
                 v -> ToolboxDialogs.showAudioSubtitleDialog(this, selectedVideoUri));
 
         addToolboxCard(root,
-                "📐 TRANSFORM & GEOMETRY STUDIO",
+                "TRANSFORM & GEOMETRY STUDIO",
                 "90°/180° rotation, selfie mirror flip, audio pitch-locked speed ramp (0.25x–4x), and aspect crop.",
                 "TRANSFORM", "#7C2D12", "#EA580C", "OPEN TRANSFORM",
                 v -> ToolboxDialogs.showTransformEditDialog(this, selectedVideoUri, (rot, flip, spd, crop, eis) -> {
@@ -1647,7 +1717,7 @@ public class MainActivity extends Activity {
                 }));
 
         addToolboxCard(root,
-                "⚙️ SYSTEM PREFERENCES & SETTINGS",
+                "SYSTEM PREFERENCES & SETTINGS",
                 "Configure 52 granular engine, audio, thermal, notification and privacy rules.",
                 "DATASTORE", "#475569", "#94A3B8", "OPEN PREFERENCES",
                 v -> switchTab(4));
@@ -1691,8 +1761,8 @@ public class MainActivity extends Activity {
                 startSec / 60, startSec % 60, endSec / 60, endSec % 60,
                 cutOutSelected ? "Cut Out Highlighted" : "Keep Inside", keepDuration));
         PrismHud.showSuccess(this, cutOutSelected
-                ? String.format(Locale.US, "✂️ Marked %ds for cut-out (%ds remaining)", (endSec - startSec), keepDuration)
-                : String.format(Locale.US, "✂️ Trim range locked: %ds kept", keepDuration));
+                ? String.format(Locale.US, "Marked %ds for cut-out (%ds remaining)", (endSec - startSec), keepDuration)
+                : String.format(Locale.US, "Trim range locked: %ds kept", keepDuration));
     }
 
     public void applyCustomTargetBitrate(int bitrateKbps, int targetMb) {
@@ -1847,7 +1917,7 @@ public class MainActivity extends Activity {
         cardBatchQueue.setVisibility(View.GONE);
 
         tvBatchHeader = new TextView(this);
-        tvBatchHeader.setText("📦 BATCH QUEUE (0 Videos)");
+        tvBatchHeader.setText("BATCH QUEUE (0 Videos)");
         tvBatchHeader.setTextColor(Color.WHITE);
         tvBatchHeader.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         tvBatchHeader.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -1884,7 +1954,7 @@ public class MainActivity extends Activity {
         headerRow.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView tvTitle = new TextView(this);
-        tvTitle.setText("📊 SOURCE VIDEO SPECIFICATIONS & DNA");
+        tvTitle.setText("SOURCE VIDEO SPECIFICATIONS & DNA");
         tvTitle.setTextColor(ThemeStyles.COLOR_CYAN_NEON);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -1995,7 +2065,7 @@ public class MainActivity extends Activity {
         head.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView tvT = new TextView(this);
-        tvT.setText("🎯 COMPRESSION PROFILES (DEFAULT: KEEP RES & FPS)");
+        tvT.setText("COMPRESSION PROFILES (DEFAULT: KEEP RES & FPS)");
         tvT.setTextColor(ThemeStyles.COLOR_TEXT_PRIMARY);
         tvT.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         tvT.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -2015,7 +2085,7 @@ public class MainActivity extends Activity {
         cardPreFlightMatrix.addView(head);
 
         TextView tvSub = new TextView(this);
-        tvSub.setText("Select your profile. By default, your exact resolution and frame rate are 100% preserved:");
+        tvSub.setText("Select your profile. By default, your exact resolution, frame rate and original audio are 100% preserved:");
         tvSub.setTextColor(ThemeStyles.COLOR_TEXT_SECONDARY);
         tvSub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
         tvSub.setPadding(0, dp(3), 0, dp(10));
@@ -2028,16 +2098,16 @@ public class MainActivity extends Activity {
         tvMethodSpeed = new TextView[4];
 
         String[] titles = new String[]{
-                "🚀 1. SMART COMPRESSION (DEFAULT)",
-                "💎 2. PRO MASTER (BROADCAST GRADE)",
-                "💬 3. QUICK SHARE (MAX SQUISH)",
-                "🔒 4. LOSSLESS ARCHIVE (BIT-EXACT)"
+                "1. SMART COMPRESSION (DEFAULT)",
+                "2. PRO MASTER (BROADCAST GRADE)",
+                "3. QUICK SHARE (MAX SQUISH)",
+                "4. LOSSLESS ARCHIVE (BIT-EXACT)"
         };
         String[] targets = new String[]{
-                "★ Default: Keep Res & FPS • VMAF 95+ Gold",
-                "Keep Res & FPS • Pristine Studio Bitrate • VMAF 98.4",
-                "720p Mobile • Fits 16MB/25MB Sharing Limits",
-                "100% Cryptographic SHA-256 Bit Parity"
+                "Native Res & FPS • Pristine Audio • VMAF 95+ Gold",
+                "Native Res & FPS • Broadcast Studio Bitrate • VMAF 98.4",
+                "Native Res & FPS • Max Squish Bitrate • Fits Sharing Limits",
+                "100% Cryptographic SHA-256 Bit Parity • Passthrough Audio"
         };
         String[] accentColors = new String[]{"#10B981", "#8B5CF6", "#F59E0B", "#0284C7"};
 
@@ -2138,20 +2208,28 @@ public class MainActivity extends Activity {
             }
         }
 
-        boolean isPortrait = (sourceHeight > sourceWidth);
+        // All 4 compression profiles strictly DEFAULT to preserving native resolution, native FPS, and original audio
+        selectedResIndex = 5; // Source Size
+        customTargetWidth = sourceWidth;
+        customTargetHeight = sourceHeight;
+        customTargetFps = (sourceFps > 0) ? sourceFps : 30;
+        customAudioChannel = "Original";
+        customAudioBitrateKbps = 0; // 0 = bit-exact original audio passthrough
+        selectedAspectRatio = "No Change";
+
+        int maxDim = Math.max(sourceWidth, sourceHeight);
+        if (maxDim <= 0) maxDim = 1920;
+
         switch (methodIndex) {
-            case 0: // 1. SMART COMPRESSION (DEFAULT) - Preserve Native Resolution and FPS
+            case 0: // 1. SMART COMPRESSION (DEFAULT) - Preserve Native Resolution, FPS & Audio
                 selectMode("H-ARCH");
-                selectedResIndex = 5; // Source Size
-                customTargetWidth = sourceWidth > 0 ? sourceWidth : (isPortrait ? 1080 : 1920);
-                customTargetHeight = sourceHeight > 0 ? sourceHeight : (isPortrait ? 1920 : 1080);
-                customTargetFps = sourceFps > 0 ? sourceFps : 30;
-                int maxDim0 = Math.max(customTargetWidth, customTargetHeight);
-                if (maxDim0 >= 3840) {
+                if (maxDim >= 3840) {
                     customTargetBitrateKbps = 8500;
-                } else if (maxDim0 >= 1920) {
+                } else if (maxDim >= 2560) {
+                    customTargetBitrateKbps = 5500;
+                } else if (maxDim >= 1920) {
                     customTargetBitrateKbps = 3800;
-                } else if (maxDim0 >= 1280) {
+                } else if (maxDim >= 1280) {
                     customTargetBitrateKbps = 2400;
                 } else {
                     customTargetBitrateKbps = 1500;
@@ -2159,63 +2237,51 @@ public class MainActivity extends Activity {
                 if (customTargetFps >= 100) {
                     customTargetBitrateKbps = (int)(customTargetBitrateKbps * 1.35f);
                 }
-                customAudioChannel = "Stereo";
-                customAudioBitrateKbps = 192;
-                selectedAspectRatio = "No Change";
                 activeQualityPreset = "Smart Compression (Keep Res & FPS)";
                 break;
-            case 1: // 2. PRO MASTER - Preserve Native Resolution and FPS with Broadcast Studio Bitrate
+            case 1: // 2. PRO MASTER - Broadcast Grade Bitrate, Native Res, FPS & Audio
                 selectMode("H-ARCH");
-                selectedResIndex = 5; // Source Size
-                customTargetWidth = sourceWidth > 0 ? sourceWidth : (isPortrait ? 1080 : 1920);
-                customTargetHeight = sourceHeight > 0 ? sourceHeight : (isPortrait ? 1920 : 1080);
-                customTargetFps = sourceFps > 0 ? sourceFps : 30;
-                int maxDim1 = Math.max(customTargetWidth, customTargetHeight);
-                if (maxDim1 >= 3840) {
+                if (maxDim >= 3840) {
                     customTargetBitrateKbps = 14000;
-                } else if (maxDim1 >= 1920) {
+                } else if (maxDim >= 2560) {
+                    customTargetBitrateKbps = 9000;
+                } else if (maxDim >= 1920) {
                     customTargetBitrateKbps = 6000;
-                } else if (maxDim1 >= 1280) {
+                } else if (maxDim >= 1280) {
                     customTargetBitrateKbps = 4000;
                 } else {
                     customTargetBitrateKbps = 2500;
                 }
-                customAudioChannel = "Stereo";
-                customAudioBitrateKbps = 320;
-                selectedAspectRatio = "No Change";
                 activeQualityPreset = "Pro Master (Broadcast Grade)";
                 break;
-            case 2: // 3. QUICK SHARE - 720p Mobile Downscale for messaging caps
+            case 2: // 3. QUICK SHARE - Max Compression Bitrate, Native Res, FPS & Audio
                 selectMode("E-LOW");
-                selectedResIndex = 1; // 720p HD
-                customTargetWidth = isPortrait ? 720 : 1280;
-                customTargetHeight = isPortrait ? 1280 : 720;
-                customTargetFps = Math.min(30, sourceFps > 0 ? sourceFps : 30);
-                customTargetBitrateKbps = 1800;
-                customAudioChannel = "Stereo";
-                customAudioBitrateKbps = 96;
+                if (maxDim >= 3840) {
+                    customTargetBitrateKbps = 3500;
+                } else if (maxDim >= 2560) {
+                    customTargetBitrateKbps = 2500;
+                } else if (maxDim >= 1920) {
+                    customTargetBitrateKbps = 1800;
+                } else if (maxDim >= 1280) {
+                    customTargetBitrateKbps = 1200;
+                } else {
+                    customTargetBitrateKbps = 800;
+                }
                 activeQualityPreset = "Quick Share (Max Squish)";
                 break;
-            case 3: // 4. LOSSLESS ARCHIVE (L-BBR) - 100% SHA-256 Parity
+            case 3: // 4. LOSSLESS ARCHIVE (L-BBR) - 100% SHA-256 Bit Parity
                 selectMode("L-BBR");
-                selectedResIndex = 5; // Source Size
-                customTargetWidth = sourceWidth > 0 ? sourceWidth : (isPortrait ? 1080 : 1920);
-                customTargetHeight = sourceHeight > 0 ? sourceHeight : (isPortrait ? 1920 : 1080);
-                customTargetFps = sourceFps > 0 ? sourceFps : 30;
                 int computedSrcBitrate = (sourceDurationSec > 0 && sourceSizeBytes > 0) ? (int)((sourceSizeBytes * 8L) / (sourceDurationSec * 1000L)) : 17260;
                 customTargetBitrateKbps = computedSrcBitrate > 0 ? computedSrcBitrate : 17260;
-                customAudioChannel = "Original";
-                customAudioBitrateKbps = 320;
-                selectedAspectRatio = "No Change";
                 activeQualityPreset = "Lossless Archive (L-BBR)";
                 break;
         }
 
-        if (tvCustomResolution != null) tvCustomResolution.setText(customTargetWidth + " X " + customTargetHeight);
-        if (tvCustomFrameRate != null) tvCustomFrameRate.setText(String.valueOf(customTargetFps));
+        if (tvCustomResolution != null) tvCustomResolution.setText(sourceWidth > 0 ? (sourceWidth + " X " + sourceHeight) : "Original Dimensions");
+        if (tvCustomFrameRate != null) tvCustomFrameRate.setText(sourceFps > 0 ? (sourceFps + " fps (Source)") : "Source FPS");
         if (tvCustomBitRate != null) tvCustomBitRate.setText(String.valueOf(customTargetBitrateKbps));
-        if (tvCustomAudioChannel != null) tvCustomAudioChannel.setText(customAudioChannel);
-        if (tvCustomAudioBitRate != null) tvCustomAudioBitRate.setText(String.valueOf(customAudioBitrateKbps));
+        if (tvCustomAudioChannel != null) tvCustomAudioChannel.setText("Original (Passthrough)");
+        if (tvCustomAudioBitRate != null) tvCustomAudioBitRate.setText("Native Bitrate");
 
         if (resGridCards != null) {
             for (int i = 0; i < resGridCards.length; i++) {
@@ -2335,14 +2401,14 @@ public class MainActivity extends Activity {
         head.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView tvT = new TextView(this);
-        tvT.setText("⚙️ LIVE PIPELINE");
+        tvT.setText("LIVE PIPELINE");
         tvT.setTextColor(Color.WHITE);
         tvT.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         tvT.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
         head.addView(tvT);
 
         TextView tvGear = new TextView(this);
-        tvGear.setText("🟢 38°C");
+        tvGear.setText("38°C");
         tvGear.setTextColor(ThemeStyles.COLOR_EMERALD_NEON);
         tvGear.setTextSize(TypedValue.COMPLEX_UNIT_SP, 8.5f);
         tvGear.setTypeface(Typeface.DEFAULT_BOLD);
@@ -2440,7 +2506,7 @@ public class MainActivity extends Activity {
 
         tvLiveCpu = new TextView(this);
         tvLiveCpu.setText("Sampling CPU cores...");
-        LinearLayout tileCpu = createLiveMetricTile("💻 REAL CPU LOAD", tvLiveCpu, Color.parseColor("#38BDF8"));
+        LinearLayout tileCpu = createLiveMetricTile("REAL CPU LOAD", tvLiveCpu, Color.parseColor("#38BDF8"));
         LinearLayout.LayoutParams lpCpu = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
         lpCpu.setMargins(0, 0, dp(3), 0);
         tileCpu.setLayoutParams(lpCpu);
@@ -2448,7 +2514,7 @@ public class MainActivity extends Activity {
 
         tvLiveRam = new TextView(this);
         tvLiveRam.setText("Measuring memory buffer...");
-        LinearLayout tileRam = createLiveMetricTile("🧠 ALLOCATED RAM POOL", tvLiveRam, ThemeStyles.COLOR_EMERALD_NEON);
+        LinearLayout tileRam = createLiveMetricTile("ALLOCATED RAM POOL", tvLiveRam, ThemeStyles.COLOR_EMERALD_NEON);
         LinearLayout.LayoutParams lpRam = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
         lpRam.setMargins(dp(3), 0, 0, 0);
         tileRam.setLayoutParams(lpRam);
@@ -2462,7 +2528,7 @@ public class MainActivity extends Activity {
 
         tvLiveGpu = new TextView(this);
         tvLiveGpu.setText("Measuring ASIC throughput...");
-        LinearLayout tileGpu = createLiveMetricTile("⚡ GPU/ASIC THROUGHPUT", tvLiveGpu, Color.parseColor("#F59E0B"));
+        LinearLayout tileGpu = createLiveMetricTile("GPU/ASIC THROUGHPUT", tvLiveGpu, Color.parseColor("#F59E0B"));
         LinearLayout.LayoutParams lpGpu = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
         lpGpu.setMargins(0, 0, dp(3), 0);
         tileGpu.setLayoutParams(lpGpu);
@@ -2470,7 +2536,7 @@ public class MainActivity extends Activity {
 
         tvLiveThermal = new TextView(this);
         tvLiveThermal.setText("Measuring SoC temp...");
-        LinearLayout tileThermal = createLiveMetricTile("🌡️ THERMAL & POWER", tvLiveThermal, Color.parseColor("#EC4899"));
+        LinearLayout tileThermal = createLiveMetricTile("THERMAL & POWER", tvLiveThermal, Color.parseColor("#EC4899"));
         LinearLayout.LayoutParams lpThermal = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
         lpThermal.setMargins(dp(3), 0, 0, 0);
         tileThermal.setLayoutParams(lpThermal);
@@ -2654,7 +2720,7 @@ public class MainActivity extends Activity {
         editBox.addView(tvValue);
 
         TextView tvIcon = new TextView(this);
-        tvIcon.setText("✎");
+        tvIcon.setText("");
         tvIcon.setTextColor(ThemeStyles.COLOR_TEXT_SECONDARY);
         tvIcon.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         editBox.addView(tvIcon);
@@ -2764,10 +2830,10 @@ public class MainActivity extends Activity {
         List<Integer> fpsList = new ArrayList<>();
 
         if (sourceFps >= 100) {
-            optionsList.add(sourceFps + " fps (★ Keep Source Ultra Smooth)");
+            optionsList.add(sourceFps + " fps (Keep Source Ultra Smooth)");
             fpsList.add(sourceFps);
         } else if (sourceFps > 0 && sourceFps != 120 && sourceFps != 60 && sourceFps != 30 && sourceFps != 24 && sourceFps != 15) {
-            optionsList.add(sourceFps + " fps (★ Keep Native Source)");
+            optionsList.add(sourceFps + " fps (Keep Native Source)");
             fpsList.add(sourceFps);
         }
 
@@ -2880,7 +2946,7 @@ public class MainActivity extends Activity {
             double ratio = (selectedPreFlightMethod == 0) ? 0.77 : (selectedPreFlightMethod == 1) ? 0.63 : (selectedPreFlightMethod == 2) ? 0.89 : 0.18;
             double freedMB = srcMB * ratio;
             btnStartCompress.setText(String.format(Locale.US,
-                    "⚡  START BATCH COMPRESSION (%d Videos • Keep Res & FPS • Frees +%.1f MB • %s)",
+                    " START BATCH COMPRESSION (%d Videos • Keep Res & FPS • Frees +%.1f MB • %s)",
                     batchVideoList.size(), freedMB, ext));
         } else {
             int tw = (customTargetWidth > 0) ? customTargetWidth : (sourceWidth > 0 ? sourceWidth : 1920);
@@ -2894,12 +2960,12 @@ public class MainActivity extends Activity {
             double freedMB = Math.max(0.0, srcMB - estMB);
             double pctSaved = srcMB > 0 ? Math.min(99.0, (freedMB / srcMB) * 100.0) : 0.0;
 
-            String keepLabel = (selectedPreFlightMethod == 0 || selectedPreFlightMethod == 1 || selectedResIndex == 5)
-                    ? "Keep " + tw + "x" + th + " @" + tfps + "fps"
+            String keepLabel = (selectedResIndex == 5 || (sourceWidth > 0 && tw == sourceWidth && th == sourceHeight))
+                    ? "Keep " + tw + "x" + th + " @" + tfps + "fps (Native)"
                     : tw + "x" + th + " @" + tfps + "fps";
 
             btnStartCompress.setText(String.format(Locale.US,
-                    "⚡  START COMPRESSION (%s • ~%.1f MB [-%.0f%%] • %s)",
+                    " START COMPRESSION (%s • ~%.1f MB [-%.0f%%] • %s)",
                     keepLabel, estMB, pctSaved, ext));
         }
     }
@@ -3115,7 +3181,7 @@ public class MainActivity extends Activity {
         ThermalGearShifter.Gear gear = gearShifter.getCurrentGear();
 
         String hwInfo = String.format(Locale.US,
-                "🔋 %d%% (%s)   •   🌡️ %s   •   ⚡ %.3f J/frame",
+                "%d%% (%s)   •  %s   •   %.3f J/frame",
                 battery, (charging ? "Charging" : "Battery"),
                 gear.name(), gear.estJoulesPerFrame);
         if (tvHardwareChips != null) tvHardwareChips.setText(hwInfo);
@@ -3138,11 +3204,12 @@ public class MainActivity extends Activity {
                 Log.d(TAG, "PhotoPicker fallback: " + e.getMessage());
             }
         }
-        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+        // Fallback: ACTION_OPEN_DOCUMENT gives thumbnail grid on Samsung gallery
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.setType("video/*");
         intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.putExtra(Intent.EXTRA_LOCAL_ONLY, true);
         intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         startActivityForResult(Intent.createChooser(intent, "Select Video(s) to Optimize"), REQUEST_PICK_VIDEO);
     }
 
@@ -3345,11 +3412,11 @@ public class MainActivity extends Activity {
         chipResolution.setText(sourceWidth + "x" + sourceHeight + " (" + cat + ")");
         if (chipFps != null) {
             if (sourceFps >= 100) {
-                chipFps.setText("⚡ " + sourceFps + " fps Ultra");
+                chipFps.setText("" + sourceFps + " fps Ultra");
                 chipFps.setBackground(createRoundedDrawable(Color.parseColor("#3B0764"), Color.parseColor("#A855F7"), dp(1), dp(8)));
                 chipFps.setTextColor(Color.parseColor("#E9D5FF"));
             } else if (sourceFps >= 50) {
-                chipFps.setText("✦ " + sourceFps + " fps Smooth");
+                chipFps.setText("" + sourceFps + " fps Smooth");
                 chipFps.setBackground(createRoundedDrawable(Color.parseColor("#0C4A6E"), Color.parseColor("#38BDF8"), dp(1), dp(8)));
                 chipFps.setTextColor(Color.parseColor("#E0F2FE"));
             } else {
@@ -3373,6 +3440,56 @@ public class MainActivity extends Activity {
 
         updatePreFlightProjections();
         updateCtaButtonText();
+
+        // Update pick-file button label so user knows they can re-pick
+        if (btnPickFile != null) {
+            btnPickFile.setText("🔄 CHANGE VIDEO(S)");
+        }
+
+        // Extract and show video thumbnail preview
+        if (ivVideoThumbnail != null) {
+            final Uri thumbUri = item.uri;
+            final String thumbPath = item.filePath;
+            if (item.thumbnail != null) {
+                ivVideoThumbnail.setImageBitmap(item.thumbnail);
+                ivVideoThumbnail.setVisibility(View.VISIBLE);
+            } else {
+                new Thread(() -> {
+                    android.graphics.Bitmap bmp = null;
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && thumbUri != null) {
+                        try {
+                            bmp = getContentResolver().loadThumbnail(thumbUri, new android.util.Size(640, 360), null);
+                        } catch (Exception ignored) {}
+                    }
+                    if (bmp == null) {
+                        try {
+                            android.media.MediaMetadataRetriever mmr = new android.media.MediaMetadataRetriever();
+                            if (thumbPath != null && new File(thumbPath).exists()) {
+                                mmr.setDataSource(thumbPath);
+                            } else if (thumbUri != null) {
+                                mmr.setDataSource(MainActivity.this, thumbUri);
+                            }
+                            bmp = mmr.getFrameAtTime(-1, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+                            if (bmp == null) bmp = mmr.getFrameAtTime();
+                            mmr.release();
+                        } catch (Exception ignored) {}
+                    }
+                    if (bmp == null && thumbPath != null) {
+                        try {
+                            bmp = android.media.ThumbnailUtils.createVideoThumbnail(thumbPath, MediaStore.Images.Thumbnails.MINI_KIND);
+                        } catch (Exception ignored) {}
+                    }
+                    final android.graphics.Bitmap finalBmp = bmp;
+                    if (finalBmp != null) item.thumbnail = finalBmp;
+                    mainHandler.post(() -> {
+                        if (finalBmp != null && ivVideoThumbnail != null) {
+                            ivVideoThumbnail.setImageBitmap(finalBmp);
+                            ivVideoThumbnail.setVisibility(View.VISIBLE);
+                        }
+                    });
+                }).start();
+            }
+        }
     }
 
     private void updateBatchUI() {
@@ -3391,7 +3508,7 @@ public class MainActivity extends Activity {
             totalBytes += it.sizeBytes;
         }
 
-        tvBatchHeader.setText(String.format(Locale.US, "📦 BATCH QUEUE (%d Videos Selected)", batchVideoList.size()));
+        tvBatchHeader.setText(String.format(Locale.US, "BATCH QUEUE (%d Videos Selected)", batchVideoList.size()));
         tvBatchSummary.setText(String.format(Locale.US, "Total Batch Size: %s • Batch mode will process all videos with selected profile.", formatFileSize(totalBytes)));
 
         batchChipsScrollContainer.removeAllViews();
@@ -3401,8 +3518,9 @@ public class MainActivity extends Activity {
             boolean active = (i == activeBatchIndex);
 
             LinearLayout chip = new LinearLayout(this);
-            chip.setOrientation(LinearLayout.VERTICAL);
-            chip.setPadding(dp(12), dp(8), dp(12), dp(8));
+            chip.setOrientation(LinearLayout.HORIZONTAL);
+            chip.setGravity(Gravity.CENTER_VERTICAL);
+            chip.setPadding(dp(8), dp(6), dp(12), dp(6));
             chip.setBackground(createRoundedDrawable(
                     active ? Color.parseColor("#1E3A8A") : Color.parseColor("#0F172A"),
                     active ? ThemeStyles.COLOR_CYAN_NEON : ThemeStyles.COLOR_BORDER_SUBTLE,
@@ -3411,18 +3529,64 @@ public class MainActivity extends Activity {
             lp.setMargins(0, 0, dp(8), 0);
             chip.setLayoutParams(lp);
 
+            // Thumbnail inside batch chip
+            android.widget.ImageView ivChipThumb = new android.widget.ImageView(this);
+            ivChipThumb.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+            LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(dp(44), dp(44));
+            tlp.setMargins(0, 0, dp(8), 0);
+            ivChipThumb.setLayoutParams(tlp);
+            ivChipThumb.setBackground(createRoundedDrawable(Color.parseColor("#070E1A"), Color.parseColor("#1E2D44"), dp(1), dp(6)));
+            if (it.thumbnail != null) {
+                ivChipThumb.setImageBitmap(it.thumbnail);
+            } else {
+                final Uri cUri = it.uri;
+                final String cPath = it.filePath;
+                new Thread(() -> {
+                    android.graphics.Bitmap cBmp = null;
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && cUri != null) {
+                        try {
+                            cBmp = getContentResolver().loadThumbnail(cUri, new android.util.Size(120, 120), null);
+                        } catch (Exception ignored) {}
+                    }
+                    if (cBmp == null) {
+                        try {
+                            android.media.MediaMetadataRetriever mmr = new android.media.MediaMetadataRetriever();
+                            if (cPath != null && new File(cPath).exists()) {
+                                mmr.setDataSource(cPath);
+                            } else if (cUri != null) {
+                                mmr.setDataSource(MainActivity.this, cUri);
+                            }
+                            cBmp = mmr.getFrameAtTime(-1, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+                            if (cBmp == null) cBmp = mmr.getFrameAtTime();
+                            mmr.release();
+                        } catch (Exception ignored) {}
+                    }
+                    final android.graphics.Bitmap resBmp = cBmp;
+                    if (resBmp != null) {
+                        it.thumbnail = resBmp;
+                        mainHandler.post(() -> ivChipThumb.setImageBitmap(resBmp));
+                    }
+                }).start();
+            }
+            chip.addView(ivChipThumb);
+
+            LinearLayout textCol = new LinearLayout(this);
+            textCol.setOrientation(LinearLayout.VERTICAL);
+
             TextView tvN = new TextView(this);
             tvN.setText((idx + 1) + ". " + it.name);
             tvN.setTextColor(active ? Color.WHITE : ThemeStyles.COLOR_TEXT_SECONDARY);
             tvN.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
             tvN.setTypeface(active ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
-            chip.addView(tvN);
+            textCol.addView(tvN);
 
             TextView tvD = new TextView(this);
             tvD.setText(it.width + "x" + it.height + " (" + getResolutionCategory(it.width, it.height) + ") • " + it.fps + "fps • " + formatDurationString(it.durationSec) + " • " + formatFileSize(it.sizeBytes));
             tvD.setTextColor(active ? ThemeStyles.COLOR_CYAN_TEXT : ThemeStyles.COLOR_TEXT_MUTED);
             tvD.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
-            chip.addView(tvD);
+            textCol.addView(tvD);
+
+            chip.addView(textCol);
 
             chip.setOnClickListener(v -> {
                 activeBatchIndex = idx;
@@ -3496,12 +3660,12 @@ public class MainActivity extends Activity {
         for (File f : files) totalBatchBytes += f.length();
 
         String[] options = new String[]{
-                "🎬 Load Single Video (" + singleF.getName() + " • " + String.format(Locale.US, "%.1f MB", singleSize / (1024.0 * 1024.0)) + ")",
-                "⚡ Load All " + files.length + " Sample Videos into Batch Queue (" + String.format(Locale.US, "%.1f MB", totalBatchBytes / (1024.0 * 1024.0)) + ")",
-                "☑  Select Specific Videos (Interactive Multi-Select Checkboxes)"
+                "Load Single Video (" + singleF.getName() + " • " + String.format(Locale.US, "%.1f MB", singleSize / (1024.0 * 1024.0)) + ")",
+                "Load All " + files.length + " Sample Videos into Batch Queue (" + String.format(Locale.US, "%.1f MB", totalBatchBytes / (1024.0 * 1024.0)) + ")",
+                " Select Specific Videos (Interactive Multi-Select Checkboxes)"
         };
 
-        CustomDarkDialog.showSingleChoice(this, "📹 SELECT SAMPLE MODE", options, 0, (which, selected) -> {
+        CustomDarkDialog.showSingleChoice(this, "SELECT SAMPLE MODE", options, 0, (which, selected) -> {
             if (which == 1) {
                 loadSampleVideos(true);
             } else if (which == 2) {
@@ -3520,7 +3684,7 @@ public class MainActivity extends Activity {
             fileNames[i] = String.format(Locale.US, "%s (%.1f MB)", files[i].getName(), files[i].length() / (1024.0 * 1024.0));
             checked[i] = true;
         }
-        CustomDarkDialog.showMultiChoice(this, "☑ SELECT VIDEOS FOR BATCH", fileNames, checked, (selectedIndices, selectedItems) -> {
+        CustomDarkDialog.showMultiChoice(this, "SELECT VIDEOS FOR BATCH", fileNames, checked, (selectedIndices, selectedItems) -> {
             batchVideoList.clear();
             for (int i = 0; i < files.length; i++) {
                 if (selectedIndices[i]) {
@@ -3634,6 +3798,10 @@ public class MainActivity extends Activity {
             studioScrollView.post(() -> studioScrollView.smoothScrollTo(0, cardProcessVisual.getTop()));
         }
 
+        int finalWidth = (selectedResIndex == 5 || customTargetWidth == sourceWidth || customTargetWidth <= 0) ? 0 : customTargetWidth;
+        int finalHeight = (selectedResIndex == 5 || customTargetHeight == sourceHeight || customTargetHeight <= 0) ? 0 : customTargetHeight;
+        int finalFps = (customTargetFps == sourceFps || customTargetFps <= 0) ? 0 : customTargetFps;
+
         if (prefs != null && prefs.isBackgroundServiceEnabled()) {
             String inputPath = resolvePathFromUri(selectedVideoUri, selectedVideoName);
             if (inputPath != null) {
@@ -3641,10 +3809,9 @@ public class MainActivity extends Activity {
                 appendLog(String.format(Locale.US, "Starting Foreground Service for '%s' -> Movies/Prism-V/", selectedVideoName));
                 PrismMediaProcessingService.startCompression(
                         this, inputPath, outFile.getAbsolutePath(),
-                        (customTargetWidth > 0 ? customTargetWidth : (sourceWidth > 0 ? sourceWidth : 1920)),
-                        (customTargetHeight > 0 ? customTargetHeight : (sourceHeight > 0 ? sourceHeight : 1080)),
+                        finalWidth, finalHeight,
                         customTargetBitrateKbps,
-                        (customTargetFps > 0 ? customTargetFps : (sourceFps > 0 ? sourceFps : 30)),
+                        finalFps,
                         selectedAspectRatio, selectedOutputFormat, selectedMode
                 );
                 return;
@@ -3652,13 +3819,13 @@ public class MainActivity extends Activity {
         }
 
         HardwareVideoCompressor.CompressionOptions options = new HardwareVideoCompressor.CompressionOptions();
-        options.targetWidth = (customTargetWidth > 0) ? customTargetWidth : (sourceWidth > 0 ? sourceWidth : 1920);
-        options.targetHeight = (customTargetHeight > 0) ? customTargetHeight : (sourceHeight > 0 ? sourceHeight : 1080);
-        options.targetFps = (customTargetFps > 0) ? customTargetFps : (sourceFps > 0 ? sourceFps : 30);
+        options.targetWidth = finalWidth;
+        options.targetHeight = finalHeight;
+        options.targetFps = finalFps;
         options.targetBitrateKbps = customTargetBitrateKbps;
         options.aspectRatio = selectedAspectRatio;
         options.outputFormat = selectedOutputFormat;
-        options.audioChannel = customAudioChannel;
+        options.audioChannel = customAudioChannel != null ? customAudioChannel : "Original";
         options.audioBitrateKbps = customAudioBitrateKbps;
         options.qualityPreset = activeQualityPreset;
         options.mode = selectedMode;
@@ -3723,7 +3890,7 @@ public class MainActivity extends Activity {
                             btnStartCompress.setEnabled(true);
                             if (cardProcessVisual != null) {
                                 updateProcessVisualProgress(100, "Transcode Finished! File indexed in Samsung Gallery.", "COMPLETED");
-                                if (tvLiveEta != null) tvLiveEta.setText("✅ COMPLETED");
+                                if (tvLiveEta != null) tvLiveEta.setText("COMPLETED");
                             }
                             showHeroDossier(dossier);
                         });
@@ -3747,9 +3914,12 @@ public class MainActivity extends Activity {
             }
             if (!inputPaths.isEmpty()) {
                 appendLog(String.format(Locale.US, "Starting Batch Foreground Service for %d videos -> Movies/Prism-V/", inputPaths.size()));
+                int bWidth = (selectedResIndex == 5) ? 0 : customTargetWidth;
+                int bHeight = (selectedResIndex == 5) ? 0 : customTargetHeight;
+                int bFps = (selectedResIndex == 5) ? 0 : customTargetFps;
                 PrismMediaProcessingService.startBatchCompression(
                         this, inputPaths,
-                        customTargetWidth, customTargetHeight, customTargetBitrateKbps, customTargetFps,
+                        bWidth, bHeight, customTargetBitrateKbps, bFps,
                         selectedAspectRatio, selectedOutputFormat, selectedMode
                 );
                 return;
@@ -3770,7 +3940,7 @@ public class MainActivity extends Activity {
                 btnStartCompress.setEnabled(true);
                 if (cardProcessVisual != null) {
                     updateProcessVisualProgress(100, "Batch Complete: " + batchVideoList.size() + " videos optimized!", "COMPLETED");
-                    if (tvLiveEta != null) tvLiveEta.setText("✅ COMPLETED");
+                    if (tvLiveEta != null) tvLiveEta.setText("COMPLETED");
                 }
                 if (studioScrollView != null && heroDossierCard != null) {
                     studioScrollView.post(() -> studioScrollView.smoothScrollTo(0, heroDossierCard.getTop()));
@@ -3798,6 +3968,9 @@ public class MainActivity extends Activity {
                         currentRestoredFile != null ? currentRestoredFile.getAbsolutePath() : null,
                         selectedVideoUri
                 );
+
+                // Reset source state after batch completes
+                resetSourceState();
             });
             return;
         }
@@ -3810,10 +3983,12 @@ public class MainActivity extends Activity {
         });
 
         HardwareVideoCompressor.CompressionOptions options = new HardwareVideoCompressor.CompressionOptions();
-        boolean preserveNative = (selectedPreFlightMethod == 0 || selectedPreFlightMethod == 1 || selectedPreFlightMethod == 3 || selectedResIndex == 5);
-        options.targetWidth = preserveNative ? item.width : customTargetWidth;
-        options.targetHeight = preserveNative ? item.height : customTargetHeight;
-        options.targetFps = preserveNative ? ((item.fps > 0) ? item.fps : 30) : customTargetFps;
+        boolean preserveNative = (selectedPreFlightMethod == 0 || selectedPreFlightMethod == 1 || selectedPreFlightMethod == 2 || selectedPreFlightMethod == 3 || selectedResIndex == 5);
+        options.targetWidth = preserveNative ? 0 : customTargetWidth;
+        options.targetHeight = preserveNative ? 0 : customTargetHeight;
+        options.targetFps = preserveNative ? 0 : customTargetFps;
+        options.audioChannel = "Original";
+        options.audioBitrateKbps = 0;
 
         if (preserveNative && selectedPreFlightMethod == 0) {
             int maxDim = Math.max(item.width, item.height);
@@ -3976,6 +4151,40 @@ public class MainActivity extends Activity {
                     }
                 })
         );
+
+        // Reset VIDEO SOURCE to empty state — job is done, ready for next video
+        resetSourceState();
+    }
+
+    /** Clears all source video state so the VIDEO SOURCE card shows "No Video Selected" */
+    private void resetSourceState() {
+        selectedVideoUri = null;
+        selectedVideoName = null;
+        selectedVideoPath = null;
+        sourceWidth = 0; sourceHeight = 0; sourceFps = 0;
+        sourceDurationSec = 0; sourceSizeBytes = 0; sourceBitrateKbps = 0;
+
+        batchVideoList.clear();
+        isBatchMode = false;
+        if (cardBatchQueue != null) cardBatchQueue.setVisibility(View.GONE);
+
+        if (tvVideoTitle != null) {
+            tvVideoTitle.setText("No Video Selected");
+            tvVideoTitle.setTextColor(ThemeStyles.COLOR_TEXT_MUTED);
+        }
+        if (rowVideoChips != null) rowVideoChips.setVisibility(View.GONE);
+        if (ivVideoThumbnail != null) {
+            ivVideoThumbnail.setVisibility(View.GONE);
+            ivVideoThumbnail.setImageBitmap(null);
+        }
+        if (cardVideoDna != null) cardVideoDna.setVisibility(View.GONE);
+        if (btnPickFile != null) btnPickFile.setText("📁 CHOOSE VIDEO(S) FROM DEVICE");
+
+        // Re-select default profile so projections reset cleanly
+        selectedPreFlightMethod = 0;
+        selectPreFlightMethod(0);
+        updatePreFlightProjections();
+        updateCtaButtonText();
     }
 
     private void playVideo(File videoFile) {
@@ -4077,28 +4286,119 @@ public class MainActivity extends Activity {
         appendLog("[AI COPILOT] Applied Gemini recommendation: " + rec.getSummary());
     }
 
+    private void setupBackInvokedDispatcher() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            try {
+                getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                        android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                        this::handleBackNavigation
+                );
+            } catch (Throwable t) {
+                Log.w(TAG, "Failed to register OnBackInvokedCallback: " + t.getMessage());
+            }
+        }
+    }
+
+    public void handleBackNavigation() {
+        long now = System.currentTimeMillis();
+        if (now - lastBackHandledTimestamp < 250) {
+            Log.d(TAG, "[BACK] Debounced rapid duplicate event");
+            return; // Debounce rapid multi-events from key + dispatcher
+        }
+        lastBackHandledTimestamp = now;
+
+        Log.d(TAG, "[BACK] handleBackNavigation: currentTab=" + currentTab + ", history=" + tabHistory + ", hasDialog=" + DialogTracker.hasActiveDialog());
+
+        // 1. Dismiss active modal dialogs, sheets, or popups first
+        if (DialogTracker.dismissTopDialog()) {
+            Log.d(TAG, "[BACK] Handled by dismissing active modal dialog");
+            return;
+        }
+
+        // 2. Exit Duo Player Fullscreen if active
+        if (duoPlayerView != null && duoPlayerView.isFullscreen()) {
+            Log.d(TAG, "[BACK] Handled by exiting Duo Player fullscreen");
+            duoPlayerView.exitFullscreen();
+            return;
+        }
+
+        // 3. If in Studio and manual overrides controls are expanded, collapse them
+        if (currentTab == 0 && isMoControlsExpanded) {
+            Log.d(TAG, "[BACK] Handled by collapsing Manual Overrides in Studio");
+            isMoControlsExpanded = false;
+            if (moContentLayout != null) moContentLayout.setVisibility(View.GONE);
+            if (tvMoToggleBtn != null) tvMoToggleBtn.setText("▾ SHOW CONTROLS");
+            return;
+        }
+
+        // 4. Pop through Tab History stack
+        while (!tabHistory.isEmpty()) {
+            int previousTab = tabHistory.pop();
+            Log.d(TAG, "[BACK] Popping history tab: " + previousTab + " (currentTab=" + currentTab + ")");
+            if (previousTab != currentTab) {
+                if (previousTab == 0) {
+                    lastBackToStudioTimestamp = System.currentTimeMillis();
+                }
+                switchTab(previousTab, false);
+                return;
+            }
+        }
+
+        // 5. If we are on another tab without previous history, the last back goes to Studio
+        if (currentTab != 0) {
+            Log.d(TAG, "[BACK] No history left, transitioning back to Studio (Tab 0)");
+            lastBackToStudioTimestamp = System.currentTimeMillis();
+            switchTab(0, false);
+            return;
+        }
+
+        // 6. We are now on Studio (Tab 0) at the root level!
+        // This is the "final back" — execute clean full APK exit!
+        Log.d(TAG, "[BACK] Final back on Studio root: performing clean full APK exit");
+        performCleanExit();
+    }
+
+    private void performCleanExit() {
+        appendLog("[SYSTEM] Final back pressed: performing clean APK exit.");
+        try {
+            if (duoPlayerView != null) {
+                duoPlayerView.releasePlayers();
+            }
+        } catch (Exception ignored) {}
+        try {
+            moveTaskToBack(true);
+        } catch (Exception ignored) {}
+        try {
+            if (Build.VERSION.SDK_INT >= 21) {
+                finishAndRemoveTask();
+            } else {
+                finishAffinity();
+            }
+        } catch (Exception e) {
+            finish();
+        }
+    }
+
     @Override
     public boolean onKeyDown(int keyCode, android.view.KeyEvent event) {
         if (keyCode == android.view.KeyEvent.KEYCODE_BACK) {
-            if (duoPlayerView != null && duoPlayerView.isFullscreen()) {
-                duoPlayerView.exitFullscreen();
-                return true;
-            }
+            return true;
         }
         return super.onKeyDown(keyCode, event);
     }
 
     @Override
+    public boolean onKeyUp(int keyCode, android.view.KeyEvent event) {
+        if (keyCode == android.view.KeyEvent.KEYCODE_BACK) {
+            handleBackNavigation();
+            return true;
+        }
+        return super.onKeyUp(keyCode, event);
+    }
+
+    @Override
     public void onBackPressed() {
-        if (duoPlayerView != null && duoPlayerView.isFullscreen()) {
-            duoPlayerView.exitFullscreen();
-            return;
-        }
-        if (currentTab != 0) {
-            switchTab(0);
-            return;
-        }
-        super.onBackPressed();
+        handleBackNavigation();
     }
 
     @Override

@@ -20,7 +20,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -34,7 +33,11 @@ class MainActivity : ComponentActivity() {
                 ) {
                     PrismDashboardScreen(
                         onCompressTriggered = { mode ->
-                            Toast.makeText(this, "Started Prism-V Compression: $mode", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                this,
+                                "UI shell only: compression is not connected ($mode)",
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
                     )
                 }
@@ -54,13 +57,6 @@ enum class ParetoMode(val label: String, val icon: ImageVector) {
 @Composable
 fun PrismDashboardScreen(onCompressTriggered: (String) -> Unit) {
     var selectedMode by remember { mutableStateOf(ParetoMode.TARGET_QUALITY) }
-    var probeVisible by remember { mutableStateOf(false) }
-    var predictedSizeMb by remember { mutableDoubleStateOf(24.5) }
-    var predictedVmaf by remember { mutableDoubleStateOf(94.8) }
-    var predictedMah by remember { mutableDoubleStateOf(18.0) }
-    var predictedSec by remember { mutableIntStateOf(6) }
-
-    val coroutineScope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
@@ -88,18 +84,18 @@ fun PrismDashboardScreen(onCompressTriggered: (String) -> Unit) {
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        "Silicon-Anchored Neural Video Codec",
+                        "Prism-V",
                         color = Color(0xFF38BDF8),
                         fontSize = 14.sp
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        "Android 15+ Native Media Engine",
+                        "Compose UI preview shell",
                         color = Color.White,
                         fontSize = 18.sp
                     )
                     Text(
-                        "100% Bit-Exact SHA-256 Lossless & Cool-chic 5.0 Hybrid",
+                        "Status: compression and probing are not connected in this module.",
                         color = Color(0xFF94A3B8),
                         fontSize = 12.sp
                     )
@@ -124,21 +120,6 @@ fun PrismDashboardScreen(onCompressTriggered: (String) -> Unit) {
                             .weight(1f)
                             .clickable {
                                 selectedMode = mode
-                                // Simulate 0.3s Preflight Probe update
-                                when (mode) {
-                                    ParetoMode.TARGET_QUALITY -> {
-                                        predictedSizeMb = 32.0; predictedVmaf = 95.2; predictedMah = 22.0
-                                    }
-                                    ParetoMode.TARGET_SIZE -> {
-                                        predictedSizeMb = 20.0; predictedVmaf = 92.5; predictedMah = 16.0
-                                    }
-                                    ParetoMode.MAX_SPEED -> {
-                                        predictedSizeMb = 28.0; predictedVmaf = 91.0; predictedMah = 12.0
-                                    }
-                                    ParetoMode.BATTERY_SAVER -> {
-                                        predictedSizeMb = 26.0; predictedVmaf = 89.5; predictedMah = 7.0
-                                    }
-                                }
                             }
                     ) {
                         Column(
@@ -165,9 +146,9 @@ fun PrismDashboardScreen(onCompressTriggered: (String) -> Unit) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Preflight Pareto Probe (0.3s)", color = Color.White, fontSize = 15.sp)
-                        Badge(containerColor = Color(0xFF10B981)) {
-                            Text("±5% Accuracy", color = Color.White)
+                        Text("Preflight Pareto Probe", color = Color.White, fontSize = 15.sp)
+                        Badge(containerColor = Color(0xFF475569)) {
+                            Text("Not measured", color = Color.White)
                         }
                     }
 
@@ -177,10 +158,10 @@ fun PrismDashboardScreen(onCompressTriggered: (String) -> Unit) {
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        ProbeMetric(label = "Output Size", value = "${predictedSizeMb} MB")
-                        ProbeMetric(label = "Visual Quality", value = "${predictedVmaf} VMAF")
-                        ProbeMetric(label = "Est. Time", value = "${predictedSec}s")
-                        ProbeMetric(label = "Battery Drain", value = "${predictedMah} mAh")
+                        ProbeMetric(label = "Output Size", value = "n/a")
+                        ProbeMetric(label = "Visual Quality", value = "n/a")
+                        ProbeMetric(label = "Est. Time", value = "n/a")
+                        ProbeMetric(label = "Battery Drain", value = "n/a")
                     }
                 }
             }
@@ -198,8 +179,8 @@ fun PrismDashboardScreen(onCompressTriggered: (String) -> Unit) {
                     Icon(Icons.Default.FolderCopy, contentDescription = null, tint = Color.White)
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
-                        Text("Rabin CDC Vault Reclaimable", color = Color.White, fontSize = 13.sp)
-                        Text("1.84 GB duplicate gallery blocks saved", color = Color(0xFFCCFBF1), fontSize = 11.sp)
+                        Text("Rabin CDC Vault", color = Color.White, fontSize = 13.sp)
+                        Text("Deduplication is not connected in this module.", color = Color(0xFFCCFBF1), fontSize = 11.sp)
                     }
                 }
             }

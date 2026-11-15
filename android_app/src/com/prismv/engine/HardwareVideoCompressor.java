@@ -197,15 +197,17 @@ public final class HardwareVideoCompressor {
             int targetWidth = (options.targetWidth > 0) ? options.targetWidth : origWidth;
             int targetHeight = (options.targetHeight > 0) ? options.targetHeight : origHeight;
 
-            // If raw video stream is rotated 90 or 270 degrees in metadata, the raw decoder
-            // buffer has swapped dimensions compared to displayed video. Align encoder dimensions to raw stream:
-            if ((rotation == 90 || rotation == 270) && (origWidth > origHeight) && (targetWidth < targetHeight)) {
+            // Align target orientation to raw stream orientation so decoder surface is never rotated vs buffer
+            boolean rawIsLandscape = (origWidth >= origHeight);
+            boolean targetIsLandscape = (targetWidth >= targetHeight);
+            if (rawIsLandscape != targetIsLandscape) {
                 int temp = targetWidth;
                 targetWidth = targetHeight;
                 targetHeight = temp;
             }
 
             if (options.aspectRatio != null && !"No Change".equalsIgnoreCase(options.aspectRatio.trim())) {
+                // Explicit custom aspect ratio change requested
                 String ar = options.aspectRatio.trim();
                 if ("16:9".equals(ar)) {
                     targetHeight = (targetWidth * 9) / 16;
@@ -217,6 +219,16 @@ public final class HardwareVideoCompressor {
                     targetHeight = (targetWidth * 10) / 16;
                 } else if ("5:4".equals(ar)) {
                     targetHeight = (targetWidth * 4) / 5;
+                }
+            } else if (origWidth > 0 && origHeight > 0
+                    && (targetWidth != origWidth || targetHeight != origHeight)) {
+                // "No Change" aspect ratio + resolution change:
+                // Scale strictly to fit preserving exact source aspect ratio — ZERO CROP, ZERO ZOOM:
+                float srcAspect = (float) origWidth / (float) origHeight;
+                if (srcAspect >= 1.0f) {
+                    targetHeight = Math.round(targetWidth / srcAspect);
+                } else {
+                    targetWidth = Math.round(targetHeight * srcAspect);
                 }
             }
 

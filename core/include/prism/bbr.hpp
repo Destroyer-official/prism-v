@@ -67,8 +67,8 @@ public:
     MicroMlp1K();
 
     /**
-     * @brief Run forward pass on 16-element integer context vector.
-     * Guaranteed deterministic and zero floating point.
+     * @brief Run forward pass on a 16-element integer context vector.
+     * Deterministic integer implementation; no floating point.
      * @param input_context 16 causal INT16 features
      * @param output_cdf Array of 16 cumulative probabilities normalized to 32,768
      */
@@ -105,8 +105,8 @@ struct BbrChunk {
 };
 
 /**
- * @brief Mode L-BBR (Bitstream-Domain Syntax Recompression) Engine.
- * 100% bit-exact restoration guaranteed via SHA-256 verification.
+ * @brief Mode L-BBR (bitstream byte recompression) engine.
+ * Decompression recomputes SHA-256 and throws on mismatch.
  */
 class BbrEngine {
 public:
@@ -118,8 +118,8 @@ public:
     BbrChunk compress(const uint8_t* bitstream_data, size_t size, SourceCodecId codec_id);
 
     /**
-     * @brief Decompress a BbrChunk back into the exact original bitstream.
-     * @return 100.000% bit-exact reconstructed original byte stream.
+     * @brief Decompress a BbrChunk back into the original byte stream.
+     * @throws std::runtime_error when the restored SHA-256 does not match.
      */
     std::vector<uint8_t> decompress(const BbrChunk& chunk);
 

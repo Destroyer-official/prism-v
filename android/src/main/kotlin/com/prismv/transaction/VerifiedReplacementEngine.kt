@@ -15,7 +15,7 @@ import java.security.MessageDigest
 /**
  * 5-Stage Verified Replacement Transaction Protocol for Android MediaStore.
  *
- * Invariant 6: Zero Media Loss Guarantee.
+ * Transactional file replacement helper (no quality guarantee is made).
  * Destructive in-place overwrites on original media are strictly prohibited.
  */
 class VerifiedReplacementEngine(private val context: Context) {

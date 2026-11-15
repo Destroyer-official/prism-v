@@ -4,9 +4,8 @@ import java.io.*;
 import java.util.*;
 
 /**
- * 8-Way Interleaved rANS Entropy Codec.
- * Conforms strictly to Invariant 2 (Deterministic integer arithmetic) and
- * delivers 100.000% bit-exact lossless round-trip compression.
+ * 8-way interleaved rANS entropy codec used by the Java BBR path.
+ * Integer-only. Decode validates frequencies, lane lengths, and final states.
  */
 public final class Rans8Codec {
     public static final int NUM_LANES = 8;
@@ -67,6 +66,21 @@ public final class Rans8Codec {
     }
 
     public static EncodedChunk encode(byte[] symbols, List<RansSymbol> stats) {
+        if (symbols == null || stats == null || stats.isEmpty()) {
+            throw new IllegalArgumentException("Symbols and statistics are required");
+        }
+        int mass = 0;
+        for (int s = 0; s < stats.size(); s++) {
+            RansSymbol symbol = stats.get(s);
+            if (symbol.freq <= 0 || symbol.start != mass) {
+                throw new IllegalArgumentException("Statistics must be contiguous and positive");
+            }
+            mass += symbol.freq;
+        }
+        if (mass != RANS_M) {
+            throw new IllegalArgumentException("Statistics must sum to " + RANS_M);
+        }
+
         EncodedChunk chunk = new EncodedChunk();
         chunk.symbolCount = symbols.length;
         Arrays.fill(chunk.finalStates, RANS_L);
@@ -80,12 +94,14 @@ public final class Rans8Codec {
             int i = idx - 1;
             int lane = i % NUM_LANES;
             int sym = symbols[i] & 0xFF;
+            if (sym >= stats.size()) {
+                throw new IllegalArgumentException("Symbol value has no statistics");
+            }
             RansSymbol sStats = stats.get(sym);
             int f = sStats.freq;
             int c = sStats.start;
 
             int x = chunk.finalStates[lane];
-            // Renormalization: emit 8-bit byte while x >= (f << 12)
             int xMax = (f << 12);
             while (x >= xMax) {
                 laneBytes.get(lane).add((byte) (x & 0xFF));
@@ -125,33 +141,62 @@ public final class Rans8Codec {
     }
 
     public static byte[] decode(EncodedChunk chunk, int[] cdfLut, List<RansSymbol> stats) {
-        byte[] symbols = new byte[chunk.symbolCount];
-        int ptr = 0;
+        if (chunk == null || cdfLut == null || stats == null) {
+            throw new IllegalArgumentException("Decode inputs are required");
+        }
+        if (chunk.symbolCount < 0 || chunk.finalStates == null || chunk.byteStream == null) {
+            throw new IllegalArgumentException("Invalid encoded chunk");
+        }
+        if (cdfLut.length != RANS_M) {
+            throw new IllegalArgumentException("CDF lookup must contain " + RANS_M + " entries");
+        }
+
         int[] byteCounts = new int[NUM_LANES];
+        int ptr = 0;
+        if (chunk.byteStream.length < NUM_LANES * 4) {
+            throw new IllegalArgumentException("Lane header is truncated");
+        }
+        long totalLaneBytes = 0;
         for (int l = 0; l < NUM_LANES; l++) {
-            byteCounts[l] = (chunk.byteStream[ptr++] & 0xFF) |
-                           ((chunk.byteStream[ptr++] & 0xFF) << 8) |
-                           ((chunk.byteStream[ptr++] & 0xFF) << 16) |
-                           ((chunk.byteStream[ptr++] & 0xFF) << 24);
+            int count = (chunk.byteStream[ptr++] & 0xFF) |
+                        ((chunk.byteStream[ptr++] & 0xFF) << 8) |
+                        ((chunk.byteStream[ptr++] & 0xFF) << 16) |
+                        ((chunk.byteStream[ptr++] & 0xFF) << 24);
+            if (count < 0) {
+                throw new IllegalArgumentException("Negative lane byte count");
+            }
+            byteCounts[l] = count;
+            totalLaneBytes += count;
+        }
+        if (totalLaneBytes != chunk.byteStream.length - ptr) {
+            throw new IllegalArgumentException("Lane byte counts do not match the stream length");
         }
 
         byte[][] laneBytes = new byte[NUM_LANES][];
         int[] byteIdx = new int[NUM_LANES];
         for (int l = 0; l < NUM_LANES; l++) {
             laneBytes[l] = new byte[byteCounts[l]];
-            for (int b = 0; b < byteCounts[l]; b++) {
-                laneBytes[l][b] = chunk.byteStream[ptr++];
-            }
+            System.arraycopy(chunk.byteStream, ptr, laneBytes[l], 0, byteCounts[l]);
+            ptr += byteCounts[l];
         }
 
         int[] states = Arrays.copyOf(chunk.finalStates, NUM_LANES);
+        for (int l = 0; l < NUM_LANES; l++) {
+            if (states[l] <= 0) {
+                throw new IllegalArgumentException("Invalid rANS state");
+            }
+        }
 
+        byte[] symbols = new byte[chunk.symbolCount];
         for (int i = 0; i < chunk.symbolCount; i++) {
             int lane = i % NUM_LANES;
             int x = states[lane];
 
             int m = x & (RANS_M - 1);
             int sym = cdfLut[m];
+            if (sym < 0 || sym >= stats.size()) {
+                throw new IllegalArgumentException("CDF lookup returned an invalid symbol");
+            }
             symbols[i] = (byte) sym;
 
             RansSymbol sStats = stats.get(sym);
@@ -161,16 +206,20 @@ public final class Rans8Codec {
             x = f * (x >>> RANS_PROB_BITS) + (m - c);
 
             while (x < RANS_L) {
-                if (byteIdx[lane] < byteCounts[lane]) {
-                    int b = laneBytes[lane][byteIdx[lane]++] & 0xFF;
-                    x = (x << 8) | b;
-                } else {
-                    break;
+                if (byteIdx[lane] >= byteCounts[lane]) {
+                    throw new IllegalArgumentException("Lane stream is truncated");
                 }
+                int b = laneBytes[lane][byteIdx[lane]++] & 0xFF;
+                x = (x << 8) | b;
             }
             states[lane] = x;
         }
 
+        for (int l = 0; l < NUM_LANES; l++) {
+            if (states[l] != RANS_L || byteIdx[l] != byteCounts[l]) {
+                throw new IllegalArgumentException("Lane stream did not terminate cleanly");
+            }
+        }
         return symbols;
     }
 
@@ -203,26 +252,47 @@ public final class Rans8Codec {
         try {
             DataInputStream dis = new DataInputStream(new ByteArrayInputStream(compressed));
             int symbolCount = dis.readInt();
+            if (symbolCount < 0) {
+                throw new IllegalArgumentException("Negative symbol count");
+            }
             List<RansSymbol> stats = new ArrayList<>(256);
             int sum = 0;
             for (int i = 0; i < 256; i++) {
                 int f = dis.readShort() & 0xFFFF;
+                if (f <= 0) {
+                    throw new IllegalArgumentException("Zero-frequency symbol in header");
+                }
                 stats.add(new RansSymbol(f, sum));
                 sum += f;
+                if (sum > RANS_M) {
+                    throw new IllegalArgumentException("Symbol frequencies exceed " + RANS_M);
+                }
+            }
+            if (sum != RANS_M) {
+                throw new IllegalArgumentException("Symbol frequencies do not sum to " + RANS_M);
             }
             int[] cdfLut = buildCdfLut(stats);
 
             EncodedChunk chunk = new EncodedChunk();
             chunk.symbolCount = symbolCount;
             for (int l = 0; l < NUM_LANES; l++) {
-                chunk.finalStates[l] = dis.readInt();
+                int state = dis.readInt();
+                if (state <= 0) {
+                    throw new IllegalArgumentException("Invalid rANS state in header");
+                }
+                chunk.finalStates[l] = state;
             }
             int streamLen = dis.readInt();
+            if (streamLen < 0 || streamLen > dis.available()) {
+                throw new IllegalArgumentException("Invalid lane stream length");
+            }
             byte[] stream = new byte[streamLen];
             dis.readFully(stream);
             chunk.byteStream = stream;
 
             return decode(chunk, cdfLut, stats);
+        } catch (java.io.EOFException e) {
+            throw new IllegalArgumentException("Truncated rANS stream", e);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

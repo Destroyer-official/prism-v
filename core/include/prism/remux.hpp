@@ -14,10 +14,9 @@ namespace prism {
 /**
  * @brief Mode L-Remux: Packet-Preserving Remux Engine (Contract B).
  *
- * Guaranteed 100% preservation of encoded video and audio NAL packet
- * payloads without decoding or re-quantization.
- * Used for fast container repacking, audio passthrough, or when
- * Mode L-BBR bitstream syntax savings yield < 3%.
+ * Copies encoded video and audio packet payloads without decoding or
+ * re-quantization. Used for container repacking, audio passthrough, or when
+ * estimated BBR syntax savings are below 3%.
  */
 class RemuxEngine {
 public:
@@ -64,7 +63,7 @@ public:
     static bool parse_and_verify_isobmff(const uint8_t* mp4_data, size_t size, RemuxPackage& out_pkg);
 
     /**
-     * @brief Verify Contract B guarantee: 100% bit-exact packet payload identity.
+     * @brief Verify packet payload identity between a source and parsed package.
      */
     static bool verify_packet_preservation(const RemuxPackage& src, const RemuxPackage& dst);
 };

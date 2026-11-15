@@ -108,14 +108,14 @@ public:
     CompressedPscFrame compress_frame(const uint8_t* raw_rgb_or_yuv, const FrameGeometry& geom);
 
     /**
-     * @brief Decompress CompressedPscFrame back to exact original pixels.
-     * Guarantees 100.000% sample parity (PSNR = infinity).
+     * @brief Decompress a CompressedPscFrame back to the original pixel buffers.
+     * The decode path checks geometry and the stored payload hash.
      */
     std::vector<uint8_t> decompress_frame(const CompressedPscFrame& frame);
 
     /**
-     * @brief Verify PSNR = infinity between original and decompressed buffers.
-     * @return true if 100.000% bit-exact pixel parity is achieved.
+     * @brief Compare two sample buffers for exact equality.
+     * @return true when every byte matches.
      */
     static bool verify_sample_parity(const uint8_t* original, const uint8_t* reconstructed, size_t size);
 };

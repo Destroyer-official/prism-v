@@ -1,5 +1,10 @@
 # Synthesis State Tracking
 
+> **Historical planning record.** See [README.md](README.md) in this directory.
+> The status below describes the planning phases, not the implementation.
+> Check [docs/VERIFICATION.md](../docs/VERIFICATION.md) for what is built and
+> tested.
+
 **Project**: Next-Generation Video Compression for Android (2027+)  
 **System Name**: Prism-V  
 **Current Date**: 2026-11-14  

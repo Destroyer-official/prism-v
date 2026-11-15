@@ -12,7 +12,7 @@ namespace prism {
 /**
  * @brief 5-Stage Verified Replacement Transaction Engine.
  *
- * Enforces Invariant 6: Zero Media Loss Guarantee.
+ * Transactional file replacement with hash verification.
  * In-place destructive file overwrites are strictly forbidden.
  */
 class VerifiedTransaction {

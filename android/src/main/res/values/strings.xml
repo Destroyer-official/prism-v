@@ -7,5 +7,5 @@
     <string name="battery_saver">Battery Saver</string>
     <string name="social_export">Optimized Social Export (WhatsApp/Instagram)</string>
     <string name="preflight_title">Preflight Pareto Analysis (0.3s Probe)</string>
-    <string name="compress_now">Compress Video (Zero Media Loss)</string>
+    <string name="compress_now">Compress Video</string>
 </resources>

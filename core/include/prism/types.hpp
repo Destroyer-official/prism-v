@@ -28,7 +28,7 @@ constexpr size_t PAGE_SIZE_16KB = 16384; // Android 15+ mandated 16 KB page size
 constexpr size_t TILE_SIZE_LUMA = 256;    // 256x256 luma spatial tile
 constexpr size_t TILE_SIZE_CHROMA = 128;  // 128x128 chroma tile
 constexpr size_t TILE_HALO_PIXELS = 16;   // 16-pixel overlap halo
-constexpr size_t MAX_TILE_SLOTS = 12;     // 12-slot ring buffer pool (guaranteed <= 64 MB RSS)
+constexpr size_t MAX_TILE_SLOTS = 12;     // 12-slot ring buffer pool
 
 // Lossless Operational Contracts
 enum class LosslessContract : uint8_t {

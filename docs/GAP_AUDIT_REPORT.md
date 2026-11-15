@@ -1,5 +1,12 @@
 # Prism-V Full Gap Audit Report
-**Date:** 2026-11-15 | **Scope:** Backend (C++ + Java Engine) + UI (Android Java) vs. Plan  
+
+> **Historical snapshot.** This audit was written on 2026-11-15 against an
+> earlier state of the tree. Some items below have since been fixed, and some
+> file/line references may have moved. Treat it as a record of what was found,
+> not as the current status. See [VERIFICATION.md](VERIFICATION.md) for what is
+> currently built and tested.
+
+**Date:** 2026-11-15 | **Scope:** Backend (C++ + Java Engine) + UI (Android Java) vs. Plan
 **Files Read:** 15 Java files + 3 build/manifest files + partial C++ inventory
 
 ---

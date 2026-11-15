@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <iomanip>
 #include <sstream>
+#include <stdexcept>
 
 namespace fs = std::filesystem;
 
@@ -71,7 +72,9 @@ uint64_t RabinCdcEngine::ingest_video(const std::string& video_path,
                                       const std::string& vault_blocks_dir,
                                       ChunkManifest& out_manifest) {
     std::ifstream in(video_path, std::ios::binary);
-    if (!in.is_open()) return 0;
+    if (!in.is_open()) {
+        throw std::runtime_error("Failed to open input for chunking: " + video_path);
+    }
 
     std::vector<uint8_t> data((std::istreambuf_iterator<char>(in)),
                               std::istreambuf_iterator<char>());
@@ -91,7 +94,13 @@ uint64_t RabinCdcEngine::ingest_video(const std::string& video_path,
         if (!fs::exists(block_path)) {
             // Write unique chunk to block store
             std::ofstream out(block_path, std::ios::binary);
+            if (!out.is_open()) {
+                throw std::runtime_error("Failed to write vault block: " + block_path.string());
+            }
             out.write(reinterpret_cast<const char*>(data.data() + chunk.offset), chunk.length);
+            if (!out) {
+                throw std::runtime_error("Failed to write vault block: " + block_path.string());
+            }
             new_bytes_written += chunk.length;
         }
     }
@@ -118,11 +127,23 @@ bool RabinCdcEngine::restore_video(const ChunkManifest& manifest,
         std::ifstream block_in(block_path, std::ios::binary);
         std::vector<uint8_t> block_data((std::istreambuf_iterator<char>(block_in)),
                                         std::istreambuf_iterator<char>());
+        if (block_data.size() != chunk.length ||
+            BbrEngine::compute_sha256(block_data.data(), block_data.size()) != chunk.hash) {
+            out.close();
+            fs::remove(destination_path);
+            return false;
+        }
+
         out.write(reinterpret_cast<const char*>(block_data.data()), block_data.size());
+        if (!out) {
+            out.close();
+            fs::remove(destination_path);
+            return false;
+        }
     }
 
     out.close();
-    return true;
+    return static_cast<bool>(out);
 }
 
 } // namespace prism

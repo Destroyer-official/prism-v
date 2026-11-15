@@ -35,16 +35,16 @@ IngestMediaInfo IngestRouter::probe_media(const uint8_t* header_data, size_t hea
             contains_fourcc(header_data, header_len, "hev1")) {
             info.family = CodecFamily::H265_HEVC;
             info.codec_id = SourceCodecId::CODEC_HEVC;
-            info.estimated_bbr_savings_ratio = 0.12; // 12% average for HEVC
+            info.estimated_bbr_savings_ratio = 0.12; // heuristic default for HEVC
         } else if (contains_fourcc(header_data, header_len, "av01")) {
             info.family = CodecFamily::AV1;
             info.codec_id = SourceCodecId::CODEC_H264;
-            info.estimated_bbr_savings_ratio = 0.02; // AV1 bitstream already tight -> candidate for remux
+            info.estimated_bbr_savings_ratio = 0.02; // heuristic: AV1 usually favours remux
         } else {
             // Default H.264 / AVC
             info.family = CodecFamily::H264_AVC;
             info.codec_id = SourceCodecId::CODEC_H264;
-            info.estimated_bbr_savings_ratio = 0.18; // 18% average for H.264
+            info.estimated_bbr_savings_ratio = 0.18; // heuristic default for H.264
         }
     } else if (header_len >= 8 && std::memcmp(header_data, "PRISMV01", 8) == 0) {
         // .pvloss container
@@ -75,7 +75,7 @@ RoutingDecision IngestRouter::route_media(const IngestMediaInfo& info, bool user
         decision.is_lossless = false;
         decision.mode_name = "Mode Y-Hybrid";
         decision.recommended_codec_id = (info.family == CodecFamily::H265_HEVC) ? SourceCodecId::CODEC_HEVC : SourceCodecId::CODEC_H264;
-        decision.rationale = "Hardware MediaCodec Base (85% energy) + Cool-chic 5.0 Micro-Residual (<600 MAC/px) + AFGS1 Parametric Film Grain Synthesis";
+        decision.rationale = "Hardware MediaCodec base layer plus Cool-chic micro-residual and AFGS1 parametric film grain synthesis";
         return decision;
     }
 
@@ -87,25 +87,25 @@ RoutingDecision IngestRouter::route_media(const IngestMediaInfo& info, bool user
         decision.contract = LosslessContract::CONTRACT_C_PSC;
         decision.recommended_codec_id = SourceCodecId::CODEC_BAYER_RAW10;
         decision.mode_name = "Mode L-PSC (Bayer CFA)";
-        decision.rationale = "Contract C: Camera2 RAW sensor capture. Splices 4 Bayer sub-planes with LeGall 5/3 integer wavelet + rANS8 (100% sample parity, PSNR=infinity).";
+        decision.rationale = "Contract C: Camera2 RAW sensor capture. Splits 4 Bayer sub-planes with a reversible LeGall 5/3 integer wavelet and rANS8 entropy coding.";
     } else if (info.family == CodecFamily::RAW_YUV) {
         // Contract C: Mode L-PSC (Raw YUV)
         decision.contract = LosslessContract::CONTRACT_C_PSC;
         decision.recommended_codec_id = SourceCodecId::CODEC_YUV420_8;
         decision.mode_name = "Mode L-PSC (YUV)";
-        decision.rationale = "Contract C: Uncompressed camera sensor capture. Reversible YCoCg-R + LeGall 5/3 lifting wavelet + 4-pass checkerboard ConvNet (PSNR=infinity).";
+        decision.rationale = "Contract C: Uncompressed camera capture. Reversible YCoCg-R, LeGall 5/3 lifting wavelet, MED prediction, and rANS8 entropy coding.";
     } else if (info.family == CodecFamily::AUDIO_ONLY || !info.is_container_standard || info.estimated_bbr_savings_ratio < 0.03) {
         // Contract B: Mode L-Remux
         decision.contract = LosslessContract::CONTRACT_B_REMUX;
         decision.recommended_codec_id = info.codec_id;
         decision.mode_name = "Mode L-Remux";
-        decision.rationale = "Contract B: Bitstream syntax savings < 3% or container repacking. 100% encoded packet preservation without dequantization, validated by SHA-256 payload digest.";
+        decision.rationale = "Contract B: Container repacking without re-encoding; packet payloads are verified with a SHA-256 digest.";
     } else {
         // Contract A: Mode L-BBR
         decision.contract = LosslessContract::CONTRACT_A_BBR;
         decision.recommended_codec_id = (info.family == CodecFamily::H265_HEVC) ? SourceCodecId::CODEC_HEVC : SourceCodecId::CODEC_H264;
         decision.mode_name = "Mode L-BBR";
-        decision.rationale = "Contract A: Pre-existing compressed camera video. Bitstream syntax recompression via HuffmanPos/ECB + 1.1 KB Micro-MLP + 8-way rANS (100.000% SHA-256 bit-exact).";
+        decision.rationale = "Contract A: Pre-existing compressed video. Bitstream recompression with a Micro-MLP probability model and 8-way rANS; losslessness is checked against SHA-256.";
     }
 
     return decision;

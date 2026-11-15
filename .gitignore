@@ -1,10 +1,4 @@
-# ==============================================================================
-# Prism-V: Git Ignore Rules (Production Enterprise Grade)
-# ==============================================================================
-
-# ------------------------------------------------------------------------------
-# Build Systems & Compilers (C++ / CMake / Clang / GCC / MSVC)
-# ------------------------------------------------------------------------------
+# Native build output
 build/
 bin/
 out/
@@ -14,6 +8,7 @@ cmake_install.cmake
 compile_commands.json
 CTestTestfile.cmake
 Testing/
+.cache/
 *.o
 *.obj
 *.so
@@ -25,13 +20,9 @@ Testing/
 *.ilk
 *.pdb
 *.exe
-.cache/
 
-# ------------------------------------------------------------------------------
-# Android & Gradle Build Artifacts
-# ------------------------------------------------------------------------------
+# Android and Gradle build output
 .gradle/
-build/
 android/build/
 android/.cxx/
 .cxx/
@@ -47,15 +38,11 @@ android_app/apk_root/build/
 local.properties
 .bundle/
 
-# ------------------------------------------------------------------------------
-# Rust / Cargo Build Output
-# ------------------------------------------------------------------------------
+# Rust build output
 rust/target/
 target/
 
-# ------------------------------------------------------------------------------
-# Large Media & Test Video Binaries (GitHub 100MB Hard Cap Protection)
-# ------------------------------------------------------------------------------
+# Media samples are not committed
 sample_video/
 *.mp4
 *.mkv
@@ -68,9 +55,7 @@ sample_video/
 *.hevc
 *.av1
 
-# ------------------------------------------------------------------------------
-# UI Automator & Live Device Test Dumps
-# ------------------------------------------------------------------------------
+# Device dumps and logs
 *.xml.dump
 dump_*.xml
 uidump.xml
@@ -78,9 +63,7 @@ window_dump*.xml
 test_log*.txt
 *.log
 
-# ------------------------------------------------------------------------------
-# Python & Scratch Script Caches
-# ------------------------------------------------------------------------------
+# Python caches
 __pycache__/
 *.py[cod]
 *$py.class
@@ -89,9 +72,7 @@ __pycache__/
 env/
 venv/
 
-# ------------------------------------------------------------------------------
-# IDEs & Developer Environment
-# ------------------------------------------------------------------------------
+# Editors and OS files
 .idea/
 .vscode/
 *.iml
@@ -101,10 +82,6 @@ venv/
 *.swo
 *~
 .directory
-
-# ------------------------------------------------------------------------------
-# Operating System Files
-# ------------------------------------------------------------------------------
 .DS_Store
 .DS_Store?
 ._*
@@ -114,9 +91,7 @@ ehthumbs.db
 Thumbs.db
 [Dd]esktop.ini
 
-# ------------------------------------------------------------------------------
-# Keystores & Cryptographic Secrets
-# ------------------------------------------------------------------------------
+# Keystores and secrets
 *.keystore
 *.jks
 *.p12

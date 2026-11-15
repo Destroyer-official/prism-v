@@ -39,7 +39,7 @@ struct PvlossHeader {
 };
 
 /**
- * @brief Production Writer for .pvloss Self-Indexed Lossless Containers.
+ * @brief Writer for .pvloss self-indexed lossless containers.
  */
 class PvlossWriter {
 public:
@@ -63,7 +63,7 @@ private:
 };
 
 /**
- * @brief Production Reader for .pvloss Containers with 256 KB Random-Access Seeking.
+ * @brief Reader for .pvloss containers with 256 KB random-access seeking.
  */
 class PvlossReader {
 public:
@@ -90,6 +90,7 @@ private:
     std::ifstream in_;
     PvlossHeader header_;
     std::vector<PidxEntry> index_entries_;
+    uint64_t file_size_ = 0;
     bool is_open_ = false;
 };
 

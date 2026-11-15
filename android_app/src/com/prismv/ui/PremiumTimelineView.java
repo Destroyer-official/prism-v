@@ -374,11 +374,11 @@ public class PremiumTimelineView extends View {
             canvas.drawRect(tempRect, paintCutOverlay);
             drawHatchedCutMarks(canvas, tempRect);
 
-            // Centered "✂ CUT OUT" badge inside cut region
+            // Centered "CUT OUT" badge inside cut region
             if (endX - startX > 64f * dp) {
                 paintBubbleText.setTextSize(9.5f * dp);
                 paintBubbleText.setColor(Color.parseColor("#FCA5A5"));
-                canvas.drawText("✂ CUT OUT", (startX + endX) / 2f, (filmstripTop + filmstripBottom) / 2f + 3.5f * dp, paintBubbleText);
+                canvas.drawText("CUT OUT", (startX + endX) / 2f, (filmstripTop + filmstripBottom) / 2f + 3.5f * dp, paintBubbleText);
                 paintBubbleText.setColor(Color.WHITE);
                 paintBubbleText.setTextSize(10.5f * dp);
             }

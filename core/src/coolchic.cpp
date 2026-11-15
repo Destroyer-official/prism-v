@@ -166,31 +166,42 @@ ParetoDialSolver::DialResult ParetoDialSolver::run_preflight_probe(const uint8_t
     // 0.3s micro-probe: sample 5 256x256 patches
     // Compute spatial variance & edge energy
     uint64_t total_variance = 0;
-    size_t patch_dim = 256;
+    size_t patch_count = 0;
+    constexpr size_t patch_dim = 256;
 
     if (frame_y && width >= patch_dim && height >= patch_dim) {
-        for (size_t p = 0; p < 5; ++p) {
-            size_t start_x = ((p + 1) * width / 6) - (patch_dim / 2);
-            size_t start_y = ((p + 1) * height / 6) - (patch_dim / 2);
+        const size_t max_x = width - patch_dim;
+        const size_t max_y = height - patch_dim;
 
-            uint64_t sum = 0;
-            uint64_t sum_sq = 0;
+        for (size_t p = 0; p < 5; ++p) {
+            size_t center_x = ((p + 1) * static_cast<size_t>(width)) / 6;
+            size_t center_y = ((p + 1) * static_cast<size_t>(height)) / 6;
+            size_t start_x = (center_x > patch_dim / 2) ? center_x - patch_dim / 2 : 0;
+            size_t start_y = (center_y > patch_dim / 2) ? center_y - patch_dim / 2 : 0;
+            start_x = std::min(start_x, max_x);
+            start_y = std::min(start_y, max_y);
+
+            int64_t sum = 0;
+            int64_t sum_sq = 0;
             for (size_t y = 0; y < patch_dim; ++y) {
                 for (size_t x = 0; x < patch_dim; ++x) {
                     uint8_t val = frame_y[(start_y + y) * width + (start_x + x)];
                     sum += val;
-                    sum_sq += static_cast<uint64_t>(val) * val;
+                    sum_sq += static_cast<int64_t>(val) * val;
                 }
             }
-            uint64_t mean = sum / (patch_dim * patch_dim);
-            uint64_t var = (sum_sq / (patch_dim * patch_dim)) - (mean * mean);
-            total_variance += var;
+            constexpr int64_t samples = static_cast<int64_t>(patch_dim) * patch_dim;
+            int64_t mean = sum / samples;
+            int64_t var = (sum_sq / samples) - (mean * mean);
+            if (var < 0) var = 0;
+            total_variance += static_cast<uint64_t>(var);
+            ++patch_count;
         }
     }
 
     DialResult res = solve(target, width, height, 30, 10.0f);
     // Refine VMAF prediction based on observed patch variance
-    if (total_variance / 5 > 2000) {
+    if (patch_count > 0 && (total_variance / patch_count) > 2000) {
         // High complexity texture scene
         res.predicted_vmaf -= 1.2f;
     }

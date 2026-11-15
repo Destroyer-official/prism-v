@@ -54,7 +54,7 @@ public:
      * @param chunk Compressed chunk containing final states and byte stream.
      * @param cdf_table CDF lookup mapping slot (0..32767) to symbol value.
      * @param symbol_stats Frequency stats for each symbol value.
-     * @return 100% bit-exact reconstructed symbol vector.
+     * @return Decoded symbol vector. Symbol count and indexes are validated.
      */
     static std::vector<uint16_t> decode(const EncodedChunk& chunk,
                                        const std::vector<uint16_t>& cdf_table,

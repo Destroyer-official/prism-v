@@ -1,118 +1,217 @@
-# Mathematical Invariants & Formal Proofs
+# Design invariants and test coverage
 
-Prism-V enforces 7 core mathematical invariants across its C++20 core, JNI layer, and Android MediaCodec pipeline. These invariants are verified on every continuous integration run and on physical silicon.
+This document lists properties the native code is designed to preserve and the
+tests that exercise them. It is a map of the test suite, not a formal proof.
 
----
+All results below come from running the test executable on one development
+machine (Windows, MSVC). Cross-architecture, device, and performance claims are
+out of scope and are not asserted by the suite. See
+[VERIFICATION.md](VERIFICATION.md) for the commands used.
 
-## 🧮 Invariant 1: Bit-Exact Deterministic Integer Arithmetic
+## 1. Deterministic integer arithmetic (`detint`)
 
-### Formulation
-Floating-point arithmetic introduces discrepancies between CPU instruction sets (e.g. x86 FMA vs ARM64 NEON). Prism-V mandates 64-bit signed fixed-point arithmetic with a 16-bit fractional scale:
+`core/src/detint.cpp` uses 16-bit signed activations, 8-bit signed weights, and
+32-bit accumulation with a maximum of 512 products.
 
-$$\text{Fixed}(x) = \lfloor x \cdot 2^{16} + 0.5 \rfloor$$
+- The largest possible dot product is
+  `512 * 127 * 32767 = 2,130,641,408`, which is below `INT32_MAX`. The test
+  computes this value exactly for all-max and all-min inputs.
+- `dyadic_rescale` rounds with a power-of-two shift and clamps to the 16-bit
+  activation range. The test checks a normal case, upper clamp, and lower clamp.
+- `CDF_SIGMOID_LUT` has 512 entries; the test checks that it starts at 0, ends
+  at 32768, and that the lookup is non-decreasing for the sampled inputs.
+- `allocate_page_aligned` returns an address aligned to at least 16 KiB.
 
-Multiplication and division are defined over 64-bit integer domains:
+The suite does not compare results across CPU architectures. Bit-identical
+cross-architecture output is a design intent, not a tested property here.
 
-$$A \otimes B = \frac{A \cdot B}{2^{16}}, \quad A \oslash B = \frac{A \cdot 2^{16}}{B}$$
+## 2. rANS entropy coding (`rans8`)
 
-### Invariant
-For any input vector $\vec{v} \in \mathbb{Z}^N$, computation results are bit-identical across x86_64, ARMv8-A, ARMv9-A, and WebAssembly:
+`core/src/rans8.cpp` is an 8-lane rANS coder with a 15-bit normalization mass
+(`RANS_M = 32768`) and 16-bit renormalization.
 
-$$\text{CRC64}(\text{Pipeline}_{\text{x86}}(\vec{v})) \equiv \text{CRC64}(\text{Pipeline}_{\text{ARM64}}(\vec{v}))$$
+Properties checked by tests:
 
----
+- Symbol frequencies must be non-zero and must describe contiguous, ordered
+  intervals. A zero-frequency symbol is rejected with an exception.
+- A stream encoded from valid statistics decodes to the original symbols
+  exactly. The checked cases are a 16-symbol non-uniform distribution over 4096
+  symbols and a single-symbol alphabet with full frequency.
+- Serialization and deserialization preserve the symbol count.
+- A stream truncated by two bytes is rejected instead of reading past the
+  buffer.
+- The full-frequency single-symbol case encodes and decodes without stalling or
+  overflowing the renormalization bound.
 
-## 📉 Invariant 2: rANS Shannon Entropy Limit
+The suite does not measure achieved bitrate, so no entropy-bound statement is
+made.
 
-### Formulation
-Prism-V employs an 8-bit streaming rANS (Asymmetric Numeral Systems) coder. Given an alphabet of symbols $s \in \mathcal{S}$ with frequencies $f_s$ and cumulative distribution $c_s = \sum_{i < s} f_i$ where $M = \sum f_s = 2^{12}$:
+## 3. BBR lossless path (`bbr`)
 
-The encoding function $C(s, x)$ transforms state $x$ and symbol $s$:
+`core/src/bbr.cpp` splits bytes into nibbles, derives symbol statistics from a
+small integer model, and runs rANS coding. When coding would expand the payload,
+the raw bytes are stored instead.
 
-$$C(s, x) = M \cdot \lfloor x / f_s \rfloor + (x \bmod f_s) + c_s$$
+Properties checked by tests:
 
-The decoding function $D(x)$ satisfies:
+- An 8192-byte synthetic pattern round-trips byte-for-byte, and the SHA-256 of
+  the restored buffer equals the original digest.
+- The micro-MLP produces a valid CDF: every frequency is non-zero and the
+  frequencies sum to 32768. Two runs with the same input produce identical
+  symbol intervals.
+- The `HuffmanPos` bucket function maps the DC position to 0, the bottom-right
+  position to 15, and an interior position to a value in between.
 
-$$s = \text{lookup}(x \bmod M), \quad x' = f_s \cdot \lfloor x / M \rfloor + (x \bmod M) - c_s$$
+## 4. Image and Bayer paths (`psc`)
 
-### Invariant (Reversibility & Compression Efficiency)
-1. Exact invertibility: $D(C(s, x)) = (s, x)$ for all states $x \in [L, 2L-1]$.
-2. The empirical bitrate $R$ is strictly bounded by Shannon entropy $H(S)$:
+`core/src/psc.cpp` implements a reversible YCoCg-R color transform, a 2D LeGall
+5/3 integer wavelet, MED prediction, and rANS coding for 8-bit RGB frames. Bayer
+CFA frames are split into four planes and can be coded intra or as a temporal
+delta against a reference frame.
 
-$$H(S) \le R < H(S) + 0.05 \text{ bits/symbol}$$
+Properties checked by tests:
 
----
+- YCoCg-R round-trips every sampled RGB triple in steps of 17 per channel.
+- The 1D and 2D LeGall 5/3 transforms reconstruct their input exactly for the
+  tested lengths and sizes.
+- A 64x64 RGB frame compresses and decompresses with exact sample parity.
+- 10-bit Bayer splice/merge preserves every sample; intra and delta frames both
+  reconstruct exactly.
+- Odd width or height is rejected before buffer access.
+- A 2x2 frame round-trips, which covers the smallest supported geometry.
+- A compressed frame whose geometry is altered is rejected on decode.
+- A Bayer bit depth of 0 is rejected.
 
-## ⏱️ Invariant 3: BBR Rate Control & Encoder Queue Fullness
+Only even dimensions of at least 2x2 are supported. 8-bit RGB and 10-bit Bayer
+are the tested depth/format combinations.
 
-### Formulation
-Hardware video encoders undergo latency spikes when input frame generation exceeds encoder hardware capability. Prism-V implements Bottleneck Bandwidth and RTT (BBR) rate pacing:
+## 5. `.pvloss` container (`container_pvloss`)
 
-$$R_{\text{pacing}} = \text{pacing\_gain} \cdot \text{BtlBw}$$
+The writer emits a fixed header, CRC32C-framed chunks, and a seek index. The
+reader bounds the index and chunk ranges against the actual file size.
 
-Where $\text{BtlBw} = \max_{t \in W} (\text{DeliveryRate}(t))$ over an 8-GOP window $W$.
+Properties checked by tests:
 
-### Invariant (No Queue Bloat)
-The hardware buffer queue length $Q(t)$ at time $t$ never exceeds double the Bandwidth-Delay Product (BDP):
+- Two chunks can be written, reopened, located by virtual offset, and read back
+  with their payload bytes intact and their CRC32C checked.
+- A file that is too short to hold a header is rejected.
+- A header whose index offset lies past the end of the file is rejected.
+- A chunk truncated at the end of the file makes `open` fail.
+- Reading a chunk through the index returns exactly the bytes that were
+  written.
 
-$$Q(t) \le 2 \cdot \text{BDP} = 2 \cdot (\text{BtlBw} \cdot \text{RTT}_{\min})$$
+## 6. ISOBMFF remux (`remux`)
 
-Preventing hardware frame drops and Dalvik direct buffer starvation.
+`remux_to_clean_isobmff` writes a minimal `ftyp`/`moov`/`mdat` layout and keeps
+packet payloads unchanged. `parse_and_verify_isobmff` is deliberately strict.
 
----
+Properties checked by tests:
 
-## 🧠 Invariant 4: Continuous-Coordinate Entropy Modeling
+- Video and audio packet payloads survive a write/parse cycle, and the payload
+  SHA-256 matches.
+- Colour metadata, HDR metadata, pixel aspect ratio, and rotation are preserved
+  through the project's own mux/demux path.
+- A stream truncated by one byte is rejected.
+- A stream with one trailing byte is rejected.
+- A null or empty input is rejected.
+- The remux threshold predicate selects remux below 3% estimated savings and
+  BBR above it.
 
-### Formulation
-The continuous neural coordinate mapping engine models high-frequency residual variations using coordinate multi-layer perceptrons:
+This covers the project's own box layout, not arbitrary real-world MP4 files.
 
-$$F(\mathbf{x}) = W_2 \cdot \text{GELU}(W_1 \cdot \mathbf{x} + b_1) + b_2, \quad \mathbf{x} = \begin{pmatrix} x / W \\ y / H \end{pmatrix}$$
+## 7. Deduplication and restore (`dedup_rabin`)
 
-### Invariant (Bounded Output Range)
-For all spatial coordinates $(x, y) \in [0, W] \times [0, H]$:
+The content-defined chunker writes hash-addressed blocks to a vault. Restore
+recomputes each block's length and SHA-256 before writing.
 
-$$|F(\mathbf{x})| \le \text{MaxResidual}, \quad \text{with } \text{NaN} \notin \text{Range}(F)$$
+Properties checked by tests:
 
----
+- A 1 MiB patterned stream is chunked and restored byte-for-byte.
+- The manifest contains at least one chunk and reports newly written bytes.
+- Restore reports failure if a block is missing or fails verification.
 
-## 🌾 Invariant 5: AOM Film Grain Synthesis 1 (AFGS1)
+## 8. Transactional replacement (`transaction`)
 
-### Formulation
-High-frequency grain consumes up to 40% of video bitrate. AFGS1 strips grain during preprocessing and regenerates it parametrically via an auto-regressive (AR) filter:
+`VerifiedTransaction` stages output in a sandbox, runs a verification callback,
+and only then publishes it and moves the original into a trash directory.
 
-$$G(x, y) = \sum_{(i,j) \in \Lambda} c_{i,j} \cdot G(x-i, y-j) + \epsilon(x, y)$$
+Properties checked by tests:
 
-### Invariant (Filter Stability)
-The spectral radius $\rho$ of the AR coefficient matrix $C$ satisfies:
+- On success the receipt reports `GRACE`, the published file exists, and the
+  original is in the trash directory.
+- On verification failure the receipt reports `FAILED`, the original is still
+  present and unchanged, and the temporary file is removed.
 
-$$\rho(C) < 1.0$$
+The test covers the process-level sequence. It does not simulate a power loss or
+process kill during the swap.
 
-Ensuring synthesized grain remains stationary without numerical divergence.
+## 9. Virtual file proxy (`vfs_proxy`)
 
----
+`PrismVfsProxy` serves random-access reads from a mounted `.pvloss` file using a
+chunk cache.
 
-## 📦 Invariant 6: Zero-Copy ISOBMFF Box Atom Invariance
+Properties checked by tests:
 
-### Formulation
-When rebuilding or trimming MP4 containers, atoms (`ftyp`, `moov`, `mdat`) are indexed without payload replication.
+- A read that starts before a chunk boundary and ends after it returns the
+  correct bytes.
+- A repeated read is served from the cache and increments the cache-hit count.
+- The reported virtual size matches the original size.
 
-### Invariant (Conservation of Media Bytes)
-$$\sum_{i} \text{BoxSize}_i = \text{FileSizeBytes}$$
+## 10. Grain synthesis (`afgs1`)
 
-Chunk offsets in `stco` / `co64` strictly monotonically increase:
+`Afgs1Engine` extracts a grain estimate, produces a denoised frame, synthesizes
+grain from parameters, and serializes those parameters.
 
-$$\text{Offset}_{k+1} > \text{Offset}_k \quad \forall k \in [1, K-1]$$
+Properties checked by tests:
 
----
+- The parameter set reports that grain should be applied.
+- Synthesized output has the same dimensions as the input.
+- Serialized parameters deserialize with the same grain scale and random seed.
 
-## 🔄 Invariant 7: Two-Phase Commit Atomic Storage Swap
+The test does not assert filter stability, spectral radius, or perceptual
+quality.
 
-### Formulation
-File replacement on Android Scoped Storage must guarantee fault tolerance against crashes, low-memory kills (LMK), and battery exhaustion:
+## 11. Residual model and Pareto solver (`coolchic`)
 
-$$\text{State}(F) \in \{ \text{Original}, \text{Transcoded} \}$$
+`CoolchicResidualModel` is a hand-initialized integer MLP. `ParetoDialSolver`
+selects heuristic settings; its VMAF and energy fields are estimates.
 
-### Invariant
-$$\text{State}(F) \neq \text{Corrupted} \quad \forall t$$
+Properties checked by tests:
 
-If an unhandled exception or SIGKILL occurs during stage $S$, the rollback journal restores $F \gets \text{Original}$ upon subsequent initialization.
+- Synthesized residuals stay within the 8-bit range.
+- The blend function returns the base value at full weight and local average
+  plus residual at zero weight.
+- The solver returns settings inside its own configured bounds for a
+  battery-weighted and a quality-weighted target, and enables the residual path
+  only in the quality case.
+- The preflight probe returns a predicted VMAF in `(0, 100]` for exact, wide,
+  tiny, and null frame inputs.
+
+The asserted quality and energy values are properties of the heuristic model,
+not measurements of encoded video.
+
+## 12. Ingest routing (`router`)
+
+`IngestRouter` inspects header magic and file size, then selects a lossless
+contract or a lossy mode.
+
+Properties checked by tests:
+
+- An `ftyp`/`avc1` header is classified as H.264 and routed to BBR.
+- An `ftyp`/`av01` header with estimated savings below 3% is routed to remux.
+- A TIFF/RAW header is classified as Bayer and routed to the PSC Bayer path.
+- A lossy request on H.264 selects the hybrid mode.
+
+Savings ratios used by the router are fixed heuristic defaults, not measured
+values.
+
+## Not covered
+
+- Cross-architecture or cross-compiler bit-identity.
+- Entropy-coding efficiency versus Shannon entropy.
+- Any VMAF, BD-rate, PSNR, throughput, memory, or energy measurement on real
+  video.
+- Android runtime behavior, MediaCodec, foreground-service timeouts, and the
+  Java/Kotlin UI.
+- Thread safety, fuzzing, and sanitizer runs.
+- Arbitrary third-party MP4 layouts, fragmented MP4, and edit lists.

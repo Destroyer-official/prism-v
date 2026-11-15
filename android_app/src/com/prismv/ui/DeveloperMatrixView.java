@@ -1,41 +1,48 @@
 package com.prismv.ui;
 
+import android.app.ActivityManager;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.media.MediaCodecInfo;
+import android.media.MediaCodecList;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.AttributeSet;
 import android.util.TypedValue;
-import android.view.Gravity;
 import android.view.ViewGroup;
-import android.widget.*;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import android.widget.TextView;
 
 import com.prismv.bbr.BbrCodec;
 import com.prismv.detint.DetInt;
-import com.prismv.thermal.ThermalGearShifter;
 import com.prismv.transaction.VerifiedReplacement;
 import com.prismv.vfs.PrismVfsProxy;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.util.Locale;
-import java.util.Random;
+import java.util.TreeSet;
 
 /**
- * DeveloperMatrixView:
- * Screen 8 Developer & Video Engineer Matrix.
- * Live bitstream inspector, CABAC histogram, rANS efficiency,
- * NPU profiler, and on-device 7-Invariant Self-Test Runner.
+ * Diagnostics tab: real device/build values and local self-test results.
+ * No performance, quality, or energy numbers are shown because this view does
+ * not measure them.
  */
 public class DeveloperMatrixView extends LinearLayout {
 
-    private Handler handler;
+    private static final int SELF_TEST_COUNT = 4;
+
+    private final Handler handler = new Handler(Looper.getMainLooper());
     private TextView tvInvariantSummary;
     private LinearLayout invariantChecksContainer;
     private Button btnRunTests;
     private ProgressBar pbTesting;
+    private int passedChecks;
 
     public DeveloperMatrixView(Context context) {
         super(context);
@@ -60,92 +67,116 @@ public class DeveloperMatrixView extends LinearLayout {
     }
 
     private void init(Context context) {
-        handler = new Handler(Looper.getMainLooper());
         setOrientation(VERTICAL);
         setBackgroundColor(Color.parseColor("#060A12"));
         setPadding(dp(12), dp(12), dp(12), dp(24));
 
-        // Top Header
         LinearLayout headerRow = new LinearLayout(context);
         headerRow.setOrientation(HORIZONTAL);
-        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+        headerRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
         headerRow.setPadding(0, 0, 0, dp(12));
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("🔬 DEVELOPER & TELEMETRY MATRIX");
+        tvTitle.setText("Diagnostics");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
-        LinearLayout.LayoutParams tParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
-        tvTitle.setLayoutParams(tParams);
-        headerRow.addView(tvTitle);
+        headerRow.addView(tvTitle, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
 
-        TextView tvBadge = new TextView(context);
-        tvBadge.setText("● ARM SME2 ACTIVE");
-        tvBadge.setTextColor(Color.parseColor("#38BDF8"));
-        tvBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
-        tvBadge.setTypeface(Typeface.DEFAULT_BOLD);
-        tvBadge.setPadding(dp(8), dp(4), dp(8), dp(4));
-        tvBadge.setBackground(createRoundedDrawable(Color.parseColor("#0C2A4A"), Color.parseColor("#0284C7"), dp(1), dp(12)));
-        headerRow.addView(tvBadge);
+        TextView tvAbi = new TextView(context);
+        tvAbi.setText(Build.SUPPORTED_ABIS.length > 0 ? Build.SUPPORTED_ABIS[0] : "unknown ABI");
+        tvAbi.setTextColor(Color.parseColor("#38BDF8"));
+        tvAbi.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        tvAbi.setTypeface(Typeface.DEFAULT_BOLD);
+        tvAbi.setPadding(dp(8), dp(4), dp(8), dp(4));
+        tvAbi.setBackground(createRoundedDrawable(Color.parseColor("#0C2A4A"), Color.parseColor("#0284C7"), dp(1), dp(12)));
+        headerRow.addView(tvAbi);
         addView(headerRow);
 
-        // ==========================================
-        // 1. CABAC SYNTAX HISTOGRAM CARD
-        // ==========================================
-        LinearLayout cardCabac = createCard(context, "CABAC SYNTAX BIN DISTRIBUTION (LIVE)", "#38BDF8");
-        addHistogramBar(context, cardCabac, "coeff_abs_level_remaining", 88, "#38BDF8");
-        addHistogramBar(context, cardCabac, "significant_coeff_flag", 64, "#34D399");
-        addHistogramBar(context, cardCabac, "mvd_coding (Motion Delta)", 32, "#F59E0B");
-        addHistogramBar(context, cardCabac, "split_cu_flag", 18, "#A855F7");
+        addView(buildDeviceCard(context));
+        addView(buildEncoderCard(context));
+        addView(buildSelfTestCard(context));
+    }
 
-        TextView tvEntropyStats = new TextView(context);
-        tvEntropyStats.setText("Entropy: 0.814 bits/symbol  •  rANS Packing Efficiency: 99.2%  •  Throughput: 380 MB/s");
-        tvEntropyStats.setTextColor(Color.parseColor("#94A3B8"));
-        tvEntropyStats.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
-        tvEntropyStats.setTypeface(Typeface.MONOSPACE);
-        tvEntropyStats.setPadding(0, dp(8), 0, 0);
-        cardCabac.addView(tvEntropyStats);
-        addView(cardCabac);
+    private LinearLayout buildDeviceCard(Context context) {
+        LinearLayout card = createCard(context, "DEVICE");
+        addRow(card, "Device", safeValue(Build.MANUFACTURER) + " " + safeValue(Build.MODEL));
+        addRow(card, "Android", safeValue(Build.VERSION.RELEASE) + " (API " + Build.VERSION.SDK_INT + ")");
+        addRow(card, "ABI", String.join(", ", Build.SUPPORTED_ABIS));
+        addRow(card, "CPU cores", String.valueOf(Runtime.getRuntime().availableProcessors()));
 
-        // ==========================================
-        // 2. NEURAL MICRO-RESIDUAL & NPU CARD
-        // ==========================================
-        LinearLayout cardNpu = createCard(context, "NEURAL MICRO-RESIDUAL & HARDWARE ACCELERATION", "#A855F7");
-        addTelemetryRow(cardNpu, "Cool-chic Latent Grids:", "4 Multi-Scale Grids (1/1, 1/2, 1/4, 1/8)");
-        addTelemetryRow(cardNpu, "Computation Density:", "542 MACs/pixel (LiteRT QNN Delegate)");
-        addTelemetryRow(cardNpu, "Snapdragon / Dimensity NPU:", "3.12 ms/frame inference latency");
-        addTelemetryRow(cardNpu, "AFGS1 Parametric Grain:", "14 AR coefficients (182 bytes/frame)");
-        addTelemetryRow(cardNpu, "Memory Buffer Budget:", "48.2 MB Working RAM (Strict <64 MB pass)");
-        addView(cardNpu);
+        ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+        if (am != null) {
+            ActivityManager.MemoryInfo mi = new ActivityManager.MemoryInfo();
+            am.getMemoryInfo(mi);
+            addRow(card, "Total RAM", String.format(Locale.US, "%.1f GB", mi.totalMem / (1024.0 * 1024.0 * 1024.0)));
+        }
 
-        // ==========================================
-        // 3. ON-DEVICE INVARIANT SELF-TEST CARD
-        // ==========================================
-        LinearLayout cardInvariants = createCard(context, "PRISM-V 7 MATHEMATICAL INVARIANTS AUDIT", "#10B981");
+        try {
+            long pageSize = android.system.Os.sysconf(android.system.OsConstants._SC_PAGESIZE);
+            addRow(card, "System page size", pageSize + " bytes");
+        } catch (Exception ignored) {
+            addRow(card, "System page size", "unavailable");
+        }
+        return card;
+    }
+
+    private LinearLayout buildEncoderCard(Context context) {
+        LinearLayout card = createCard(context, "VIDEO ENCODER SUPPORT");
+
+        TreeSet<String> types = new TreeSet<>();
+        int encoderCount = 0;
+        try {
+            MediaCodecList list = new MediaCodecList(MediaCodecList.REGULAR_CODECS);
+            for (MediaCodecInfo info : list.getCodecInfos()) {
+                if (!info.isEncoder()) continue;
+                encoderCount++;
+                for (String type : info.getSupportedTypes()) {
+                    types.add(type.toLowerCase(Locale.US));
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        addRow(card, "Encoders reported", String.valueOf(encoderCount));
+        addRow(card, "H.264 (video/avc)", supportLabel(types, "video/avc"));
+        addRow(card, "HEVC (video/hevc)", supportLabel(types, "video/hevc"));
+        addRow(card, "AV1 (video/av01)", supportLabel(types, "video/av01"));
+        addRow(card, "VP9", supportLabel(types, "video/x-vnd.on2.vp9"));
+
+        TextView note = new TextView(context);
+        note.setText("MediaCodec advertising a type does not guarantee that a given size, bit depth, or frame rate will encode in hardware.");
+        note.setTextColor(Color.parseColor("#94A3B8"));
+        note.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        note.setPadding(0, dp(6), 0, 0);
+        card.addView(note);
+        return card;
+    }
+
+    private LinearLayout buildSelfTestCard(Context context) {
+        LinearLayout card = createCard(context, "LOCAL SELF-TESTS");
+
+        TextView note = new TextView(context);
+        note.setText("Runs codec round-trip and file-transaction checks on this device. It does not measure speed, quality, or energy.");
+        note.setTextColor(Color.parseColor("#94A3B8"));
+        note.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        note.setPadding(0, 0, 0, dp(8));
+        card.addView(note);
 
         tvInvariantSummary = new TextView(context);
-        tvInvariantSummary.setText("All 7 Invariants: 100% Verified Pass on Hardware");
-        tvInvariantSummary.setTextColor(Color.parseColor("#34D399"));
+        tvInvariantSummary.setText("Not run");
+        tvInvariantSummary.setTextColor(Color.parseColor("#F59E0B"));
         tvInvariantSummary.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         tvInvariantSummary.setTypeface(Typeface.DEFAULT_BOLD);
         tvInvariantSummary.setPadding(0, 0, 0, dp(8));
-        cardInvariants.addView(tvInvariantSummary);
+        card.addView(tvInvariantSummary);
 
         invariantChecksContainer = new LinearLayout(context);
         invariantChecksContainer.setOrientation(VERTICAL);
-        cardInvariants.addView(invariantChecksContainer);
-
-        addInvariantRow("Invariant 1: Lossless Expansion Prohibition (BBR Bypass)", true);
-        addInvariantRow("Invariant 2: Integer Determinism (Class A INT8/16/32, K<=512)", true);
-        addInvariantRow("Invariant 3: Thermodynamic Ceiling (<0.050 Joules/frame)", true);
-        addInvariantRow("Invariant 4: Android 15 FGS Ceiling (60-frame GOP micro-tasks)", true);
-        addInvariantRow("Invariant 5: Universal Ecosystem Compatibility (Prism-VFS Proxy)", true);
-        addInvariantRow("Invariant 6: Zero Media Loss (5-Stage Verified Replacement)", true);
-        addInvariantRow("Invariant 7: Zero-GPL Clean-Room Apache-2.0 License", true);
+        card.addView(invariantChecksContainer);
 
         btnRunTests = new Button(context);
-        btnRunTests.setText("▶  RUN LIVE INVARIANT SUITE ON CHIP");
+        btnRunTests.setText("Run self-tests");
         btnRunTests.setTextColor(Color.WHITE);
         btnRunTests.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         btnRunTests.setTypeface(Typeface.DEFAULT_BOLD);
@@ -154,19 +185,27 @@ public class DeveloperMatrixView extends LinearLayout {
         btnParams.setMargins(0, dp(12), 0, 0);
         btnRunTests.setLayoutParams(btnParams);
         btnRunTests.setBackground(createRoundedDrawable(Color.parseColor("#059669"), Color.parseColor("#10B981"), dp(1), dp(12)));
-        btnRunTests.setOnClickListener(v -> executeLiveInvariantAudit());
-        cardInvariants.addView(btnRunTests);
+        btnRunTests.setOnClickListener(v -> executeSelfTests());
+        card.addView(btnRunTests);
 
         pbTesting = new ProgressBar(context, null, android.R.attr.progressBarStyleHorizontal);
-        pbTesting.setMax(7);
+        pbTesting.setMax(SELF_TEST_COUNT);
         pbTesting.setVisibility(GONE);
         pbTesting.setPadding(0, dp(8), 0, dp(4));
-        cardInvariants.addView(pbTesting);
+        card.addView(pbTesting);
 
-        addView(cardInvariants);
+        return card;
     }
 
-    private LinearLayout createCard(Context context, String title, String accentHex) {
+    private String supportLabel(TreeSet<String> types, String type) {
+        return types.contains(type) ? "reported" : "not reported";
+    }
+
+    private String safeValue(String value) {
+        return value == null || value.isEmpty() ? "unknown" : value;
+    }
+
+    private LinearLayout createCard(Context context, String title) {
         LinearLayout card = new LinearLayout(context);
         card.setOrientation(VERTICAL);
         card.setPadding(dp(14), dp(14), dp(14), dp(14));
@@ -179,7 +218,7 @@ public class DeveloperMatrixView extends LinearLayout {
 
         TextView tvTitle = new TextView(context);
         tvTitle.setText(title);
-        tvTitle.setTextColor(Color.parseColor(accentHex));
+        tvTitle.setTextColor(Color.parseColor("#10B981"));
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         tvTitle.setTypeface(Typeface.DEFAULT_BOLD);
         tvTitle.setPadding(0, 0, 0, dp(8));
@@ -188,155 +227,96 @@ public class DeveloperMatrixView extends LinearLayout {
         return card;
     }
 
-    private void addHistogramBar(Context context, LinearLayout parent, String label, int percent, String colorHex) {
-        LinearLayout row = new LinearLayout(context);
-        row.setOrientation(VERTICAL);
-        row.setPadding(0, dp(2), 0, dp(4));
-
-        LinearLayout labelRow = new LinearLayout(context);
-        labelRow.setOrientation(HORIZONTAL);
-
-        TextView tvLbl = new TextView(context);
-        tvLbl.setText(label);
-        tvLbl.setTextColor(Color.WHITE);
-        tvLbl.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
-        tvLbl.setTypeface(Typeface.MONOSPACE);
-        LinearLayout.LayoutParams p1 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
-        tvLbl.setLayoutParams(p1);
-        labelRow.addView(tvLbl);
-
-        TextView tvPct = new TextView(context);
-        tvPct.setText(percent + "%");
-        tvPct.setTextColor(Color.parseColor(colorHex));
-        tvPct.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
-        tvPct.setTypeface(Typeface.MONOSPACE);
-        labelRow.addView(tvPct);
-        row.addView(labelRow);
-
-        ProgressBar bar = new ProgressBar(context, null, android.R.attr.progressBarStyleHorizontal);
-        bar.setMax(100);
-        bar.setProgress(percent);
-        LinearLayout.LayoutParams barParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(8));
-        barParams.setMargins(0, dp(2), 0, 0);
-        bar.setLayoutParams(barParams);
-        row.addView(bar);
-
-        parent.addView(row);
-    }
-
-    private void addTelemetryRow(LinearLayout parent, String key, String val) {
+    private void addRow(LinearLayout parent, String key, String value) {
         LinearLayout row = new LinearLayout(getContext());
         row.setOrientation(HORIZONTAL);
-        row.setPadding(0, dp(2), 0, dp(2));
+        row.setPadding(0, dp(3), 0, dp(3));
 
         TextView tvKey = new TextView(getContext());
         tvKey.setText(key);
         tvKey.setTextColor(Color.parseColor("#94A3B8"));
         tvKey.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-        LinearLayout.LayoutParams p1 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.45f);
-        tvKey.setLayoutParams(p1);
-        row.addView(tvKey);
+        row.addView(tvKey, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.45f));
 
         TextView tvVal = new TextView(getContext());
-        tvVal.setText(val);
+        tvVal.setText(value);
         tvVal.setTextColor(Color.WHITE);
         tvVal.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         tvVal.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        LinearLayout.LayoutParams p2 = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.55f);
-        tvVal.setLayoutParams(p2);
-        row.addView(tvVal);
+        row.addView(tvVal, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.55f));
 
         parent.addView(row);
     }
 
-    private void addInvariantRow(String name, boolean passed) {
-        TextView tv = new TextView(getContext());
-        tv.setText((passed ? "✓  " : "✗  ") + name);
-        tv.setTextColor(passed ? Color.parseColor("#34D399") : Color.parseColor("#EF4444"));
-        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-        tv.setTypeface(Typeface.MONOSPACE);
-        tv.setPadding(0, dp(2), 0, dp(2));
-        invariantChecksContainer.addView(tv);
-    }
-
-    private void executeLiveInvariantAudit() {
+    private void executeSelfTests() {
         btnRunTests.setEnabled(false);
         pbTesting.setVisibility(VISIBLE);
         pbTesting.setProgress(0);
         invariantChecksContainer.removeAllViews();
-        tvInvariantSummary.setText("Running Invariant Hardware Test Suite...");
+        tvInvariantSummary.setText("Running...");
         tvInvariantSummary.setTextColor(Color.parseColor("#F59E0B"));
+        passedChecks = 0;
 
         new Thread(() -> {
             try {
-                // Invariant 1: Lossless Expansion Prohibition
                 byte[] structured = new byte[16384];
-                for (int i = 0; i < structured.length; i++) structured[i] = (byte) ((i / 64) & 0xFF);
-                BbrCodec.CompressionResult res1 = BbrCodec.testBitExactRoundTrip(structured);
-                boolean pass1 = res1.bitExactMatch;
-                postResult("Invariant 1: Lossless Expansion Prohibition (BBR Bypass)", pass1, 1);
+                for (int i = 0; i < structured.length; i++) {
+                    structured[i] = (byte) ((i / 64) & 0xFF);
+                }
+                boolean bbr = BbrCodec.testBitExactRoundTrip(structured).bitExactMatch;
+                postResult("BBR round-trip, 16 KiB structured input", bbr, 1);
 
-                // Invariant 2: Integer Determinism
-                boolean pass2 = DetInt.verifyDeterminismSelfTest();
-                postResult("Invariant 2: Integer Determinism (Class A INT8/16/32, K<=512)", pass2, 2);
+                boolean detint = DetInt.verifyDeterminismSelfTest();
+                postResult("Integer dot-product determinism", detint, 2);
 
-                // Invariant 3: Thermodynamic Ceiling
-                ThermalGearShifter gs = new ThermalGearShifter();
-                boolean pass3 = gs.isWithinThermodynamicCeiling();
-                postResult("Invariant 3: Thermodynamic Ceiling (<0.050 J/frame)", pass3, 3);
+                boolean vfs = PrismVfsProxy.verifyVfsSelfTest();
+                postResult("VFS proxy mount/read", vfs, 3);
 
-                // Invariant 4: Android 15 FGS Ceiling
-                byte[] gop = new byte[8192];
-                for (int i = 0; i < gop.length; i++) gop[i] = (byte) (i & 0x7F);
-                boolean pass4 = BbrCodec.testBitExactRoundTrip(gop).bitExactMatch;
-                postResult("Invariant 4: Android 15 FGS Ceiling (60-frame GOP micro-tasks)", pass4, 4);
-
-                // Invariant 5: Universal Ecosystem Compatibility (VFS Proxy)
-                boolean pass5 = PrismVfsProxy.verifyVfsSelfTest();
-                postResult("Invariant 5: Universal Ecosystem Compatibility (Prism-VFS Proxy)", pass5, 5);
-
-                // Invariant 6: Zero Media Loss (5-Stage Replacement)
                 File cacheDir = getContext().getCacheDir();
-                File testSrc = new File(cacheDir, "inv6_ui_test.raw");
-                byte[] sample = new byte[4096];
-                for (int i = 0; i < sample.length; i++) sample[i] = (byte) ((i * 13) & 0xFF);
+                File testSrc = new File(cacheDir, "diagnostics_tx_input.raw");
+                boolean transaction;
                 try (FileOutputStream fos = new FileOutputStream(testSrc)) {
-                    fos.write(sample);
+                    fos.write(structured);
                 }
                 VerifiedReplacement.TransactionResult tx = VerifiedReplacement.executeTransaction(testSrc, cacheDir);
-                boolean pass6 = tx.success;
+                transaction = tx.success;
                 testSrc.delete();
-                postResult("Invariant 6: Zero Media Loss (5-Stage Verified Replacement)", pass6, 6);
+                postResult("Verified file replacement", transaction, 4);
 
-                // Invariant 7: Clean-Room Apache-2.0
-                boolean pass7 = true;
-                postResult("Invariant 7: Zero-GPL Clean-Room Apache-2.0 License", pass7, 7);
-
-                handler.post(() -> {
-                    btnRunTests.setEnabled(true);
-                    pbTesting.setVisibility(GONE);
-                    tvInvariantSummary.setText("All 7 Invariants: 100% Passed On-Device Hardware Test!");
-                    tvInvariantSummary.setTextColor(Color.parseColor("#34D399"));
-                    if (getContext() instanceof android.app.Activity) {
-                        PrismHud.showSuccess((android.app.Activity) getContext(), "All 7 Invariants Passed On-Device!");
-                    }
-                });
-
+                handler.post(this::finishRun);
             } catch (Exception e) {
-                handler.post(() -> {
-                    btnRunTests.setEnabled(true);
-                    pbTesting.setVisibility(GONE);
-                    tvInvariantSummary.setText("Audit Error: " + e.getMessage());
-                });
+                handler.post(() -> finishRunWithError(e));
             }
         }).start();
     }
 
-    private void postResult(String name, boolean pass, int progress) {
+    private void postResult(String name, boolean passed, int progress) {
         handler.post(() -> {
-            addInvariantRow(name, pass);
+            if (passed) passedChecks++;
+
+            TextView tv = new TextView(getContext());
+            tv.setText((passed ? "PASS  " : "FAIL  ") + name);
+            tv.setTextColor(passed ? Color.parseColor("#34D399") : Color.parseColor("#EF4444"));
+            tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+            tv.setTypeface(Typeface.MONOSPACE);
+            tv.setPadding(0, dp(2), 0, dp(2));
+            invariantChecksContainer.addView(tv);
             pbTesting.setProgress(progress);
         });
+    }
+
+    private void finishRun() {
+        btnRunTests.setEnabled(true);
+        pbTesting.setVisibility(GONE);
+        int failed = SELF_TEST_COUNT - passedChecks;
+        tvInvariantSummary.setText(String.format(Locale.US, "%d of %d checks passed", passedChecks, SELF_TEST_COUNT));
+        tvInvariantSummary.setTextColor(failed == 0 ? Color.parseColor("#34D399") : Color.parseColor("#EF4444"));
+    }
+
+    private void finishRunWithError(Exception e) {
+        btnRunTests.setEnabled(true);
+        pbTesting.setVisibility(GONE);
+        tvInvariantSummary.setText("Self-test error: " + e.getMessage());
+        tvInvariantSummary.setTextColor(Color.parseColor("#EF4444"));
     }
 }

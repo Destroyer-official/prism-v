@@ -10,7 +10,7 @@ PRISM_TEST(test_detint_overflow_free_proof) {
     std::vector<int8_t> w(DetInt::MAX_K_CHANNELS, DetInt::WEIGHT_MAX);
 
     int32_t result = DetInt::dot_product(x.data(), w.data(), DetInt::MAX_K_CHANNELS);
-    // Exact theoretical maximum: 512 * 127 * 32767 = 2,130,649,088
+    // Exact theoretical maximum: 512 * 127 * 32767 = 2,130,641,408
     int64_t expected = static_cast<int64_t>(DetInt::MAX_K_CHANNELS) *
                        static_cast<int64_t>(DetInt::WEIGHT_MAX) *
                        static_cast<int64_t>(DetInt::ACT_MAX);

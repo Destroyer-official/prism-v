@@ -15,6 +15,7 @@ import android.view.Window;
 import android.widget.*;
 
 import com.prismv.ui.CustomDarkDialog;
+import com.prismv.ui.DialogTracker;
 import com.prismv.ui.PrismHud;
 import com.prismv.ui.ThemeStyles;
 
@@ -53,10 +54,14 @@ public final class GeminiCopilotDialog {
 
         final Dialog dialog = new Dialog(context);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setCancelable(true);
+        dialog.setCanceledOnTouchOutside(false);
         if (dialog.getWindow() != null) {
             dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
         }
+        DialogTracker.register(dialog);
+        dialog.setOnDismissListener(d -> DialogTracker.unregister(dialog));
 
         LinearLayout root = new LinearLayout(context);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -72,7 +77,7 @@ public final class GeminiCopilotDialog {
         headerRow.setPadding(0, 0, 0, dp(context, 10));
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("✦ PRISM GEMINI COPILOT");
+        tvTitle.setText("PRISM GEMINI COPILOT");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -90,7 +95,7 @@ public final class GeminiCopilotDialog {
         headerRow.addView(tvKeyStatus);
 
         Button btnOpenDeviceGemini = new Button(context);
-        btnOpenDeviceGemini.setText("🚀 OPEN GEMINI APP");
+        btnOpenDeviceGemini.setText("OPEN GEMINI APP");
         btnOpenDeviceGemini.setTextColor(Color.WHITE);
         btnOpenDeviceGemini.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
         btnOpenDeviceGemini.setTypeface(Typeface.DEFAULT_BOLD);
@@ -106,7 +111,7 @@ public final class GeminiCopilotDialog {
         headerRow.addView(btnOpenDeviceGemini);
 
         Button btnClose = new Button(context);
-        btnClose.setText("✕");
+        btnClose.setText("");
         btnClose.setTextColor(Color.WHITE);
         btnClose.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         btnClose.setPadding(dp(context, 8), dp(context, 4), dp(context, 8), dp(context, 4));
@@ -142,7 +147,7 @@ public final class GeminiCopilotDialog {
 
         // Initial Greeting Bubble
         addAssistantMessage(context, chatContainer,
-                "✦ **Hello! I am your Prism Gemini Copilot.**\n\n" +
+                "**Hello! I am your Prism Gemini Copilot.**\n\n" +
                 "I have loaded your video specifications:\n" +
                 videoContextInfo + "\n\n" +
                 "Ask me anything about bitrate tuning, WhatsApp/Discord constraints, HDR ACES tone mapping, or tap a quick chip below!",
@@ -159,23 +164,23 @@ public final class GeminiCopilotDialog {
         chipRow.setOrientation(LinearLayout.HORIZONTAL);
 
         String[] quickPrompts = new String[]{
-                "📱 WhatsApp Squish (<16 MB)",
-                "💬 Discord Share (<25 MB)",
-                "💎 Pro Quality (VMAF 98+)",
-                "🎨 Fix Washed Colors (HDR -> SDR)",
-                "⚡ Fastest Battery Saver"
+                "WhatsApp Squish (<16 MB)",
+                "Discord Share (<25 MB)",
+                "Pro Quality (high bitrate)",
+                "Fix Washed Colors (HDR -> SDR)",
+                "Fastest Battery Saver"
         };
 
         // Forward declaration of query execution helper
         View.OnClickListener chipClick = v -> {
             TextView tv = (TextView) v;
-            String prompt = tv.getText().toString().replace("✦ ", "");
+            String prompt = tv.getText().toString().replace("", "");
             sendUserMessage(context, prompt, videoContextInfo, chatContainer, chatScrollView, applyListener, dialog);
         };
 
         for (String qp : quickPrompts) {
             TextView chip = new TextView(context);
-            chip.setText("✦ " + qp);
+            chip.setText("" + qp);
             chip.setTextColor(Color.WHITE);
             chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
             chip.setTypeface(Typeface.DEFAULT_BOLD);
@@ -210,7 +215,7 @@ public final class GeminiCopilotDialog {
         inputBar.addView(etInput);
 
         Button btnSend = new Button(context);
-        btnSend.setText("➤");
+        btnSend.setText("");
         btnSend.setTextColor(Color.WHITE);
         btnSend.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         btnSend.setTypeface(Typeface.DEFAULT_BOLD);
@@ -271,7 +276,7 @@ public final class GeminiCopilotDialog {
             @Override
             public void onError(String errorMessage) {
                 chatContainer.removeView(loadingView);
-                addAssistantMessage(context, chatContainer, "⚠️ Error: " + errorMessage, null, applyListener, parentDialog);
+                addAssistantMessage(context, chatContainer, "Error: " + errorMessage, null, applyListener, parentDialog);
                 chatScrollView.post(() -> chatScrollView.fullScroll(View.FOCUS_DOWN));
             }
         });
@@ -319,7 +324,7 @@ public final class GeminiCopilotDialog {
         // If a structured parameter recommendation was extracted, add a 1-tap apply button!
         if (rec != null && rec.isValid()) {
             Button btnApply = new Button(context);
-            btnApply.setText("⚡ 1-TAP APPLY: " + rec.getSummary());
+            btnApply.setText("1-TAP APPLY: " + rec.getSummary());
             btnApply.setTextColor(Color.WHITE);
             btnApply.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
             btnApply.setTypeface(Typeface.DEFAULT_BOLD);
@@ -337,7 +342,7 @@ public final class GeminiCopilotDialog {
                 }
             });
             Button btnOpenApp = new Button(context);
-            btnOpenApp.setText("🚀 OPEN THIS IN DEVICE GEMINI APP");
+            btnOpenApp.setText("OPEN THIS IN DEVICE GEMINI APP");
             btnOpenApp.setTextColor(Color.WHITE);
             btnOpenApp.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
             btnOpenApp.setTypeface(Typeface.DEFAULT_BOLD);
@@ -369,7 +374,7 @@ public final class GeminiCopilotDialog {
         row.addView(pb);
 
         TextView tv = new TextView(context);
-        tv.setText("✦ Gemini is analyzing video DNA...");
+        tv.setText("Gemini is analyzing video DNA...");
         tv.setTextColor(ThemeStyles.COLOR_CYAN_TEXT);
         tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         tv.setTypeface(Typeface.DEFAULT_BOLD);

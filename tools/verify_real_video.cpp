@@ -7,6 +7,8 @@
 #include <fstream>
 #include <vector>
 #include <iomanip>
+#include <limits>
+#include <algorithm>
 
 using namespace prism;
 
@@ -20,7 +22,7 @@ int main(int argc, char* argv[]) {
     std::string pvloss_path = argv[2];
 
     std::cout << "===============================================================\n";
-    std::cout << "  PRISM-V REAL ANDROID CAMERA VIDEO BIT-EXACT VERIFICATION    \n";
+    std::cout << "  Pvloss round-trip verification against an original file     \n";
     std::cout << "===============================================================\n\n";
 
     // 1. Read original file
@@ -52,9 +54,13 @@ int main(int argc, char* argv[]) {
         std::cerr << "ERROR: Virtual size mismatch!\n";
         return 1;
     }
+    if (virtual_size > std::numeric_limits<size_t>::max()) {
+        std::cerr << "ERROR: Virtual size exceeds the addressable buffer size.\n";
+        return 1;
+    }
 
     // 3. Read entire file through VFS proxy in 256 KB increments
-    std::vector<uint8_t> reconstructed(virtual_size);
+    std::vector<uint8_t> reconstructed(static_cast<size_t>(virtual_size));
     constexpr uint32_t READ_BLOCK = 256 * 1024;
     uint64_t bytes_read_total = 0;
 
@@ -71,17 +77,22 @@ int main(int argc, char* argv[]) {
               << " | Avg Read Latency: " << std::fixed << std::setprecision(2)
               << stats.avg_read_latency_us << " us\n\n";
 
+    if (bytes_read_total != virtual_size) {
+        std::cerr << "[FAILURE] VFS returned fewer bytes than the virtual file size.\n";
+        return 1;
+    }
+
     // 4. Compute reconstructed SHA-256
     Sha256Digest recon_sha = BbrEngine::compute_sha256(reconstructed.data(), reconstructed.size());
     std::cout << "[RECONSTRUCTED] SHA-256: " << RabinCdcEngine::hash_to_hex(recon_sha) << "\n\n";
 
     bool exact_match = (orig_sha == recon_sha);
     std::cout << "---------------------------------------------------------------\n";
-    std::cout << "Bit-Exact Cryptographic Parity: " << (exact_match ? "100.000% MATCH (ZERO BIT ERROR)" : "MISMATCH") << "\n";
+    std::cout << "SHA-256 parity: " << (exact_match ? "MATCH" : "MISMATCH") << "\n";
     std::cout << "---------------------------------------------------------------\n";
 
     if (exact_match) {
-        std::cout << "[SUCCESS] Invariant 1 (Bit-Exact Bitstream Preservation) VERIFIED ON REAL ANDROID CAMERA VIDEO!\n";
+        std::cout << "[SUCCESS] Reconstructed file matches the original byte for byte.\n";
         return 0;
     } else {
         std::cerr << "[FAILURE] SHA-256 hash mismatch!\n";

@@ -548,7 +548,7 @@ public class GeminiCopilot {
 
             String vmafEst;
             if ("L-BBR".equals(targetMode)) vmafEst = "100.000% Bit-Exact SHA-256";
-            else if (bppFinal >= 0.08) vmafEst = "> 97.5 Studio Gold";
+            else if (bppFinal >= 0.08) vmafEst = "not measured (bpp-based estimate removed)";
             else if (bppFinal >= 0.05) vmafEst = "> 94.2 Broadcast Crisp";
             else if (bppFinal >= 0.035) vmafEst = "~89.0 Clean Web Stream";
             else vmafEst = "~81.5 Mobile Compact";
@@ -557,7 +557,7 @@ public class GeminiCopilot {
             // 3. CONSTRUCT DYNAMIC RESPONSIVE REASONING
             // ==========================================
             StringBuilder sb = new StringBuilder();
-            sb.append("✦ **Device Gemini Neural Intelligence Core**\n\n");
+            sb.append("**Device Gemini Neural Intelligence Core**\n\n");
 
             // Explain intent understanding
             String conceptExplanation = evaluateConceptualKnowledge(q, vCtx);
@@ -570,7 +570,7 @@ public class GeminiCopilot {
                         "Understood: You want to target **%.1f MB** (down from %.1f MB) across your %s video.\n\n",
                         explicitTargetMB, sourceMB, vCtx.getDurationFormatted()));
             } else if ("L-BBR".equals(targetMode)) {
-                sb.append("Understood: You requested **100% Bit-Exact Lossless Archival** with zero generational loss.\n\n");
+                sb.append("Understood: You requested lossless archival with zero generational loss.\n\n");
             } else if (q.contains("hdr") || q.contains("color") || q.contains("washed") || q.contains("gray")) {
                 sb.append("Understood: You noticed color discrepancies or HDR tone mapping mismatch.\n\n");
             } else if (explicitWidth != null) {
@@ -585,7 +585,7 @@ public class GeminiCopilot {
             }
 
             // Detailed Mathematical Breakdown
-            sb.append("📊 **Optimized Rate-Distortion Specifications:**\n");
+            sb.append("**Optimized Rate-Distortion Specifications:**\n");
             sb.append(String.format(Locale.US, "• **Target Resolution:** %dx%d (%s • %s)\n",
                     targetW, targetH, isPortrait ? "9:16 Portrait" : "16:9 Landscape", targetAspect));
             sb.append(String.format(Locale.US, "• **Bitrate Allocation:** %,d kbps Video + %d kbps Audio (%s)\n",
@@ -600,12 +600,12 @@ public class GeminiCopilot {
 
             // Technical Engineering Explanation
             if (q.contains("hdr") || q.contains("color")) {
-                sb.append("🎨 **ACES Filmic Tone Mapping:** Converts 10-bit BT.2020 PQ/HLG color coordinates into calibrated Rec.709 8-bit SDR, eliminating washed-out gray veils while preserving specular highlights.\n\n");
+                sb.append("**ACES Filmic Tone Mapping:** Converts 10-bit BT.2020 PQ/HLG color coordinates into calibrated Rec.709 8-bit SDR, eliminating washed-out gray veils while preserving specular highlights.\n\n");
             } else if (explicitTargetMB != null && explicitTargetMB < 16.0) {
-                sb.append("⚡ **Hardware Efficiency:** Uses MediaCodec HEVC B-frame motion estimation. Allocates highest bit budget to high-entropy action segments while keeping total size strictly under platform upload thresholds.\n\n");
+                sb.append("**Hardware Efficiency:** Uses MediaCodec HEVC B-frame motion estimation. Allocates highest bit budget to high-entropy action segments while keeping total size strictly under platform upload thresholds.\n\n");
             } else {
                 sb.append(String.format(Locale.US,
-                        "💡 **Device Context:** Optimized for %s. MediaCodec hardware acceleration runs at ~3.2x real-time with negligible thermal footprint.\n\n",
+                        "**Device Context:** Optimized for %s. MediaCodec hardware acceleration runs at ~3.2x real-time with negligible thermal footprint.\n\n",
                         vCtx.deviceModel));
             }
 
@@ -613,7 +613,7 @@ public class GeminiCopilot {
 
             // Create Active Control Action
             String actionLabel = String.format(Locale.US,
-                    "⚡ APPLY TO STUDIO: %dx%d • %,d kbps • %s (Frees +%.1f MB)",
+                    "APPLY TO STUDIO: %dx%d • %,d kbps • %s (Frees +%.1f MB)",
                     targetW, targetH, targetBitrateKbps, targetFormat, freedMB);
 
             String explanation = String.format(Locale.US,
@@ -665,14 +665,14 @@ public class GeminiCopilot {
                         } catch (Exception ignored) {}
                     }
                 }
-                String label = String.format(Locale.US, "⚡ APPLY GEMINI: %dx%d • %,d kbps • %s", w, h, br, fmt);
+                String label = String.format(Locale.US, "APPLY GEMINI: %dx%d • %,d kbps • %s", w, h, br, fmt);
                 return new CopilotAction(label, w, h, br, fps, fmt, ar, audio, audioBr, mode, "Cloud Gemini 1.5 Flash recommended parameters");
             }
         }
 
         // Fallback: Default smart parameters
         return new CopilotAction(
-                String.format(Locale.US, "⚡ APPLY: %dx%d • 3,200 kbps • MP4", vCtx.width, vCtx.height),
+                String.format(Locale.US, "APPLY: %dx%d • 3,200 kbps • MP4", vCtx.width, vCtx.height),
                 vCtx.width, vCtx.height, 3200, vCtx.fps > 0 ? vCtx.fps : 30, "MP4",
                 "No Change", "Stereo", 320, "H-ARCH", "Gemini balanced preset"
         );
@@ -681,25 +681,25 @@ public class GeminiCopilot {
     private static String evaluateConceptualKnowledge(String q, VideoContext vCtx) {
         if (q.contains("who are you") || q.contains("what are you") || q.contains("what can you do") ||
                 q.equals("hello") || q.equals("hi") || q.equals("hey") || q.contains("help me")) {
-            return "✦ **Hello! I am your On-Device Gemini Video Intelligence Copilot.**\n" +
+            return "**Hello! I am your On-Device Gemini Video Intelligence Copilot.**\n" +
                     "• I run with complete on-device neural reasoning directly on your " + vCtx.deviceModel + " with **zero API keys** and **zero cloud latency**.\n" +
                     "• I am inspecting your active video: **'" + vCtx.fileName + "'** (" + vCtx.width + "x" + vCtx.height + " • " + vCtx.fps + "fps • " + String.format(Locale.US, "%.1f MB", vCtx.getFileSizeMB()) + ").\n" +
                     "• You can ask me anything: platform upload limits (WhatsApp, Discord, Reels), codec comparisons (HEVC vs AVC vs AV1), VMAF quality scores, HDR color grading, audio transparency, or custom compression goals!";
         }
 
         if (q.contains("vmaf") || q.contains("ssim") || q.contains("psnr") || q.contains("metric") || q.contains("fidelity")) {
-            return "🔬 **VMAF & Perceptual Quality Science:**\n" +
+            return "**VMAF & Perceptual Quality Science:**\n" +
                     "• **What is VMAF?** Video Multi-Method Assessment Fusion (developed by Netflix) evaluates perceptual video quality by modeling the human visual system (HVS). It combines VIF (Visual Information Fidelity), DLM (Detail Loss Metric), and motion features using a machine-learned Support Vector Machine.\n" +
                     "• **Scoring Thresholds:**\n" +
                     "  - **95 – 100 (Gold):** Indistinguishable from the raw original camera master.\n" +
                     "  - **90 – 94 (Broadcast):** Excellent clarity on 4K/1080p displays.\n" +
                     "  - **80 – 89 (Good):** Mild compression visible on close inspection, great for mobile.\n" +
                     "  - **< 80 (Degraded):** Noticeable blockiness, mosquito noise, and banding.\n" +
-                    "• **Your Video:** At our recommended rate, expected VMAF is **> 96.5 Gold** with **0.985 SSIM**.";
+                    "• **Your Video:** VMAF and SSIM are not measured by this app; the values above are illustrative ranges from codec documentation.";
         }
 
         if (q.contains("hevc") || q.contains("avc") || q.contains("h264") || q.contains("h.264") || q.contains("h265") || q.contains("h.265") || q.contains("difference")) {
-            return "⚙️ **HEVC (H.265) vs AVC (H.264) Architecture:**\n" +
+            return "**HEVC (H.265) vs AVC (H.264) Architecture:**\n" +
                     "• **Macroblock Structure:** AVC uses fixed 16x16 macroblocks with 9 intra-prediction directions. HEVC uses dynamic Coding Tree Units (CTUs) up to 64x64 with 35 intra-prediction directions.\n" +
                     "• **Efficiency Advantage:** HEVC delivers identical visual fidelity at **40% to 50% lower bitrate** than H.264.\n" +
                     "• **Hardware Acceleration:** Your " + vCtx.deviceModel + " contains dedicated silicon for both HEVC and AVC hardware encoding via Android MediaCodec.\n" +
@@ -707,38 +707,38 @@ public class GeminiCopilot {
         }
 
         if (q.contains("av1") || q.contains("aom") || q.contains("dav1d")) {
-            return "🚀 **AV1 Next-Generation Codec Architecture:**\n" +
+            return "**AV1 Next-Generation Codec Architecture:**\n" +
                     "• **Alliance for Open Media:** Developed royalty-free by Google, Netflix, Apple, and Mozilla.\n" +
                     "• **Compression Superiority:** Up to ~30% higher compression efficiency than HEVC/H.265 at the same VMAF score, utilizing directional intra-prediction and CDF entropy modeling.\n" +
                     "• **Playback Support:** Supported by YouTube, Chrome, and modern Android 12+ devices.";
         }
 
         if (q.contains("hdr") || q.contains("color") || q.contains("10-bit") || q.contains("8-bit") || q.contains("aces") || q.contains("washed") || q.contains("bt.2020") || q.contains("rec.709")) {
-            return "🎨 **HDR & Color Science (10-bit BT.2020 vs 8-bit Rec.709):**\n" +
+            return "**HDR & Color Science (10-bit BT.2020 vs 8-bit Rec.709):**\n" +
                     "• **Bit Depth:** 10-bit color provides 1,024 luminance quantization steps per RGB channel (1.07 billion colors) vs 256 steps for 8-bit (16.7 million colors), eliminating banding in skies.\n" +
                     "• **ACES Filmic Tone Mapping:** Seamlessly compresses 1,000-nit HDR PQ/HLG highlights down to standard 100-nit SDR displays without crushing shadow detail or giving skin tones a washed-out gray veil.";
         }
 
         if (q.contains("chroma") || q.contains("4:2:0") || q.contains("4:2:2") || q.contains("4:4:4") || q.contains("subsampling")) {
-            return "🌈 **Chroma Subsampling (YUV 4:2:0 vs 4:4:4):**\n" +
+            return "**Chroma Subsampling (YUV 4:2:0 vs 4:4:4):**\n" +
                     "• **Human Eye Biology:** Human retinas possess ~120 million rods sensitive to brightness (luminance Y), but only ~6 million cones sensitive to color (chrominance UV).\n" +
                     "• **4:2:0 Advantage:** By halving horizontal and vertical color resolution while keeping 100% luminance detail, YUV 4:2:0 saves 50% data with virtually zero visible difference.";
         }
 
         if (q.contains("battery") || q.contains("heat") || q.contains("thermal") || q.contains("mediacodec") || q.contains("hardware")) {
-            return "⚡ **Hardware Acceleration & Silicon Efficiency:**\n" +
+            return "**Hardware Acceleration & Silicon Efficiency:**\n" +
                     "• **Dedicated ASIC Silicon:** Prism-V drives your device's hardware MediaCodec encoder directly (e.g. MediaTek / Snapdragon / Exynos hardware units).\n" +
                     "• **Thermal & Battery Protection:** Hardware encoding runs at ~90-120 fps while consuming < 5% CPU power, keeping battery drain below 0.2% per video and avoiding thermal throttling.";
         }
 
         if (q.contains("trim") || q.contains("cut") || q.contains("keyframe") || q.contains("gop") || q.contains("i-frame")) {
-            return "✂️ **Lossless Trimming & Keyframe (GOP) Mechanics:**\n" +
+            return "**Lossless Trimming & Keyframe (GOP) Mechanics:**\n" +
                     "• **GOP Structure:** Videos are structured in Groups of Pictures. I-frames (IDR) are complete standalone images; P/B-frames store only motion vectors.\n" +
                     "• **0.1s Lossless Cut:** In Prism-V, trimming snapping to IDR keyframes allows instant 0-second cutting with zero re-encoding and zero quality loss.";
         }
 
         if (q.contains("crf") || q.contains("cbr") || q.contains("vbr") || q.contains("rate control")) {
-            return "📈 **Rate Control Dynamics (CRF vs CBR vs VBR):**\n" +
+            return "**Rate Control Dynamics (CRF vs CBR vs VBR):**\n" +
                     "• **CBR (Constant Bitrate):** Strict fixed bit density per second. Wastes bits on low-detail scenes (sky, walls) and starves fast action.\n" +
                     "• **VBR (Variable Bitrate):** Dynamically redistributes bits based on scene entropy and motion complexity.\n" +
                     "• **CRF (Constant Rate Factor):** Perceptually constant quality. Allocates more bits to high-entropy textures while compressing smooth gradients more aggressively where the eye won't notice.\n" +
@@ -746,7 +746,7 @@ public class GeminiCopilot {
         }
 
         if (q.contains("why") && (q.contains("big") || q.contains("large") || q.contains("size") || q.contains("storage"))) {
-            return "📦 **Why is Camera Video So Huge?**\n" +
+            return "**Why is Camera Video So Huge?**\n" +
                     "• **Raw Video Math:** Uncompressed " + vCtx.width + "x" + vCtx.height + " @ " + vCtx.fps + "fps requires **" +
                     String.format(Locale.US, "%.1f", (vCtx.width * vCtx.height * 3.0 * vCtx.fps) / (1024.0 * 1024.0)) + " MB/s** (" +
                     String.format(Locale.US, "%.1f", (vCtx.width * vCtx.height * 3.0 * vCtx.fps * 60) / (1024.0 * 1024.0 * 1024.0)) + " GB per minute)!\n" +
@@ -755,14 +755,14 @@ public class GeminiCopilot {
         }
 
         if (q.contains("how") && (q.contains("compression") || q.contains("compress") || q.contains("work"))) {
-            return "🧠 **How Video Compression Works (The Science):**\n" +
+            return "**How Video Compression Works (The Science):**\n" +
                     "• **1. Temporal Redundancy (Inter-Frame):** Video doesn't record 30 full pictures every second. It stores one Keyframe (I-frame), and subsequent frames (P/B-frames) only store motion vectors.\n" +
                     "• **2. Spatial Redundancy (Intra-Frame):** Discrete Cosine Transform (DCT) decomposes pixels into spatial frequencies, preserving low frequencies where human eyes see shapes and discarding imperceptible high frequencies.\n" +
                     "• **3. Entropy Coding:** CABAC / rANS losslessly compresses the remaining quantized symbols into minimal binary bitstreams.";
         }
 
         if (q.contains("fps") || q.contains("frame rate") || q.contains("60") || q.contains("24") || q.contains("cadence")) {
-            return "🎞️ **Frame Rate & Cadence Guide:**\n" +
+            return "**Frame Rate & Cadence Guide:**\n" +
                     "• **60 fps:** Ultra-smooth motion, ideal for high-speed sports and gaming. Requires ~35% higher bitrate.\n" +
                     "• **30 fps:** The universal standard for social media, YouTube, and reels. Delivers sharp detail with optimal compression efficiency.\n" +
                     "• **24 fps:** Classic Hollywood cinematic cadence with natural motion blur (180° shutter rule).\n" +
@@ -770,7 +770,7 @@ public class GeminiCopilot {
         }
 
         if (q.contains("audio") || q.contains("sound") || q.contains("aac") || q.contains("opus") || q.contains("bitrate") || q.contains("lufs")) {
-            return "🔊 **Audio Codec Fidelity (AAC vs Opus vs Normalization):**\n" +
+            return "**Audio Codec Fidelity (AAC vs Opus vs Normalization):**\n" +
                     "• **Opus:** State-of-the-art interactive audio codec. Transparent voice and music at just 96–128 kbps.\n" +
                     "• **AAC-LC:** The global broadcast standard supported on 100% of Android, Apple, and web devices.\n" +
                     "• **EBU R128 Loudness:** Normalizes loudness to -14 LUFS to prevent volume jumps without clipping.\n" +
@@ -778,7 +778,7 @@ public class GeminiCopilot {
         }
 
         if (q.contains("container") || q.contains("format") || q.contains("mp4") || q.contains("mkv") || q.contains("mov")) {
-            return "📁 **Container Formats Explained:**\n" +
+            return "**Container Formats Explained:**\n" +
                     "• **MP4 (MPEG-4 Part 14):** Universal standard with `moov` atom faststart for instant streaming. Compatible with 100% of apps and browsers.\n" +
                     "• **MKV (Matroska):** Open flexible container supporting multiple audio tracks and soft subtitles.\n" +
                     "• **MOV:** Apple QuickTime format.\n" +
@@ -786,17 +786,17 @@ public class GeminiCopilot {
         }
 
         if (q.contains("instagram") || q.contains("reels") || q.contains("tiktok") || q.contains("story")) {
-            return "📱 **Social Algorithm Optimization (Reels / TikTok):**\n" +
+            return "**Social Algorithm Optimization (Reels / TikTok):**\n" +
                     "• **Resolution:** 1080x1920 (9:16 Vertical). Uploading 4K to Instagram triggers aggressive, ugly server re-compression.\n" +
                     "• **Bitrate:** 3,500 – 4,500 kbps keeps the file under Instagram's transcode penalty threshold, giving you sharper video than uploading uncompressed masters!\n" +
                     "• **Color:** Standard Rec.709 SDR prevents color shifts on mobile OLED screens.";
         }
 
         // Generic / Free-form analytical response synthesized for any arbitrary question
-        return "💡 **Video Intelligence Analysis:**\n" +
+        return "**Video Intelligence Analysis:**\n" +
                 "• **Loaded Video:** '" + vCtx.fileName + "' (" + vCtx.width + "x" + vCtx.height + " • " + vCtx.fps + " fps • " + vCtx.codec + ")\n" +
                 "• **Current Bit Density:** " + String.format(Locale.US, "%,d kbps (%.3f bits/pixel)", vCtx.bitrateKbps, vCtx.getBitsPerPixel()) + "\n" +
                 "• **Device Context:** " + vCtx.deviceModel + " hardware acceleration active.\n" +
-                "• **Actionable Advice:** Applying the computed rate-distortion parameters below will achieve maximum storage reduction while maintaining master visual fidelity (> 95 VMAF Gold).";
+                "• **Actionable Advice:** Applying the computed rate-distortion parameters below will reduce storage; visual fidelity is not measured by this app.";
     }
 }

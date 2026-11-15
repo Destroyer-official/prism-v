@@ -32,6 +32,7 @@ import android.provider.MediaStore;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -101,13 +102,24 @@ public class ToolboxDialogs {
     }
 
     private static Dialog createBaseDialog(Context context) {
-        Dialog dialog = new Dialog(context);
+        final Dialog dialog = new Dialog(context);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setCancelable(true);
         dialog.setCanceledOnTouchOutside(false);
         if (dialog.getWindow() != null) {
             dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         }
+        DialogTracker.register(dialog);
+        dialog.setOnDismissListener(d -> DialogTracker.unregister(dialog));
+        dialog.setOnKeyListener((dialogInterface, keyCode, keyEvent) -> {
+            if (keyCode == KeyEvent.KEYCODE_BACK && keyEvent.getAction() == KeyEvent.ACTION_UP) {
+                Log.d("ToolboxDialogs", "[BACK] Modal dialog dismissed via dialog onKey");
+                dialogInterface.dismiss();
+                return true;
+            }
+            return false;
+        });
         return dialog;
     }
 
@@ -177,7 +189,7 @@ public class ToolboxDialogs {
         titleCol.setLayoutParams(tcp);
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("✂️ PRECISION TIMELINE & LOSSLESS CUTTER");
+        tvTitle.setText("PRECISION TIMELINE & LOSSLESS CUTTER");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -192,7 +204,7 @@ public class ToolboxDialogs {
         headerRow.addView(titleCol);
 
         Button btnChangeVideo = new Button(context);
-        btnChangeVideo.setText("📂 Change");
+        btnChangeVideo.setText("Change");
         btnChangeVideo.setTextColor(Color.WHITE);
         btnChangeVideo.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
         btnChangeVideo.setTypeface(Typeface.DEFAULT_BOLD);
@@ -237,7 +249,7 @@ public class ToolboxDialogs {
 
         // Floating Mode Badge (Top-Right)
         final TextView tvModeBadge = new TextView(context);
-        tvModeBadge.setText("✂️ KEEP [00:00 ➔ " + formatTimecode(finalDuration) + "]");
+        tvModeBadge.setText("KEEP [00:00 " + formatTimecode(finalDuration) + "]");
         tvModeBadge.setTextColor(Color.WHITE);
         tvModeBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
         tvModeBadge.setTypeface(Typeface.DEFAULT_BOLD);
@@ -307,7 +319,7 @@ public class ToolboxDialogs {
                 }
                 videoView.start();
                 tvCenterPlay.setVisibility(View.GONE);
-                btnPlayPause.setText("❚❚ PAUSE");
+                btnPlayPause.setText("PAUSE");
             }
         };
         videoFrame.setOnClickListener(togglePlay);
@@ -385,14 +397,14 @@ public class ToolboxDialogs {
         cardKeep.setLayoutParams(ckp);
 
         TextView tvKeepTitle = new TextView(context);
-        tvKeepTitle.setText("✂️ DELETE DIMMED");
+        tvKeepTitle.setText("DELETE DIMMED");
         tvKeepTitle.setTextColor(Color.parseColor("#00E5FF"));
         tvKeepTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         tvKeepTitle.setTypeface(Typeface.DEFAULT_BOLD);
         cardKeep.addView(tvKeepTitle);
 
         TextView tvKeepDesc = new TextView(context);
-        tvKeepDesc.setText("Keep Selected [A ➔ B]\nDiscards outer intro/outro");
+        tvKeepDesc.setText("Keep Selected [A B]\nDiscards outer intro/outro");
         tvKeepDesc.setTextColor(ThemeStyles.COLOR_TEXT_SECONDARY);
         tvKeepDesc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
         cardKeep.addView(tvKeepDesc);
@@ -405,14 +417,14 @@ public class ToolboxDialogs {
         cardCut.setLayoutParams(ccp);
 
         TextView tvCutTitle = new TextView(context);
-        tvCutTitle.setText("✂️ DELETE SELECTED");
+        tvCutTitle.setText("DELETE SELECTED");
         tvCutTitle.setTextColor(Color.parseColor("#EF4444"));
         tvCutTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         tvCutTitle.setTypeface(Typeface.DEFAULT_BOLD);
         cardCut.addView(tvCutTitle);
 
         TextView tvCutDesc = new TextView(context);
-        tvCutDesc.setText("Cut Out [A ➔ B]\nStitches surrounding takes");
+        tvCutDesc.setText("Cut Out [A B]\nStitches surrounding takes");
         tvCutDesc.setTextColor(ThemeStyles.COLOR_TEXT_SECONDARY);
         tvCutDesc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
         cardCut.addView(tvCutDesc);
@@ -446,8 +458,8 @@ public class ToolboxDialogs {
                         "Selection: %02d:%02d - %02d:%02d • Kept: %ds • Trimmed: %ds",
                         s / 60, s % 60, e / 60, e % 60, keepDur, trimmedDur));
                 tvStorageSaved.setText(String.format(Locale.US,
-                        "✂️ Dimmed areas will be cut ➔ Reclaims %.1f MB instantly!", Math.max(0, savedMb)));
-                tvModeBadge.setText(String.format(Locale.US, "✂️ KEEP [%02d:%02d ➔ %02d:%02d]", s / 60, s % 60, e / 60, e % 60));
+                        "Dimmed areas will be cut Reclaims %.1f MB instantly!", Math.max(0, savedMb)));
+                tvModeBadge.setText(String.format(Locale.US, "KEEP [%02d:%02d %02d:%02d]", s / 60, s % 60, e / 60, e % 60));
                 tvModeBadge.setBackground(createRoundedDrawable(Color.parseColor("#CC00E5FF"), Color.TRANSPARENT, 0, dp(context, 6)));
 
                 cardKeep.setBackground(createRoundedDrawable(Color.parseColor("#152438"), Color.parseColor("#00E5FF"), dp(context, 2), dp(context, 10)));
@@ -457,8 +469,8 @@ public class ToolboxDialogs {
                         "Cut-Out Range: %02d:%02d - %02d:%02d • Cut Out: %ds • Kept: %ds",
                         s / 60, s % 60, e / 60, e % 60, selDur, keepDur));
                 tvStorageSaved.setText(String.format(Locale.US,
-                        "✂️ Highlighted area will be cut ➔ Reclaims %.1f MB instantly!", Math.max(0, savedMb)));
-                tvModeBadge.setText(String.format(Locale.US, "✂️ CUT OUT [%02d:%02d ➔ %02d:%02d]", s / 60, s % 60, e / 60, e % 60));
+                        "Highlighted area will be cut Reclaims %.1f MB instantly!", Math.max(0, savedMb)));
+                tvModeBadge.setText(String.format(Locale.US, "CUT OUT [%02d:%02d %02d:%02d]", s / 60, s % 60, e / 60, e % 60));
                 tvModeBadge.setBackground(createRoundedDrawable(Color.parseColor("#CCEF4444"), Color.TRANSPARENT, 0, dp(context, 6)));
 
                 cardKeep.setBackground(createRoundedDrawable(Color.parseColor("#0C1524"), ThemeStyles.COLOR_BORDER_SUBTLE, dp(context, 1), dp(context, 10)));
@@ -473,7 +485,7 @@ public class ToolboxDialogs {
         rowPresets.setPadding(0, 0, 0, dp(context, 8));
 
         TextView tvPreLabel = new TextView(context);
-        tvPreLabel.setText("⚡ SNAPS:");
+        tvPreLabel.setText("SNAPS:");
         tvPreLabel.setTextColor(Color.parseColor("#94A3B8"));
         tvPreLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
         tvPreLabel.setTypeface(Typeface.DEFAULT_BOLD);
@@ -617,7 +629,7 @@ public class ToolboxDialogs {
             }
             videoView.start();
             tvCenterPlay.setVisibility(View.GONE);
-            btnPlayPause.setText("❚❚ PAUSE");
+            btnPlayPause.setText("PAUSE");
         });
         rowActions.addView(btnPreview);
 
@@ -642,7 +654,7 @@ public class ToolboxDialogs {
 
         // Fast Lossless Export Button (DirectStream)
         Button btnLossless = new Button(context);
-        btnLossless.setText("⚡ QUICK LOSSLESS EXPORT (DIRECTSTREAM)");
+        btnLossless.setText("QUICK LOSSLESS EXPORT (DIRECTSTREAM)");
         btnLossless.setTextColor(Color.WHITE);
         btnLossless.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         btnLossless.setTypeface(Typeface.DEFAULT_BOLD);
@@ -829,7 +841,7 @@ public class ToolboxDialogs {
 
         // Header Deck
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("🛡️ PRIVACY & METADATA SHIELD");
+        tvTitle.setText("PRIVACY & METADATA SHIELD");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -876,7 +888,7 @@ public class ToolboxDialogs {
         rowRisk.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView tvAuditTitle = new TextView(context);
-        tvAuditTitle.setText("⚠️ DETECTED SENSITIVE METADATA LEAKS");
+        tvAuditTitle.setText("DETECTED SENSITIVE METADATA LEAKS");
         tvAuditTitle.setTextColor(Color.parseColor("#FCA5A5"));
         tvAuditTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         tvAuditTitle.setTypeface(Typeface.DEFAULT_BOLD);
@@ -885,7 +897,7 @@ public class ToolboxDialogs {
         rowRisk.addView(tvAuditTitle);
 
         TextView tvRiskBadge = new TextView(context);
-        tvRiskBadge.setText("🔴 CRITICAL RISK");
+        tvRiskBadge.setText("CRITICAL RISK");
         tvRiskBadge.setTextColor(Color.parseColor("#EF4444"));
         tvRiskBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
         tvRiskBadge.setTypeface(Typeface.DEFAULT_BOLD);
@@ -919,11 +931,11 @@ public class ToolboxDialogs {
         final boolean[] stripUdta = new boolean[]{true};
         final boolean[] injectSha = new boolean[]{true};
 
-        root.addView(createModernToggleCard(context, "📍", "Strip GPS Coordinates & Geo-tags", "Zero location tracking atoms", true, c -> stripGps[0] = c));
-        root.addView(createModernToggleCard(context, "📱", "Scrub Camera Make/Model & Device ID", "Anonymize hardware serial fingerprints", true, c -> stripCamera[0] = c));
+        root.addView(createModernToggleCard(context, "", "Strip GPS Coordinates & Geo-tags", "Zero location tracking atoms", true, c -> stripGps[0] = c));
+        root.addView(createModernToggleCard(context, "", "Scrub Camera Make/Model & Device ID", "Anonymize hardware serial fingerprints", true, c -> stripCamera[0] = c));
         root.addView(createModernToggleCard(context, "⏱", "Reset Timestamps to Epoch (1970-01-01)", "Eliminate timezone and capture-hour leaks", true, c -> stripTimestamps[0] = c));
-        root.addView(createModernToggleCard(context, "🧬", "Purge Vendor UDTA & XMP Metadata Atoms", "Strip proprietary OEM camera payloads", true, c -> stripUdta[0] = c));
-        root.addView(createModernToggleCard(context, "🛡️", "Inject SHA-256 Anti-Tamper Verification", "Cryptographic proof of untampered bitstream", true, c -> injectSha[0] = c));
+        root.addView(createModernToggleCard(context, "", "Purge Vendor UDTA & XMP Metadata Atoms", "Strip proprietary OEM camera payloads", true, c -> stripUdta[0] = c));
+        root.addView(createModernToggleCard(context, "", "Inject SHA-256 Anti-Tamper Verification", "Cryptographic proof of untampered bitstream", true, c -> injectSha[0] = c));
 
         // Projected Clean Score
         LinearLayout scoreCard = new LinearLayout(context);
@@ -935,7 +947,7 @@ public class ToolboxDialogs {
         scoreCard.setLayoutParams(sclp);
 
         TextView tvScore = new TextView(context);
-        tvScore.setText("🛡️ PREDICTED PRIVACY RATING: 100% ZERO-LEAK\nMilitary-grade container sanitization • All device tags scrubbed");
+        tvScore.setText("PREDICTED PRIVACY RATING: 100% ZERO-LEAK\nMilitary-grade container sanitization • All device tags scrubbed");
         tvScore.setTextColor(ThemeStyles.COLOR_EMERALD_NEON);
         tvScore.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
         tvScore.setTypeface(Typeface.DEFAULT_BOLD);
@@ -944,7 +956,7 @@ public class ToolboxDialogs {
 
         // Sanitize & Export Button
         Button btnSanitizeNow = new Button(context);
-        btnSanitizeNow.setText("⚡ SANITIZE & EXPORT COPY DIRECT TO DCIM");
+        btnSanitizeNow.setText("SANITIZE & EXPORT COPY DIRECT TO DCIM");
         btnSanitizeNow.setTextColor(Color.WHITE);
         btnSanitizeNow.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         btnSanitizeNow.setTypeface(Typeface.DEFAULT_BOLD);
@@ -1038,7 +1050,7 @@ public class ToolboxDialogs {
         root.setBackground(createCardBackground(context));
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("🎯 EXACT FIT-TO-SIZE CALCULATOR");
+        tvTitle.setText("EXACT FIT-TO-SIZE CALCULATOR");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -1108,7 +1120,7 @@ public class ToolboxDialogs {
             int mb = Math.max(2, sbMb.getProgress());
             int bitrate = computeBitrate(mb, dur);
             double reduction = Math.max(0, (1.0 - ((double) mb / srcMb)) * 100.0);
-            tvSliderLbl.setText(String.format(Locale.US, "🎯 TARGET BUDGET: %d MB (-%.1f%% Reduction):", mb, reduction));
+            tvSliderLbl.setText(String.format(Locale.US, "TARGET BUDGET: %d MB (-%.1f%% Reduction):", mb, reduction));
 
             String qualityTier;
             String vmafMeter;
@@ -1200,7 +1212,7 @@ public class ToolboxDialogs {
         updateFeedback.run();
 
         Button btnApplyCustom = new Button(context);
-        btnApplyCustom.setText("⚡ APPLY TARGET TO COMPRESSOR");
+        btnApplyCustom.setText("APPLY TARGET TO COMPRESSOR");
         btnApplyCustom.setTextColor(Color.WHITE);
         btnApplyCustom.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         btnApplyCustom.setTypeface(Typeface.DEFAULT_BOLD);
@@ -1258,7 +1270,7 @@ public class ToolboxDialogs {
         root.setBackground(createCardBackground(context));
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("📡 GALLERY DEDUPLICATION RADAR");
+        tvTitle.setText("GALLERY DEDUPLICATION RADAR");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -1358,7 +1370,7 @@ public class ToolboxDialogs {
                 sb.append(String.format(Locale.US, "• %s (%.1f MB) [Redundant Sub-Take]\n",
                         dup.getName(), dup.length() / (1024.0 * 1024.0)));
             }
-            sb.append(String.format(Locale.US, "★ Potential Storage Reclaimed: %.1f MB!", finalReclaimBytes / (1024.0 * 1024.0)));
+            sb.append(String.format(Locale.US, "Potential Storage Reclaimed: %.1f MB!", finalReclaimBytes / (1024.0 * 1024.0)));
         } else {
             sb.append("• All videos in gallery have unique temporal DNA.\n• Zero duplicate frame sequences detected.");
         }
@@ -1374,7 +1386,7 @@ public class ToolboxDialogs {
 
         if (!duplicateCandidates.isEmpty()) {
             Button btnDedup = new Button(context);
-            btnDedup.setText(String.format(Locale.US, "🗑️ KEEP MASTER & TRASH DUPLICATES (%.1f MB)", finalReclaimBytes / (1024.0 * 1024.0)));
+            btnDedup.setText(String.format(Locale.US, "KEEP MASTER & TRASH DUPLICATES (%.1f MB)", finalReclaimBytes / (1024.0 * 1024.0)));
             btnDedup.setTextColor(Color.WHITE);
             btnDedup.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
             btnDedup.setTypeface(Typeface.DEFAULT_BOLD);
@@ -1434,7 +1446,7 @@ public class ToolboxDialogs {
         root.setBackground(createCardBackground(context));
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("🎬 VIDEO MERGER & STORYBOARD STITCHER");
+        tvTitle.setText("VIDEO MERGER & STORYBOARD STITCHER");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -1516,7 +1528,7 @@ public class ToolboxDialogs {
                     conn.setPadding(dp(context, 4), 0, dp(context, 4), 0);
 
                     TextView tvConn = new TextView(context);
-                    tvConn.setText("🔗\n50ms");
+                    tvConn.setText("\n50ms");
                     tvConn.setTextColor(ThemeStyles.COLOR_CYAN_NEON);
                     tvConn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 8.5f);
                     tvConn.setTypeface(Typeface.DEFAULT_BOLD);
@@ -1619,7 +1631,7 @@ public class ToolboxDialogs {
             }
 
             tvSummary.setText(String.format(Locale.US,
-                    "🎬 TOTAL TIMELINE: %s • %d CLIPS • EST. OUTPUT: %.1f MB",
+                    "TOTAL TIMELINE: %s • %d CLIPS • EST. OUTPUT: %.1f MB",
                     formatTimecode(totalSec), clips.size(), totalBytes / (1024.0 * 1024.0)));
         };
 
@@ -1629,12 +1641,12 @@ public class ToolboxDialogs {
         root.addView(tvSummary);
 
         // Composition Toggles
-        root.addView(createModernToggleCard(context, "🎯", "Normalize Master Stream: 1080p60 SDR BT.709", "Resamples framerate and colorspace across clips", true, null));
-        root.addView(createModernToggleCard(context, "🔊", "Equal-Power Audio Crossfade (50 ms transition)", "Smooth logarithmic acoustic overlap", true, null));
-        root.addView(createModernToggleCard(context, "⚡", "DirectStream Bitstream Concat Mode", "Instant zero-loss append when parameters align", true, null));
+        root.addView(createModernToggleCard(context, "", "Normalize Master Stream: 1080p60 SDR BT.709", "Resamples framerate and colorspace across clips", true, null));
+        root.addView(createModernToggleCard(context, "", "Equal-Power Audio Crossfade (50 ms transition)", "Smooth logarithmic acoustic overlap", true, null));
+        root.addView(createModernToggleCard(context, "", "DirectStream Bitstream Concat Mode", "Instant zero-loss append when parameters align", true, null));
 
         Button btnMerge = new Button(context);
-        btnMerge.setText("⚡ MERGE & STITCH COMPOSITION NOW");
+        btnMerge.setText("MERGE & STITCH COMPOSITION NOW");
         btnMerge.setTextColor(Color.WHITE);
         btnMerge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         btnMerge.setTypeface(Typeface.DEFAULT_BOLD);
@@ -1715,7 +1727,7 @@ public class ToolboxDialogs {
         root.setBackground(createCardBackground(context));
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("📸 FRAME GRABBER & GIF/WEBP STUDIO");
+        tvTitle.setText("FRAME GRABBER & GIF/WEBP STUDIO");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -1813,7 +1825,7 @@ public class ToolboxDialogs {
         });
 
         Button btnExportStill = new Button(context);
-        btnExportStill.setText("📸 EXPORT ULTRA HDR STILL (100% QUALITY JPEG)");
+        btnExportStill.setText("EXPORT ULTRA HDR STILL (100% QUALITY JPEG)");
         btnExportStill.setTextColor(Color.WHITE);
         btnExportStill.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         btnExportStill.setTypeface(Typeface.DEFAULT_BOLD);
@@ -1856,7 +1868,7 @@ public class ToolboxDialogs {
         root.addView(btnExportStill);
 
         Button btnExportPng = new Button(context);
-        btnExportPng.setText("💎 EXPORT LOSSLESS PNG STILL FRAME");
+        btnExportPng.setText("EXPORT LOSSLESS PNG STILL FRAME");
         btnExportPng.setTextColor(Color.WHITE);
         btnExportPng.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         btnExportPng.setTypeface(Typeface.DEFAULT_BOLD);
@@ -1905,11 +1917,11 @@ public class ToolboxDialogs {
         tvGifLbl.setPadding(0, dp(context, 10), 0, dp(context, 4));
         root.addView(tvGifLbl);
 
-        root.addView(createModernToggleCard(context, "🎞️", "Animated WebP (10x smaller than GIF, 24fps)", "WhatsApp Sticker and Telegram compatible", true, null));
-        root.addView(createModernToggleCard(context, "🎨", "Optimize 256-Color Adaptive Palette", "Eliminates color banding on mobile screens", true, null));
+        root.addView(createModernToggleCard(context, "", "Animated WebP (10x smaller than GIF, 24fps)", "WhatsApp Sticker and Telegram compatible", true, null));
+        root.addView(createModernToggleCard(context, "", "Optimize 256-Color Adaptive Palette", "Eliminates color banding on mobile screens", true, null));
 
         Button btnGenGif = new Button(context);
-        btnGenGif.setText("⚡ GENERATE ANIMATED WEBP STICKER");
+        btnGenGif.setText("GENERATE ANIMATED WEBP STICKER");
         btnGenGif.setTextColor(Color.WHITE);
         btnGenGif.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         btnGenGif.setTypeface(Typeface.DEFAULT_BOLD);
@@ -2001,7 +2013,7 @@ public class ToolboxDialogs {
         root.setBackground(createCardBackground(context));
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("👁️ PRIVACY BLUR & REDACTION BRUSH");
+        tvTitle.setText("PRIVACY BLUR & REDACTION BRUSH");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -2041,7 +2053,7 @@ public class ToolboxDialogs {
 
         // Interactive Redaction Overlay Box
         final TextView tvRedactBox = new TextView(context);
-        tvRedactBox.setText("🛡️ BLUR 85%\nDRAG REGION");
+        tvRedactBox.setText("BLUR 85%\nDRAG REGION");
         tvRedactBox.setTextColor(Color.WHITE);
         tvRedactBox.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
         tvRedactBox.setTypeface(Typeface.DEFAULT_BOLD);
@@ -2081,8 +2093,8 @@ public class ToolboxDialogs {
         tvTrackHint.setPadding(0, dp(context, 6), 0, dp(context, 6));
         root.addView(tvTrackHint);
 
-        root.addView(createModernToggleCard(context, "🎯", "Optical-Flow Motion Tracking", "Follows moving target across GOP boundaries", true, null));
-        root.addView(createModernToggleCard(context, "🔇", "Scrub Audio Voices During Redacted Intervals", "Mutes vocal frequencies during sensitive timestamps", false, null));
+        root.addView(createModernToggleCard(context, "", "Optical-Flow Motion Tracking", "Follows moving target across GOP boundaries", true, null));
+        root.addView(createModernToggleCard(context, "", "Scrub Audio Voices During Redacted Intervals", "Mutes vocal frequencies during sensitive timestamps", false, null));
 
         final TextView tvBlurLbl = new TextView(context);
         tvBlurLbl.setText("Blur Intensity (85%):");
@@ -2098,7 +2110,7 @@ public class ToolboxDialogs {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 tvBlurLbl.setText(String.format(Locale.US, "Blur Intensity (%d%%):", progress));
-                tvRedactBox.setText(String.format(Locale.US, "🛡️ BLUR %d%%\nDRAG REGION", progress));
+                tvRedactBox.setText(String.format(Locale.US, "BLUR %d%%\nDRAG REGION", progress));
             }
             @Override public void onStartTrackingTouch(SeekBar seekBar) {}
             @Override public void onStopTrackingTouch(SeekBar seekBar) {}
@@ -2210,7 +2222,7 @@ public class ToolboxDialogs {
             html.append("h1{color:#38bdf8;} table{width:100%;border-collapse:collapse;margin-top:20px;}");
             html.append("th,td{padding:12px;text-align:left;border-bottom:1px solid #1e293b;}");
             html.append("a{color:#10b981;font-weight:bold;text-decoration:none;padding:6px 12px;background:#06281e;border-radius:6px;border:1px solid #059669;}</style></head><body>");
-            html.append("<h1>⚡ PRISM-V STUDIO LOCAL WI-FI TRANSFERS</h1>");
+            html.append("<h1>PRISM-V STUDIO LOCAL WI-FI TRANSFERS</h1>");
             html.append("<p>High-speed zero-cloud transfer from device storage directly to your PC or Mac.</p>");
             html.append("<table><tr><th>Video File</th><th>Size</th><th>Action</th></tr>");
             List<File> files = PrismStorageManager.listSavedVideos(context);
@@ -2246,7 +2258,7 @@ public class ToolboxDialogs {
         root.setBackground(createCardBackground(context));
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("🌐 HOT-FOLDER & LOCAL PC/NAS TRANSFER");
+        tvTitle.setText("HOT-FOLDER & LOCAL PC/NAS TRANSFER");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -2309,7 +2321,7 @@ public class ToolboxDialogs {
         qrTextCol.addView(tvQrInfo);
 
         Button btnCopyUrl = new Button(context);
-        btnCopyUrl.setText("📋 Copy URL");
+        btnCopyUrl.setText("Copy URL");
         btnCopyUrl.setTextColor(Color.WHITE);
         btnCopyUrl.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
         btnCopyUrl.setTypeface(Typeface.DEFAULT_BOLD);
@@ -2342,8 +2354,8 @@ public class ToolboxDialogs {
         tvRules.setPadding(0, dp(context, 6), 0, dp(context, 4));
         root.addView(tvRules);
 
-        root.addView(createModernToggleCard(context, "📁", "Watch /DCIM/ScreenRecorder/", "Auto-compress files >50MB in background", true, null));
-        root.addView(createModernToggleCard(context, "📷", "Watch /DCIM/Camera/", "Recompress videos >14 days old via L-BBR on AC power", true, null));
+        root.addView(createModernToggleCard(context, "", "Watch /DCIM/ScreenRecorder/", "Auto-compress files >50MB in background", true, null));
+        root.addView(createModernToggleCard(context, "", "Watch /DCIM/Camera/", "Recompress videos >14 days old via L-BBR on AC power", true, null));
 
         Button btnToggleSrv = new Button(context);
         btnToggleSrv.setText("RESTART WI-FI SERVER");
@@ -2462,7 +2474,7 @@ public class ToolboxDialogs {
         rowHeader.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("✦ ON-DEVICE GEMINI COPILOT");
+        tvTitle.setText("ON-DEVICE GEMINI COPILOT");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -2480,7 +2492,7 @@ public class ToolboxDialogs {
         rowHeader.addView(tvBadge);
 
         Button btnOpenDevice = new Button(context);
-        btnOpenDevice.setText("🚀 OPEN GEMINI APP");
+        btnOpenDevice.setText("OPEN GEMINI APP");
         btnOpenDevice.setTextColor(Color.WHITE);
         btnOpenDevice.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
         btnOpenDevice.setTypeface(Typeface.DEFAULT_BOLD);
@@ -2539,7 +2551,7 @@ public class ToolboxDialogs {
         final BubbleHelper bubbleHelper = new BubbleHelper();
 
         bubbleHelper.add(String.format(Locale.US,
-                "✦ I've analyzed your video DNA:\n• Resolution: %dx%d (%s)\n• Framerate: %d fps\n• Bitrate: %,d kbps (%s)\n• Audio: %s\n• Color Standard: %s\n• Target Device: %s\n\nHow would you like to optimize this video?",
+                "I've analyzed your video DNA:\n• Resolution: %dx%d (%s)\n• Framerate: %d fps\n• Bitrate: %,d kbps (%s)\n• Audio: %s\n• Color Standard: %s\n• Target Device: %s\n\nHow would you like to optimize this video?",
                 vCtx.width, vCtx.height, vCtx.aspectFraming, vCtx.fps,
                 vCtx.bitrateKbps, vCtx.codec, vCtx.audioDna, vCtx.colorStandard,
                 vCtx.deviceModel), false);
@@ -2550,7 +2562,7 @@ public class ToolboxDialogs {
                 bubbleHelper.add(query.trim(), true);
 
                 final TextView tvThinking = new TextView(context);
-                tvThinking.setText("✦ Thinking & analyzing video DNA...");
+                tvThinking.setText("Thinking & analyzing video DNA...");
                 tvThinking.setTextColor(ThemeStyles.COLOR_CYAN_TEXT);
                 tvThinking.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
                 tvThinking.setPadding(dp(context, 12), dp(context, 6), dp(context, 12), dp(context, 6));
@@ -2570,7 +2582,7 @@ public class ToolboxDialogs {
                         aBubble.setLayoutParams(alp);
 
                         TextView tvM = new TextView(context);
-                        tvM.setText((isLiveApi ? "✦ [Gemini 1.5 Flash • Cloud]\n\n" : "✦ [Device Gemini • Neural Engine]\n\n") + message);
+                        tvM.setText((isLiveApi ? "[Gemini 1.5 Flash • Cloud]\n\n" : "[Device Gemini • Neural Engine]\n\n") + message);
                         tvM.setTextColor(Color.WHITE);
                         tvM.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
                         aBubble.addView(tvM);
@@ -2592,7 +2604,7 @@ public class ToolboxDialogs {
                             aBubble.addView(btnAction);
 
                             Button btnAskGeminiApp = new Button(context);
-                            btnAskGeminiApp.setText("🚀 OPEN THIS IN DEVICE GEMINI APP");
+                            btnAskGeminiApp.setText("OPEN THIS IN DEVICE GEMINI APP");
                             btnAskGeminiApp.setTextColor(Color.WHITE);
                             btnAskGeminiApp.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
                             btnAskGeminiApp.setTypeface(Typeface.DEFAULT_BOLD);
@@ -2628,15 +2640,15 @@ public class ToolboxDialogs {
         LinearLayout pillRow = new LinearLayout(context);
         pillRow.setOrientation(LinearLayout.HORIZONTAL);
         String[] quickPills = new String[]{
-                "🔬 What is VMAF?",
-                "⚙️ HEVC vs AVC",
-                "⚡ Cut Size in Half (-50%)",
-                "💬 Fit under 16MB for WhatsApp",
-                "📱 Best 1080p Reels / TikTok",
-                "🎨 Fix HDR Washed Out Colors",
-                "📦 Why is video file so big?",
-                "💎 Pro Master (Keep 1080p)",
-                "🔇 Strip Audio (Mute)"
+                "What is VMAF?",
+                "HEVC vs AVC",
+                "Cut Size in Half (-50%)",
+                "Fit under 16MB for WhatsApp",
+                "Best 1080p Reels / TikTok",
+                "Fix HDR Washed Out Colors",
+                "Why is video file so big?",
+                "Pro Master (Keep 1080p)",
+                "Strip Audio (Mute)"
         };
         for (String qp : quickPills) {
             TextView pView = new TextView(context);
@@ -2674,7 +2686,7 @@ public class ToolboxDialogs {
         inputRow.addView(etPrompt);
 
         Button btnSend = new Button(context);
-        btnSend.setText("➤");
+        btnSend.setText("");
         btnSend.setTextColor(Color.WHITE);
         btnSend.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         btnSend.setBackground(ThemeStyles.createGradientButton(ThemeStyles.COLOR_CYAN_PRIMARY, ThemeStyles.COLOR_CYAN_NEON, dp(context, 10)));
@@ -2772,7 +2784,7 @@ public class ToolboxDialogs {
         root.setBackground(createCardBackground(context));
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("🎨 HDR-TO-SDR & ACES COLOR TONE MAP");
+        tvTitle.setText("HDR-TO-SDR & ACES COLOR TONE MAP");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -2931,8 +2943,8 @@ public class ToolboxDialogs {
             ));
         }
 
-        root.addView(createModernToggleCard(context, "🌈", "Gamut Remap: Rec.2020 ➔ Rec.709 Standard Gamut", "Converts wide color gamut without clipping", true, null));
-        root.addView(createModernToggleCard(context, "✨", "Anti-Banding 5x5 Blue-Noise Spatial Dither", "Eliminates gradient banding on 8-bit screens", true, null));
+        root.addView(createModernToggleCard(context, "", "Gamut Remap: Rec.2020 Rec.709 Standard Gamut", "Converts wide color gamut without clipping", true, null));
+        root.addView(createModernToggleCard(context, "", "Anti-Banding 5x5 Blue-Noise Spatial Dither", "Eliminates gradient banding on 8-bit screens", true, null));
 
         Button btnApply = new Button(context);
         btnApply.setText("APPLY ACES TONE-MAPPER TO PIPELINE");
@@ -2981,7 +2993,7 @@ public class ToolboxDialogs {
         root.setBackground(createCardBackground(context));
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("🗑️ 30-DAY RECYCLE BIN & BIOMETRIC VAULT");
+        tvTitle.setText("30-DAY RECYCLE BIN & BIOMETRIC VAULT");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -3001,7 +3013,7 @@ public class ToolboxDialogs {
         vaultCard.setBackground(createRoundedDrawable(Color.parseColor("#0F172A"), Color.parseColor("#818CF8"), dp(context, 1), dp(context, 12)));
 
         TextView tvVaultTitle = new TextView(context);
-        tvVaultTitle.setText("🔒 BIOMETRIC ENCRYPTION ACTIVE (AES-256-GCM)");
+        tvVaultTitle.setText("BIOMETRIC ENCRYPTION ACTIVE (AES-256-GCM)");
         tvVaultTitle.setTextColor(Color.parseColor("#A5B4FC"));
         tvVaultTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         tvVaultTitle.setTypeface(Typeface.DEFAULT_BOLD);
@@ -3022,7 +3034,7 @@ public class ToolboxDialogs {
         vaultCard.addView(tvVaultDetails);
 
         Button btnBioAuth = new Button(context);
-        btnBioAuth.setText("🔒 BIOMETRIC UNLOCK (FINGERPRINT / FACE)");
+        btnBioAuth.setText("BIOMETRIC UNLOCK (FINGERPRINT / FACE)");
         btnBioAuth.setTextColor(Color.WHITE);
         btnBioAuth.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
         btnBioAuth.setTypeface(Typeface.DEFAULT_BOLD);
@@ -3101,7 +3113,7 @@ public class ToolboxDialogs {
                 itemRow.addView(tvItem);
 
                 Button btnRestore = new Button(context);
-                btnRestore.setText("♻️");
+                btnRestore.setText("");
                 btnRestore.setTextColor(Color.WHITE);
                 btnRestore.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
                 btnRestore.setBackground(createRoundedDrawable(Color.parseColor("#152438"), ThemeStyles.COLOR_BORDER_SUBTLE, dp(context, 1), dp(context, 6)));
@@ -3122,7 +3134,7 @@ public class ToolboxDialogs {
 
             final long finalPurgeBytes = totalTrashBytes;
             Button btnPurgeAll = new Button(context);
-            btnPurgeAll.setText(String.format(Locale.US, "⚡ PURGE ALL TRASH & RECLAIM %.1f MB NOW", finalPurgeBytes / (1024.0 * 1024.0)));
+            btnPurgeAll.setText(String.format(Locale.US, "PURGE ALL TRASH & RECLAIM %.1f MB NOW", finalPurgeBytes / (1024.0 * 1024.0)));
             btnPurgeAll.setTextColor(Color.WHITE);
             btnPurgeAll.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
             btnPurgeAll.setTypeface(Typeface.DEFAULT_BOLD);
@@ -3171,7 +3183,7 @@ public class ToolboxDialogs {
         root.setBackground(createCardBackground(context));
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("⚙️ SYSTEM PREFERENCES & SETTINGS");
+        tvTitle.setText("SYSTEM PREFERENCES & SETTINGS");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -3281,7 +3293,7 @@ public class ToolboxDialogs {
         root.setBackground(createCardBackground(context));
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("📋 ACTIVE BATCH QUEUE MANAGER");
+        tvTitle.setText("ACTIVE BATCH QUEUE MANAGER");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -3360,7 +3372,7 @@ public class ToolboxDialogs {
         diskGuard.setBackground(createRoundedDrawable(Color.parseColor("#06281E"), Color.parseColor("#059669"), dp(context, 1), dp(context, 10)));
 
         TextView tvDisk = new TextView(context);
-        tvDisk.setText(String.format(Locale.US, "🛡️ DYNAMIC DISK-FULL GUARD ACTIVE\nFree Storage: %.2f GB • Safety Threshold: 500 MB (SAFE)", freeGb));
+        tvDisk.setText(String.format(Locale.US, "DYNAMIC DISK-FULL GUARD ACTIVE\nFree Storage: %.2f GB • Safety Threshold: 500 MB (SAFE)", freeGb));
         tvDisk.setTextColor(ThemeStyles.COLOR_EMERALD_NEON);
         tvDisk.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         tvDisk.setTypeface(Typeface.DEFAULT_BOLD);
@@ -3368,7 +3380,7 @@ public class ToolboxDialogs {
         root.addView(diskGuard);
 
         Button btnRunBg = new Button(context);
-        btnRunBg.setText("⚡ RUN BATCH IN BACKGROUND (FGS)");
+        btnRunBg.setText("RUN BATCH IN BACKGROUND (FGS)");
         btnRunBg.setTextColor(Color.WHITE);
         btnRunBg.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         btnRunBg.setTypeface(Typeface.DEFAULT_BOLD);
@@ -3416,7 +3428,7 @@ public class ToolboxDialogs {
         root.setBackground(createCardBackground(context));
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("🎙️ EBU R128 AUDIO ENHANCER & BOOSTER");
+        tvTitle.setText("EBU R128 AUDIO ENHANCER & BOOSTER");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -3530,7 +3542,7 @@ public class ToolboxDialogs {
 
         // Vocal & Acoustic Filters
         final CheckBox cbWind = new CheckBox(context);
-        cbWind.setText("🌬️ 80 Hz High-Pass Filter (Wind & Mic Rumble Purge)");
+        cbWind.setText("80 Hz High-Pass Filter (Wind & Mic Rumble Purge)");
         cbWind.setTextColor(Color.WHITE);
         cbWind.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         cbWind.setChecked(true);
@@ -3538,7 +3550,7 @@ public class ToolboxDialogs {
         root.addView(cbWind);
 
         final CheckBox cbVoice = new CheckBox(context);
-        cbVoice.setText("🗣️ Voice Presence Clarifier (+2.5 kHz Speech Lift)");
+        cbVoice.setText("Voice Presence Clarifier (+2.5 kHz Speech Lift)");
         cbVoice.setTextColor(Color.WHITE);
         cbVoice.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         cbVoice.setChecked(true);
@@ -3546,7 +3558,7 @@ public class ToolboxDialogs {
         root.addView(cbVoice);
 
         Button btnApply = new Button(context);
-        btnApply.setText("⚡ APPLY AUDIO POLISH TO ACTIVE RECIPE");
+        btnApply.setText("APPLY AUDIO POLISH TO ACTIVE RECIPE");
         btnApply.setTextColor(Color.WHITE);
         btnApply.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         btnApply.setTypeface(Typeface.DEFAULT_BOLD);
@@ -3592,14 +3604,14 @@ public class ToolboxDialogs {
         root.setBackground(createCardBackground(context));
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("⚡ ON-CHIP SILICON CAPABILITY BENCHMARK");
+        tvTitle.setText("ENCODER CAPABILITY PROBE");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
         root.addView(tvTitle);
 
         TextView tvSub = new TextView(context);
-        tvSub.setText("Hardware video codec probe, vector SIMD diagnostic, and certified Silicon Tier.");
+        tvSub.setText("Reads MediaCodec encoder declarations and device build values. It does not run an encode.");
         tvSub.setTextColor(ThemeStyles.COLOR_CYAN_TEXT);
         tvSub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         tvSub.setPadding(0, dp(context, 4), 0, dp(context, 12));
@@ -3609,6 +3621,7 @@ public class ToolboxDialogs {
         boolean hasAv1Hw = false;
         boolean hasHevcHw = false;
         boolean hasAvcHw = false;
+        boolean probeOk = true;
         int numCodecs = 0;
 
         try {
@@ -3625,12 +3638,11 @@ public class ToolboxDialogs {
                 }
             }
         } catch (Exception ignored) {
-            hasHevcHw = true;
-            hasAvcHw = true;
+            probeOk = false;
         }
 
         int cpuCores = Runtime.getRuntime().availableProcessors();
-        long totalRamMb = 6144L;
+        long totalRamMb = -1;
         try {
             android.app.ActivityManager am = (android.app.ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
             if (am != null) {
@@ -3640,9 +3652,9 @@ public class ToolboxDialogs {
             }
         } catch (Exception ignored) {}
 
-        String tierBadge = (hasAv1Hw && cpuCores >= 8) ? "🌟 TIER 3: FLAGSHIP SILICON (AV1 + HEVC 4K120)"
-                : (hasHevcHw && cpuCores >= 6) ? "⚡ TIER 2: BALANCED HIGH-EFFICIENCY (HEVC 4K60)"
-                : "🔷 TIER 1: ENTRY EFFICIENCY (HEVC Main)";
+        String tierBadge = (hasAv1Hw && cpuCores >= 8) ? "Tier 3: AV1 encoder, 8+ cores"
+                : (hasHevcHw && cpuCores >= 6) ? "Tier 2: HEVC encoder, 6+ cores"
+                : "Tier 1: HEVC or AVC encoder";
         String tierColor = (hasAv1Hw && cpuCores >= 8) ? "#818CF8" : "#38BDF8";
 
         // Silicon Tier Card
@@ -3658,12 +3670,20 @@ public class ToolboxDialogs {
         tvBadge.setTypeface(Typeface.DEFAULT_BOLD);
         tierCard.addView(tvBadge);
 
+        long pageSize = -1;
+        try {
+            pageSize = android.system.Os.sysconf(android.system.OsConstants._SC_PAGESIZE);
+        } catch (Exception ignored) {}
+
         TextView tvDetails = new TextView(context);
         tvDetails.setText(String.format(Locale.US,
-                "• Platform: %s (%s)\n• CPU Compute: %d Active Cores\n• System Memory: %.1f GB LPDDR\n• Android Version: Android %s (API %d)\n• 16 KB Page Alignment: Certified Compliant",
+                "• Platform: %s (%s)\n• CPU cores: %d\n• System memory: %s\n• Android: %s (API %d)\n• Page size: %s",
                 Build.HARDWARE != null ? Build.HARDWARE.toUpperCase(Locale.US) : "SOC",
-                Build.BOARD != null ? Build.BOARD : "ARM64",
-                cpuCores, totalRamMb / 1024.0, Build.VERSION.RELEASE, Build.VERSION.SDK_INT));
+                Build.BOARD != null ? Build.BOARD : "unknown",
+                cpuCores,
+                totalRamMb > 0 ? String.format(Locale.US, "%.1f GB", totalRamMb / 1024.0) : "unknown",
+                Build.VERSION.RELEASE, Build.VERSION.SDK_INT,
+                pageSize > 0 ? pageSize + " bytes" : "unknown"));
         tvDetails.setTextColor(Color.WHITE);
         tvDetails.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
         tvDetails.setTypeface(Typeface.MONOSPACE);
@@ -3681,23 +3701,22 @@ public class ToolboxDialogs {
         matCard.setLayoutParams(mp);
 
         TextView tvMatHdr = new TextView(context);
-        tvMatHdr.setText("ON-CHIP CAPABILITY TESTS:");
+        tvMatHdr.setText(probeOk ? "REPORTED ENCODERS:" : "ENCODER PROBE FAILED");
         tvMatHdr.setTextColor(ThemeStyles.COLOR_MINT_TEXT);
         tvMatHdr.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         tvMatHdr.setTypeface(Typeface.DEFAULT_BOLD);
         matCard.addView(tvMatHdr);
 
         TextView tvResults = new TextView(context);
-        tvResults.setText(String.format(Locale.US,
-                "[ %s ] HEVC (H.265) Hardware Encoder\n" +
-                "[ %s ] AV1 Hardware Main 10 Encoder\n" +
-                "[ %s ] AVC (H.264) Baseline/High Encoder\n" +
-                "[ PASS ] Arm NEON / SIMD 8-Way rANS Acceleration\n" +
-                "[ PASS ] Zero-Copy Direct ByteBuffer Cache Pool\n" +
-                "[ PASS ] 16 KB Page Size NDK Linker Compliance",
-                hasHevcHw ? "PASS" : "WARN",
-                hasAv1Hw ? "PASS" : "N/A",
-                hasAvcHw ? "PASS" : "WARN"));
+        tvResults.setText(probeOk ? String.format(Locale.US,
+                "[ %s ] HEVC (H.265) encoder\n" +
+                "[ %s ] AV1 encoder\n" +
+                "[ %s ] AVC (H.264) encoder\n" +
+                "Reported video encoders: %d",
+                hasHevcHw ? "YES" : "NO",
+                hasAv1Hw ? "YES" : "NO",
+                hasAvcHw ? "YES" : "NO",
+                numCodecs) : "MediaCodec encoder list was not readable.");
         tvResults.setTextColor(Color.WHITE);
         tvResults.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
         tvResults.setTypeface(Typeface.MONOSPACE);
@@ -3705,8 +3724,15 @@ public class ToolboxDialogs {
         matCard.addView(tvResults);
         root.addView(matCard);
 
+        TextView tvNote = new TextView(context);
+        tvNote.setText("A reported encoder may be software-backed or may reject specific resolutions and bit depths.");
+        tvNote.setTextColor(ThemeStyles.COLOR_TEXT_MUTED);
+        tvNote.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        tvNote.setPadding(0, dp(context, 6), 0, 0);
+        root.addView(tvNote);
+
         Button btnRerun = new Button(context);
-        btnRerun.setText("⚡ RE-RUN 5-SECOND BENCHMARK");
+        btnRerun.setText("RUN PROBE AGAIN");
         btnRerun.setTextColor(Color.WHITE);
         btnRerun.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         btnRerun.setTypeface(Typeface.DEFAULT_BOLD);
@@ -3715,9 +3741,8 @@ public class ToolboxDialogs {
         rp.setMargins(0, dp(context, 10), 0, 0);
         btnRerun.setLayoutParams(rp);
         btnRerun.setOnClickListener(v -> {
-            if (context instanceof Activity) {
-                PrismHud.showSuccess((Activity) context, "Benchmark Completed: All tests passed on " + Build.HARDWARE + "!");
-            }
+            dialog.dismiss();
+            showSiliconBenchmarkDialog(context);
         });
         root.addView(btnRerun);
 
@@ -3751,7 +3776,7 @@ public class ToolboxDialogs {
         root.setBackground(createCardBackground(context));
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("🎛️ CUSTOM WORKFLOW RECIPES & PRESETS");
+        tvTitle.setText("CUSTOM WORKFLOW RECIPES & PRESETS");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -3765,11 +3790,11 @@ public class ToolboxDialogs {
         root.addView(tvSub);
 
         final String[][] recipes = {
-                {"📱 WhatsApp Fast Direct", "Target: 16 MB • 720p @ 30fps • Bitrate: 1800k • Audio: AAC 96k", "{\"name\":\"WhatsApp\",\"target_mb\":16,\"w\":1280,\"h\":720,\"fps\":30,\"bitrate\":1800,\"codec\":\"hevc\"}"},
-                {"🎮 Discord HD Gamer Clip", "Target: 25 MB • 1080p @ 30fps • Bitrate: 2800k • Audio: AAC 128k", "{\"name\":\"Discord\",\"target_mb\":25,\"w\":1920,\"h\":1080,\"fps\":30,\"bitrate\":2800,\"codec\":\"hevc\"}"},
-                {"🎬 YouTube Creator 4K", "Target: 4K Master • 3840x2160 @ 60fps • Bitrate: 28000k • Audio: AAC 320k", "{\"name\":\"YouTube_4K\",\"w\":3840,\"h\":2160,\"fps\":60,\"bitrate\":28000,\"codec\":\"hevc\"}"},
-                {"💾 Ultra Archival Master", "Mode: H-ARCH • Source Res @ Original FPS • Bitrate: 3500k • Opus Audio", "{\"name\":\"Archival\",\"mode\":\"H-ARCH\",\"bitrate\":3500,\"codec\":\"hevc\"}"},
-                {"⚡ Quick Social Story", "Target: 9:16 Portrait • 1080x1920 @ 30fps • Bitrate: 2400k", "{\"name\":\"Story_9_16\",\"w\":1080,\"h\":1920,\"fps\":30,\"bitrate\":2400,\"codec\":\"hevc\"}"}
+                {"WhatsApp Fast Direct", "Target: 16 MB • 720p @ 30fps • Bitrate: 1800k • Audio: AAC 96k", "{\"name\":\"WhatsApp\",\"target_mb\":16,\"w\":1280,\"h\":720,\"fps\":30,\"bitrate\":1800,\"codec\":\"hevc\"}"},
+                {"Discord HD Gamer Clip", "Target: 25 MB • 1080p @ 30fps • Bitrate: 2800k • Audio: AAC 128k", "{\"name\":\"Discord\",\"target_mb\":25,\"w\":1920,\"h\":1080,\"fps\":30,\"bitrate\":2800,\"codec\":\"hevc\"}"},
+                {"YouTube Creator 4K", "Target: 4K Master • 3840x2160 @ 60fps • Bitrate: 28000k • Audio: AAC 320k", "{\"name\":\"YouTube_4K\",\"w\":3840,\"h\":2160,\"fps\":60,\"bitrate\":28000,\"codec\":\"hevc\"}"},
+                {"Ultra Archival Master", "Mode: H-ARCH • Source Res @ Original FPS • Bitrate: 3500k • Opus Audio", "{\"name\":\"Archival\",\"mode\":\"H-ARCH\",\"bitrate\":3500,\"codec\":\"hevc\"}"},
+                {"Quick Social Story", "Target: 9:16 Portrait • 1080x1920 @ 30fps • Bitrate: 2400k", "{\"name\":\"Story_9_16\",\"w\":1080,\"h\":1920,\"fps\":30,\"bitrate\":2400,\"codec\":\"hevc\"}"}
         };
 
         final int[] selectedRecipe = {0};
@@ -3819,7 +3844,7 @@ public class ToolboxDialogs {
 
         // Action Buttons Row
         Button btnApply = new Button(context);
-        btnApply.setText("⚡ APPLY SELECTED RECIPE TO STUDIO");
+        btnApply.setText("APPLY SELECTED RECIPE TO STUDIO");
         btnApply.setTextColor(Color.WHITE);
         btnApply.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         btnApply.setTypeface(Typeface.DEFAULT_BOLD);
@@ -3842,7 +3867,7 @@ public class ToolboxDialogs {
         shareRow.setLayoutParams(srp);
 
         Button btnCopy = new Button(context);
-        btnCopy.setText("📋 COPY JSON");
+        btnCopy.setText("COPY JSON");
         btnCopy.setTextColor(Color.WHITE);
         btnCopy.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
         btnCopy.setBackground(createRoundedDrawable(Color.parseColor("#121B2D"), ThemeStyles.COLOR_BORDER_SUBTLE, dp(context, 1), dp(context, 8)));
@@ -3863,7 +3888,7 @@ public class ToolboxDialogs {
         shareRow.addView(btnCopy);
 
         Button btnQr = new Button(context);
-        btnQr.setText("📲 SHARE QR");
+        btnQr.setText("SHARE QR");
         btnQr.setTextColor(Color.WHITE);
         btnQr.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
         btnQr.setBackground(createRoundedDrawable(Color.parseColor("#121B2D"), ThemeStyles.COLOR_BORDER_SUBTLE, dp(context, 1), dp(context, 8)));
@@ -3879,7 +3904,7 @@ public class ToolboxDialogs {
             qrRoot.setBackground(createCardBackground(context));
 
             TextView qTitle = new TextView(context);
-            qTitle.setText("📲 SCAN RECIPE QR CODE");
+            qTitle.setText("SCAN RECIPE QR CODE");
             qTitle.setTextColor(Color.WHITE);
             qTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
             qTitle.setTypeface(Typeface.DEFAULT_BOLD);
@@ -3935,7 +3960,7 @@ public class ToolboxDialogs {
         root.setBackground(createCardBackground(context));
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("📊 SYSTEM HARDWARE & THERMAL TELEMETRY");
+        tvTitle.setText("SYSTEM HARDWARE & THERMAL TELEMETRY");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -4014,10 +4039,10 @@ public class ToolboxDialogs {
         root.addView(tvProfHdr);
 
         final String[] profiles = {
-                "⚡ TURBO MODE (Max encoding speed, Prime Core on)",
-                "⚖️ BALANCED MODE (ADPF Adaptive, Efficiency + HW ASIC)",
-                "🍃 ECO SAVER MODE (0.7W Lowest Power, 30 fps cap)",
-                "🌙 CHARGING BUTLER (Silent overnight batch processing)"
+                "TURBO MODE (Max encoding speed, Prime Core on)",
+                "BALANCED MODE (ADPF Adaptive, Efficiency + HW ASIC)",
+                "ECO SAVER MODE (0.7W Lowest Power, 30 fps cap)",
+                "CHARGING BUTLER (Silent overnight batch processing)"
         };
         final int[] selProf = {1};
         final Button[] profBtns = new Button[profiles.length];
@@ -4048,7 +4073,7 @@ public class ToolboxDialogs {
         }
 
         Button btnSave = new Button(context);
-        btnSave.setText("⚡ SAVE HARDWARE PROFILE");
+        btnSave.setText("SAVE HARDWARE PROFILE");
         btnSave.setTextColor(Color.WHITE);
         btnSave.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         btnSave.setTypeface(Typeface.DEFAULT_BOLD);
@@ -4094,7 +4119,7 @@ public class ToolboxDialogs {
         root.setBackground(createCardBackground(context));
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("📱 SYSTEM OS INTEGRATION MANAGER");
+        tvTitle.setText("SYSTEM OS INTEGRATION MANAGER");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -4114,7 +4139,7 @@ public class ToolboxDialogs {
         chipCard.setBackground(createRoundedDrawable(Color.parseColor("#091020"), ThemeStyles.COLOR_BORDER_SUBTLE, dp(context, 1), dp(context, 10)));
 
         TextView tvChipHdr = new TextView(context);
-        tvChipHdr.setText("⚡ ANDROID 16 NOTIFICATION.PROGRESSSTYLE LIVE CHIP");
+        tvChipHdr.setText("ANDROID 16 NOTIFICATION.PROGRESSSTYLE LIVE CHIP");
         tvChipHdr.setTextColor(ThemeStyles.COLOR_MINT_TEXT);
         tvChipHdr.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         tvChipHdr.setTypeface(Typeface.DEFAULT_BOLD);
@@ -4145,7 +4170,7 @@ public class ToolboxDialogs {
         pipCard.setLayoutParams(pipp);
 
         TextView tvPipHdr = new TextView(context);
-        tvPipHdr.setText("🪟 FLOATING PICTURE-IN-PICTURE (PIP) WINDOW");
+        tvPipHdr.setText("FLOATING PICTURE-IN-PICTURE (PIP) WINDOW");
         tvPipHdr.setTextColor(ThemeStyles.COLOR_CYAN_TEXT);
         tvPipHdr.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         tvPipHdr.setTypeface(Typeface.DEFAULT_BOLD);
@@ -4194,7 +4219,7 @@ public class ToolboxDialogs {
         foldCard.setLayoutParams(fcp);
 
         TextView tvFoldHdr = new TextView(context);
-        tvFoldHdr.setText("📱 FOLDABLE TABLETOP DUAL-DISPLAY POSTURE");
+        tvFoldHdr.setText("FOLDABLE TABLETOP DUAL-DISPLAY POSTURE");
         tvFoldHdr.setTextColor(Color.parseColor("#CBD5E1"));
         tvFoldHdr.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         tvFoldHdr.setTypeface(Typeface.DEFAULT_BOLD);
@@ -4209,7 +4234,7 @@ public class ToolboxDialogs {
         root.addView(foldCard);
 
         Button btnSave = new Button(context);
-        btnSave.setText("⚡ SAVE INTEGRATION PREFERENCES");
+        btnSave.setText("SAVE INTEGRATION PREFERENCES");
         btnSave.setTextColor(Color.WHITE);
         btnSave.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         btnSave.setTypeface(Typeface.DEFAULT_BOLD);
@@ -4255,7 +4280,7 @@ public class ToolboxDialogs {
         root.setBackground(createCardBackground(context));
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("🎬 PRISM 120Hz CINEMA PLAYER");
+        tvTitle.setText("PRISM 120Hz CINEMA PLAYER");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -4303,7 +4328,7 @@ public class ToolboxDialogs {
         // Track-2 AI Live Toggle Button
         final boolean[] isAiActive = {true};
         final Button btnAiToggle = new Button(context);
-        btnAiToggle.setText("✨ TRACK-2 AI RESIDUAL: ACTIVE (Cool-chic 5.0 Detail ON)");
+        btnAiToggle.setText("TRACK-2 AI RESIDUAL: ACTIVE (Cool-chic 5.0 Detail ON)");
         btnAiToggle.setTextColor(Color.WHITE);
         btnAiToggle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         btnAiToggle.setTypeface(Typeface.DEFAULT_BOLD);
@@ -4314,11 +4339,11 @@ public class ToolboxDialogs {
         btnAiToggle.setOnClickListener(v -> {
             isAiActive[0] = !isAiActive[0];
             if (isAiActive[0]) {
-                btnAiToggle.setText("✨ TRACK-2 AI RESIDUAL: ACTIVE (Cool-chic 5.0 Detail ON)");
+                btnAiToggle.setText("TRACK-2 AI RESIDUAL: ACTIVE (Cool-chic 5.0 Detail ON)");
                 btnAiToggle.setBackground(ThemeStyles.createGradientButton(Color.parseColor("#4F46E5"), Color.parseColor("#818CF8"), dp(context, 10)));
                 if (context instanceof Activity) PrismHud.showSuccess((Activity) context, "Track-2 AI Detail Restoration: ON");
             } else {
-                btnAiToggle.setText("⚪ TRACK-2 AI RESIDUAL: BYPASS (Base HW HEVC Only)");
+                btnAiToggle.setText("TRACK-2 AI RESIDUAL: BYPASS (Base HW HEVC Only)");
                 btnAiToggle.setBackground(createRoundedDrawable(Color.parseColor("#1E293B"), ThemeStyles.COLOR_BORDER_SUBTLE, dp(context, 1), dp(context, 10)));
                 if (context instanceof Activity) PrismHud.showWarning((Activity) context, "Track-2 AI Detail Restoration: OFF");
             }
@@ -4441,7 +4466,7 @@ public class ToolboxDialogs {
         root.setBackground(createCardBackground(context));
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("⚡ WELCOME TO PRISM-V (2027+)");
+        tvTitle.setText("WELCOME TO PRISM-V (2027+)");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -4461,7 +4486,7 @@ public class ToolboxDialogs {
         cardPromise.setPadding(dp(context, 12), dp(context, 10), dp(context, 12), dp(context, 10));
 
         TextView tvPromiseHeader = new TextView(context);
-        tvPromiseHeader.setText("🔒 1. ZERO-PERMISSION PRIVACY PROMISE");
+        tvPromiseHeader.setText("1. ZERO-PERMISSION PRIVACY PROMISE");
         tvPromiseHeader.setTextColor(Color.parseColor("#38BDF8"));
         tvPromiseHeader.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         tvPromiseHeader.setTypeface(Typeface.DEFAULT_BOLD);
@@ -4487,7 +4512,7 @@ public class ToolboxDialogs {
         cardBenchmark.setLayoutParams(bmp);
 
         TextView tvBenchHeader = new TextView(context);
-        tvBenchHeader.setText("🚀 2. SILICON MICRO-BENCHMARK");
+        tvBenchHeader.setText("2. SILICON MICRO-BENCHMARK");
         tvBenchHeader.setTextColor(Color.parseColor("#4ADE80"));
         tvBenchHeader.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         tvBenchHeader.setTypeface(Typeface.DEFAULT_BOLD);
@@ -4510,13 +4535,13 @@ public class ToolboxDialogs {
         String tierBadge;
         String tierColor;
         if (hasAv1) {
-            tierBadge = "👑 TIER 3: FLAGSHIP SILICON (AV1 HW + HEVC ASIC + NPU Ready)";
+            tierBadge = "TIER 3: FLAGSHIP SILICON (AV1 HW + HEVC ASIC + NPU Ready)";
             tierColor = "#A855F7";
         } else if (hasHevc) {
-            tierBadge = "🚀 TIER 2: HIGH-PERFORMANCE (HEVC ASIC + DetInt Math Ready)";
+            tierBadge = "TIER 2: HIGH-PERFORMANCE (HEVC ASIC + DetInt Math Ready)";
             tierColor = "#00E5FF";
         } else {
-            tierBadge = "⚙️ TIER 1: EFFICIENT BASE (AVC ASIC + rANS SW Fallback)";
+            tierBadge = "TIER 1: EFFICIENT BASE (AVC ASIC + rANS SW Fallback)";
             tierColor = "#EAB308";
         }
 
@@ -4539,7 +4564,7 @@ public class ToolboxDialogs {
         cardSkin.setLayoutParams(skp);
 
         TextView tvSkinHeader = new TextView(context);
-        tvSkinHeader.setText("🎨 4. DESIGN THEME SKIN");
+        tvSkinHeader.setText("4. DESIGN THEME SKIN");
         tvSkinHeader.setTextColor(Color.parseColor("#EC4899"));
         tvSkinHeader.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         tvSkinHeader.setTypeface(Typeface.DEFAULT_BOLD);
@@ -4565,7 +4590,7 @@ public class ToolboxDialogs {
 
         // Complete & Launch CTA
         Button btnLaunch = new Button(context);
-        btnLaunch.setText("🚀 LAUNCH PRISM-V COMMAND CENTER");
+        btnLaunch.setText("LAUNCH PRISM-V COMMAND CENTER");
         btnLaunch.setTextColor(Color.WHITE);
         btnLaunch.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         btnLaunch.setTypeface(Typeface.DEFAULT_BOLD);
@@ -4604,7 +4629,7 @@ public class ToolboxDialogs {
         root.setBackground(createCardBackground(context));
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("🎵 AUDIO & SUBTITLE STUDIO");
+        tvTitle.setText("AUDIO & SUBTITLE STUDIO");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -4624,7 +4649,7 @@ public class ToolboxDialogs {
         cardAudio.setPadding(dp(context, 12), dp(context, 10), dp(context, 12), dp(context, 10));
 
         TextView tvAudioHeader = new TextView(context);
-        tvAudioHeader.setText("🎧 1-TAP AUDIO EXTRACTOR");
+        tvAudioHeader.setText("1-TAP AUDIO EXTRACTOR");
         tvAudioHeader.setTextColor(Color.parseColor("#38BDF8"));
         tvAudioHeader.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         tvAudioHeader.setTypeface(Typeface.DEFAULT_BOLD);
@@ -4660,7 +4685,7 @@ public class ToolboxDialogs {
         cardAudio.addView(rgFmt);
 
         Button btnExtract = new Button(context);
-        btnExtract.setText("📥 EXTRACT & EXPORT AUDIO TRACK");
+        btnExtract.setText("EXTRACT & EXPORT AUDIO TRACK");
         btnExtract.setTextColor(Color.WHITE);
         btnExtract.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         btnExtract.setTypeface(Typeface.DEFAULT_BOLD);
@@ -4698,7 +4723,7 @@ public class ToolboxDialogs {
         cardSubs.setLayoutParams(subP);
 
         TextView tvSubHeader = new TextView(context);
-        tvSubHeader.setText("💬 SUBTITLE TRACK MANAGER");
+        tvSubHeader.setText("SUBTITLE TRACK MANAGER");
         tvSubHeader.setTextColor(Color.parseColor("#A855F7"));
         tvSubHeader.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         tvSubHeader.setTypeface(Typeface.DEFAULT_BOLD);
@@ -4723,10 +4748,10 @@ public class ToolboxDialogs {
         btnToggleBurn.setOnClickListener(v -> {
             hardBurn[0] = !hardBurn[0];
             if (hardBurn[0]) {
-                btnToggleBurn.setText("Mode: 🔥 HARD BURN-IN (Rendered into Video Pixels)");
+                btnToggleBurn.setText("Mode: HARD BURN-IN (Rendered into Video Pixels)");
                 btnToggleBurn.setBackground(ThemeStyles.createGradientButton(Color.parseColor("#D97706"), Color.parseColor("#F59E0B"), dp(context, 8)));
             } else {
-                btnToggleBurn.setText("Mode: 📄 SOFT SUBTITLE TRACK (Separate Stream)");
+                btnToggleBurn.setText("Mode: SOFT SUBTITLE TRACK (Separate Stream)");
                 btnToggleBurn.setBackground(createRoundedDrawable(Color.parseColor("#1E293B"), ThemeStyles.COLOR_BORDER_SUBTLE, dp(context, 1), dp(context, 8)));
             }
         });
@@ -4742,7 +4767,7 @@ public class ToolboxDialogs {
         cardSubs.addView(tvStyleInfo);
 
         Button btnImportSub = new Button(context);
-        btnImportSub.setText("📂 IMPORT SUBTITLES (.SRT / .VTT)");
+        btnImportSub.setText("IMPORT SUBTITLES (.SRT / .VTT)");
         btnImportSub.setTextColor(Color.WHITE);
         btnImportSub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
         btnImportSub.setBackground(createRoundedDrawable(Color.parseColor("#334155"), ThemeStyles.COLOR_BORDER_SUBTLE, dp(context, 1), dp(context, 8)));
@@ -4791,7 +4816,7 @@ public class ToolboxDialogs {
         root.setBackground(createCardBackground(context));
 
         TextView tvTitle = new TextView(context);
-        tvTitle.setText("📐 TRANSFORM & GEOMETRY STUDIO");
+        tvTitle.setText("TRANSFORM & GEOMETRY STUDIO");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -4817,7 +4842,7 @@ public class ToolboxDialogs {
         cardRot.setPadding(dp(context, 12), dp(context, 10), dp(context, 12), dp(context, 10));
 
         TextView tvRotHeader = new TextView(context);
-        tvRotHeader.setText("🔄 1. ORIENTATION & MIRRORING");
+        tvRotHeader.setText("1. ORIENTATION & MIRRORING");
         tvRotHeader.setTextColor(Color.parseColor("#38BDF8"));
         tvRotHeader.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         tvRotHeader.setTypeface(Typeface.DEFAULT_BOLD);
@@ -4865,7 +4890,7 @@ public class ToolboxDialogs {
 
         // Selfie Flip Toggle
         final Button btnFlip = new Button(context);
-        btnFlip.setText("🪞 Flip Selfie Mirror: OFF (Normal)");
+        btnFlip.setText("Flip Selfie Mirror: OFF (Normal)");
         btnFlip.setTextColor(Color.WHITE);
         btnFlip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
         btnFlip.setBackground(createRoundedDrawable(Color.parseColor("#1E293B"), ThemeStyles.COLOR_BORDER_SUBTLE, dp(context, 1), dp(context, 8)));
@@ -4875,10 +4900,10 @@ public class ToolboxDialogs {
         btnFlip.setOnClickListener(v -> {
             flipH[0] = !flipH[0];
             if (flipH[0]) {
-                btnFlip.setText("🪞 Flip Selfie Mirror: ACTIVE (Left <-> Right Inverted)");
+                btnFlip.setText("Flip Selfie Mirror: ACTIVE (Left <-> Right Inverted)");
                 btnFlip.setBackground(ThemeStyles.createGradientButton(Color.parseColor("#6366F1"), Color.parseColor("#A855F7"), dp(context, 8)));
             } else {
-                btnFlip.setText("🪞 Flip Selfie Mirror: OFF (Normal)");
+                btnFlip.setText("Flip Selfie Mirror: OFF (Normal)");
                 btnFlip.setBackground(createRoundedDrawable(Color.parseColor("#1E293B"), ThemeStyles.COLOR_BORDER_SUBTLE, dp(context, 1), dp(context, 8)));
             }
         });
@@ -4895,7 +4920,7 @@ public class ToolboxDialogs {
         cardSpeed.setLayoutParams(scp);
 
         TextView tvSpeedHeader = new TextView(context);
-        tvSpeedHeader.setText("⚡ 2. SPEED RAMP (AUDIO PITCH-LOCKED)");
+        tvSpeedHeader.setText("2. SPEED RAMP (AUDIO PITCH-LOCKED)");
         tvSpeedHeader.setTextColor(Color.parseColor("#F59E0B"));
         tvSpeedHeader.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         tvSpeedHeader.setTypeface(Typeface.DEFAULT_BOLD);
@@ -4951,7 +4976,7 @@ public class ToolboxDialogs {
         cardCrop.setLayoutParams(crp);
 
         TextView tvCropHeader = new TextView(context);
-        tvCropHeader.setText("🖼️ 3. ASPECT RATIO CROP");
+        tvCropHeader.setText("3. ASPECT RATIO CROP");
         tvCropHeader.setTextColor(Color.parseColor("#10B981"));
         tvCropHeader.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         tvCropHeader.setTypeface(Typeface.DEFAULT_BOLD);
@@ -4975,7 +5000,7 @@ public class ToolboxDialogs {
 
         // Apply Transform CTA
         Button btnApply = new Button(context);
-        btnApply.setText("✨ APPLY TRANSFORM & CONFIGURE PIPELINE");
+        btnApply.setText("APPLY TRANSFORM & CONFIGURE PIPELINE");
         btnApply.setTextColor(Color.WHITE);
         btnApply.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         btnApply.setTypeface(Typeface.DEFAULT_BOLD);

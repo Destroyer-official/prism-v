@@ -308,7 +308,7 @@ std::vector<uint8_t> BbrEngine::decompress(const BbrChunk& chunk) {
         }
     }
 
-    // Cryptographic 100.000% SHA-256 verification (if expected digest is set)
+    // Compare SHA-256 when an expected digest is set.
     static const Sha256Digest ZERO_SHA{};
     if (chunk.orig_sha256 != ZERO_SHA) {
         Sha256Digest recon_sha = compute_sha256(reconstructed.data(), reconstructed.size());

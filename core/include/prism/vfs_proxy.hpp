@@ -24,12 +24,11 @@ struct CachedChunk {
 };
 
 /**
- * @brief Production Prism-VFS: Zero-Copy Virtual MP4 Filesystem Bridge.
+ * @brief Virtual MP4 file proxy backed by a .pvloss container.
  *
  * Backs Android's StorageManager.openProxyFileDescriptor API.
- * Decompresses 256 KB chunks on-demand in RAM (<1.2 ms latency)
- * and maintains a 16 MB LRU read-ahead cache.
- * Peak RSS bounded to <= 32 MB.
+ * Decompresses 256 KB chunks on demand and keeps a 16 MB LRU cache.
+ * Latency depends on the input and device.
  */
 class PrismVfsProxy {
 public:

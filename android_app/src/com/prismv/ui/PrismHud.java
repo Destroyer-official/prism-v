@@ -42,7 +42,7 @@ public final class PrismHud {
     }
 
     public static void showError(Activity activity, String message) {
-        show(activity, "✖ " + message, Color.parseColor("#FCA5A5"), Color.parseColor("#3B1219"), Color.parseColor("#EF4444"));
+        show(activity, "" + message, Color.parseColor("#FCA5A5"), Color.parseColor("#3B1219"), Color.parseColor("#EF4444"));
     }
 
     private static void show(Activity activity, String message, int textColor, int bgColor, int strokeColor) {

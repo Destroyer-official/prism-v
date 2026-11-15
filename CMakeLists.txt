@@ -87,6 +87,7 @@ set(PRISM_TEST_SOURCES
     tests/test_dedup.cpp
     tests/test_remux.cpp
     tests/test_router.cpp
+    tests/test_robustness.cpp
 )
 
 add_executable(prism_tests ${PRISM_TEST_SOURCES})

@@ -1,16 +1,42 @@
 #include "prism/rans8.hpp"
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <stdexcept>
 
 namespace prism {
 
+namespace {
+
+// A symbol model must cover the full 32,768-slot probability space exactly once.
+void validate_symbol_stats(const std::vector<RansSymbol>& symbol_stats) {
+    uint32_t expected_start = 0;
+    for (size_t s = 0; s < symbol_stats.size(); ++s) {
+        const auto& sym = symbol_stats[s];
+        if (sym.start != expected_start) {
+            throw std::invalid_argument("Symbol statistics are not contiguous");
+        }
+        if (sym.freq == 0) {
+            throw std::invalid_argument("Symbol statistics contain a zero frequency");
+        }
+        expected_start += sym.freq;
+        if (expected_start > Rans8Codec::RANS_M) {
+            throw std::invalid_argument("Symbol statistics exceed the probability space");
+        }
+    }
+    if (expected_start != Rans8Codec::RANS_M) {
+        throw std::invalid_argument("Symbol frequencies do not sum to the rANS probability space");
+    }
+}
+
+} // namespace
+
 std::vector<uint16_t> Rans8Codec::build_cdf_lut(const std::vector<RansSymbol>& symbol_stats) {
     std::vector<uint16_t> lut(RANS_M, 0);
     for (size_t s = 0; s < symbol_stats.size(); ++s) {
-        uint16_t start = symbol_stats[s].start;
-        uint16_t end = start + symbol_stats[s].freq;
-        for (uint16_t m = start; m < end && m < RANS_M; ++m) {
+        uint32_t start = symbol_stats[s].start;
+        uint32_t end = start + symbol_stats[s].freq;
+        for (uint32_t m = start; m < end && m < RANS_M; ++m) {
             lut[m] = static_cast<uint16_t>(s);
         }
     }
@@ -31,6 +57,8 @@ Rans8Codec::EncodedChunk Rans8Codec::encode(const std::vector<uint16_t>& symbols
         return chunk;
     }
 
+    validate_symbol_stats(symbol_stats);
+
     // Per-lane emitted 16-bit words
     std::array<std::vector<uint16_t>, NUM_LANES> lane_words;
 
@@ -48,15 +76,12 @@ Rans8Codec::EncodedChunk Rans8Codec::encode(const std::vector<uint16_t>& symbols
         uint32_t f = stats.freq;
         uint32_t c = stats.start;
 
-        if (f == 0) {
-            throw std::invalid_argument("Cannot encode symbol with zero frequency");
-        }
-
         uint32_t& x = chunk.final_states[lane];
 
-        // Renormalization: emit 16-bit word while x >= 2 * f * 65536
-        uint32_t x_max = (f << 17); // 2 * f * 65536 = f * 131072
-        while (x >= x_max) {
+        // Renormalization: emit 16-bit words while x >= 2 * f * 65536.
+        // Use 64-bit math because f == RANS_M makes the bound 2^32.
+        const uint64_t x_max = static_cast<uint64_t>(f) << 17;
+        while (static_cast<uint64_t>(x) >= x_max) {
             lane_words[lane].push_back(static_cast<uint16_t>(x & 0xFFFF));
             x >>= 16;
         }
@@ -112,6 +137,7 @@ std::vector<uint16_t> Rans8Codec::decode(const EncodedChunk& chunk,
 
     // Unpack lane word counts and pointers
     const uint8_t* in_ptr = chunk.byte_stream.data();
+    const uint8_t* const stream_end = chunk.byte_stream.data() + chunk.byte_stream.size();
     std::array<uint32_t, NUM_LANES> word_counts{};
     for (size_t l = 0; l < NUM_LANES; ++l) {
         std::memcpy(&word_counts[l], in_ptr, sizeof(uint32_t));
@@ -121,6 +147,10 @@ std::vector<uint16_t> Rans8Codec::decode(const EncodedChunk& chunk,
     std::array<const uint16_t*, NUM_LANES> lane_words{};
     std::array<size_t, NUM_LANES> word_idx{};
     for (size_t l = 0; l < NUM_LANES; ++l) {
+        size_t remaining = static_cast<size_t>(stream_end - in_ptr);
+        if (static_cast<uint64_t>(word_counts[l]) * sizeof(uint16_t) > remaining) {
+            throw std::runtime_error("Malformed rANS byte stream: lane exceeds stream bounds");
+        }
         lane_words[l] = reinterpret_cast<const uint16_t*>(in_ptr);
         word_idx[l] = 0;
         in_ptr += word_counts[l] * sizeof(uint16_t);
@@ -140,23 +170,29 @@ std::vector<uint16_t> Rans8Codec::decode(const EncodedChunk& chunk,
             throw std::runtime_error("Slot exceeds CDF table bounds");
         }
         uint16_t sym = cdf_table[m];
+        if (sym >= symbol_stats.size()) {
+            throw std::runtime_error("CDF table references a symbol outside the statistics alphabet");
+        }
         symbols[i] = sym;
 
         const auto& stats = symbol_stats[sym];
         uint32_t f = stats.freq;
         uint32_t c = stats.start;
 
+        if (f == 0 || static_cast<uint32_t>(c) + f > RANS_M || m < c || m >= c + f) {
+            throw std::runtime_error("Malformed rANS symbol statistics");
+        }
+
         // Invert rANS step
         x = f * (x >> RANS_PROB_BITS) + (m - c);
 
         // Renormalize: while x < L, read word
         while (x < RANS_L) {
-            if (word_idx[lane] < word_counts[lane]) {
-                uint32_t word = lane_words[lane][word_idx[lane]++];
-                x = (x << 16) | word;
-            } else {
-                break;
+            if (word_idx[lane] >= word_counts[lane]) {
+                throw std::runtime_error("Malformed rANS byte stream: renormalization underflow");
             }
+            uint32_t word = lane_words[lane][word_idx[lane]++];
+            x = (x << 16) | word;
         }
     }
 
@@ -182,6 +218,9 @@ std::vector<uint8_t> Rans8Codec::serialize(const EncodedChunk& chunk) {
         ptr += sizeof(uint32_t);
     }
 
+    if (chunk.byte_stream.size() > std::numeric_limits<uint32_t>::max()) {
+        throw std::length_error("rANS byte stream exceeds the 32-bit length field");
+    }
     uint32_t stream_len = static_cast<uint32_t>(chunk.byte_stream.size());
     std::memcpy(ptr, &stream_len, sizeof(uint32_t));
     ptr += sizeof(uint32_t);
@@ -204,6 +243,9 @@ Rans8Codec::EncodedChunk Rans8Codec::deserialize(const uint8_t* data, size_t siz
 
     uint64_t sc = 0;
     std::memcpy(&sc, ptr, sizeof(uint64_t));
+    if (sc > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
+        throw std::runtime_error("Serialized rANS symbol count is out of range");
+    }
     chunk.symbol_count = static_cast<size_t>(sc);
     ptr += sizeof(uint64_t);
 
@@ -216,7 +258,7 @@ Rans8Codec::EncodedChunk Rans8Codec::deserialize(const uint8_t* data, size_t siz
     std::memcpy(&stream_len, ptr, sizeof(uint32_t));
     ptr += sizeof(uint32_t);
 
-    if (min_header + stream_len > size) {
+    if (static_cast<size_t>(stream_len) > size - min_header) {
         throw std::runtime_error("Serialized rANS byte stream truncated");
     }
 

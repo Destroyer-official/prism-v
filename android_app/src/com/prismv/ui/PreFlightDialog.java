@@ -41,10 +41,14 @@ public class PreFlightDialog {
 
         Dialog dialog = new Dialog(context);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setCancelable(true);
+        dialog.setCanceledOnTouchOutside(false);
         if (dialog.getWindow() != null) {
             dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         }
+        DialogTracker.register(dialog);
+        dialog.setOnDismissListener(d -> DialogTracker.unregister(dialog));
 
         ScrollView scroll = new ScrollView(context);
         scroll.setBackground(createRoundedDrawable(ThemeStyles.COLOR_BG_CARD, ThemeStyles.COLOR_BORDER_ACTIVE, dp(context, 2), dp(context, 20)));
@@ -61,7 +65,7 @@ public class PreFlightDialog {
         headerRow.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView tvHeader = new TextView(context);
-        tvHeader.setText("⚡ PRE-FLIGHT SIMULATION MATRIX");
+        tvHeader.setText("PRE-FLIGHT SIMULATION MATRIX");
         tvHeader.setTextColor(Color.WHITE);
         tvHeader.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         tvHeader.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
@@ -103,9 +107,9 @@ public class PreFlightDialog {
         double m1Saves = Math.max(0.1, srcMB - m1Size);
         double m1Pct = Math.min(99.0, (m1Saves / srcMB) * 100.0);
         addMethodCard(context, root,
-                "🔒 METHOD 1: LOSSLESS ARCHIVAL (L-BBR)",
+                "METHOD 1: LOSSLESS ARCHIVAL (L-BBR)",
                 String.format(Locale.US, "New Size: %.1f MB  •  Saves: %.1f MB (-%.1f%%)", m1Size, m1Saves, m1Pct),
-                "Quality: 100% Bit-Exact SHA-256 Parity  •  Zero Distortion",
+                "Quality: 100% Bit-Exact SHA-256 Parity  •  No perceptual quality claim",
                 "Speed: ~6s  •  Battery: 0.1%  •  Family Archiving Master",
                 "#0284C7", "#38BDF8",
                 v -> {
@@ -120,9 +124,9 @@ public class PreFlightDialog {
         double m2Pct = Math.min(99.0, (m2Saves / srcMB) * 100.0);
         int m2Eta = Math.max(2, (int) Math.round(durSec / 3.2));
         addMethodCard(context, root,
-                "🚀 METHOD 2: PRO FIDELITY (H-ARCH Neural)",
+                "METHOD 2: PRO FIDELITY (H-ARCH Neural)",
                 String.format(Locale.US, "New Size: %.1f MB  •  Saves: %.1f MB (-%.1f%%)", m2Size, m2Saves, m2Pct),
-                "Quality: VMAF 98.4 (Cinema Master)  •  Human Eye Loss: ZERO",
+                "Quality: VMAF not measured  •  Human Eye Loss: not measured",
                 String.format(Locale.US, "Speed: ~%ds  •  Battery: 0.3%%  •  Recommended for 4K / 1080p", m2Eta),
                 "#059669", "#34D399",
                 v -> {
@@ -137,9 +141,9 @@ public class PreFlightDialog {
         double m3Pct = Math.min(99.0, (m3Saves / srcMB) * 100.0);
         int m3Eta = Math.max(2, (int) Math.round(durSec / 4.5));
         addMethodCard(context, root,
-                "🌐 METHOD 3: BALANCED SOCIAL & WEB",
+                "METHOD 3: BALANCED SOCIAL & WEB",
                 String.format(Locale.US, "New Size: %.1f MB  •  Saves: %.1f MB (-%.1f%%)", m3Size, m3Saves, m3Pct),
-                "Quality: VMAF 94.2  •  Fits WhatsApp & Discord limits",
+                "Quality: VMAF not measured  •  Fits WhatsApp & Discord limits",
                 String.format(Locale.US, "Speed: ~%ds  •  Battery: 0.2%%  •  Best for Instant Sharing", m3Eta),
                 "#7C3AED", "#A855F7",
                 v -> {
@@ -154,9 +158,9 @@ public class PreFlightDialog {
         double m4Pct = Math.min(99.0, (m4Saves / srcMB) * 100.0);
         int m4Eta = Math.max(1, (int) Math.round(durSec / 6.0));
         addMethodCard(context, root,
-                "⚡ METHOD 4: MAXIMUM STORAGE SAVER (E-LOW)",
+                "METHOD 4: MAXIMUM STORAGE SAVER (E-LOW)",
                 String.format(Locale.US, "New Size: %.1f MB  •  Saves: %.1f MB (-%.1f%%)", m4Size, m4Saves, m4Pct),
-                "Quality: VMAF 88.5  •  Highest Compression Ratio",
+                "Quality: VMAF not measured  •  Highest Compression Ratio",
                 String.format(Locale.US, "Speed: ~%ds  •  Battery: 0.1%%  •  When Storage is Almost Full", m4Eta),
                 "#D97706", "#F59E0B",
                 v -> {

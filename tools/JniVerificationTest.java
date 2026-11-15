@@ -15,10 +15,12 @@ public class JniVerificationTest {
 
     public static void main(String[] args) {
         System.out.println("===============================================================");
-        System.out.println("  PRISM-V ANDROID JNI BRIDGE NATIVE VERIFICATION               ");
+        System.out.println("  PRISM-V JNI MANUAL SMOKE TEST");
         System.out.println("===============================================================\n");
+        System.out.println("Requires libprism_jni on java.library.path and a sample video at");
+        System.out.println("sample_video/sample.mp4 for the GOP case.\n");
 
-        System.out.println("[JNI] Native libprism_jni loaded successfully!");
+        System.out.println("[JNI] Native libprism_jni loaded.");
 
         // 1. Test virtual size query on non-existent file
         long size = nativeGetVirtualSize("non_existent.pvloss");
@@ -29,7 +31,7 @@ public class JniVerificationTest {
         System.out.println("[JNI] processSingleGop('non_existent.mp4') -> " + gopFail + " (expected: false)");
 
         boolean gopOk = processSingleGop("sample_video/sample.mp4", "sample_video/test_gop0.bin", 0, 60);
-        System.out.println("[JNI] processSingleGop('sample_video/sample.mp4', GOP#0) -> " + gopOk + " (expected: true)");
+        System.out.println("[JNI] processSingleGop('sample_video/sample.mp4', GOP#0) -> " + gopOk);
         if (new java.io.File("sample_video/test_gop0.bin").exists()) {
             new java.io.File("sample_video/test_gop0.bin").delete();
         }
@@ -51,6 +53,6 @@ public class JniVerificationTest {
         boolean socialResult = nativeCompositeSocialExport("non_existent.mp4", "social_out.mp4");
         System.out.println("[JNI] nativeCompositeSocialExport('missing.mp4') -> " + socialResult + " (expected: false)");
 
-        System.out.println("\n[JNI] Android Platform JNI Bridge 100% Verified Across All 6 Native Endpoints!\n");
+        System.out.println("\n[JNI] Calls completed. Check the values above.\n");
     }
 }

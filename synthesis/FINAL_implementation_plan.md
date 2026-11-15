@@ -681,8 +681,8 @@ Given input activation vector $\mathbf{x} \in [-32767, +32767]^K$ (`int16_t`) an
    The maximum channel depth $K$ of any normative neural layer is strictly bounded by $K \le 512$.
 2. **Mathematical Overflow-Free Proof:**
    The maximum possible absolute value of the inner product accumulator $\mathbf{a}_m$ is:
-   $$\max |\mathbf{a}_m| \le K \cdot \max |W_{m,k}| \cdot \max |x_k| = 512 \times 127 \times 32,767 = 2,130,649,088$$
-   Because $2,130,649,088 < 2^{31} - 1 = 2,147,483,647$, the accumulator is **mathematically proven never to overflow a signed 32-bit integer (`int32_t`)**.  
+   $$\max |\mathbf{a}_m| \le K \cdot \max |W_{m,k}| \cdot \max |x_k| = 512 \times 127 \times 32,767 = 2,130,641,408$$
+   Because $2,130,641,408 < 2^{31} - 1 = 2,147,483,647$, the accumulator is **mathematically proven never to overflow a signed 32-bit integer (`int32_t`)**.  
    Because two's-complement integer addition without overflow is strictly associative:
    $$(\mathbf{a} + \mathbf{b}) + \mathbf{c} \equiv \mathbf{a} + (\mathbf{b} + \mathbf{c}) \pmod{2^{32}}$$
    The resulting dot-product is **100.000% identical** whether accumulated via scalar C, 128-bit Arm NEON (`vdotq_s32`), 512-bit Armv9 SME2 (`smopa`), or 256-bit x86 `AVX2`!
