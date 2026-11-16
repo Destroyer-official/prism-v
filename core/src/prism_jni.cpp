@@ -1055,6 +1055,73 @@ Java_com_prismv_test_JniVerificationTest_nativeDecompressPsc2(
     return Java_com_prismv_engine_VideoProcessingPipeline_nativeDecompressPsc2(env, nullptr, compressedFrame, width, height, filterType, isQuadBayer);
 }
 
+// ----------------------------------------------------------------------------
+// Frontier 1: BBR 2.0 (SSG-CR4, C-MAVQ, SIMD-16 rANS) JNI Bindings
+// ----------------------------------------------------------------------------
+JNIEXPORT jbyteArray JNICALL
+Java_com_prismv_engine_VideoProcessingPipeline_nativeCompressBbr2(
+    JNIEnv* env, jclass /* clazz */, jbyteArray bitstreamData, jint codecId) {
+    if (!bitstreamData) return nullptr;
+    jsize len = env->GetArrayLength(bitstreamData);
+    if (len == 0) return env->NewByteArray(0);
+
+    std::vector<uint8_t> buf(static_cast<size_t>(len));
+    env->GetByteArrayRegion(bitstreamData, 0, len, reinterpret_cast<jbyte*>(buf.data()));
+
+    try {
+        prism::Bbr2Engine bbr2;
+        prism::SourceCodecId c_id = (codecId == 1) ? prism::SourceCodecId::CODEC_HEVC : prism::SourceCodecId::CODEC_H264;
+        prism::Bbr2Chunk chunk = bbr2.compress(buf.data(), buf.size(), c_id);
+        std::vector<uint8_t> payload = prism::Bbr2Engine::serialize_chunk_payload(chunk);
+
+        jbyteArray res = env->NewByteArray(static_cast<jsize>(payload.size()));
+        if (res && !payload.empty()) {
+            env->SetByteArrayRegion(res, 0, static_cast<jsize>(payload.size()),
+                                    reinterpret_cast<const jbyte*>(payload.data()));
+        }
+        return res;
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+JNIEXPORT jbyteArray JNICALL
+Java_com_prismv_engine_VideoProcessingPipeline_nativeDecompressBbr2(
+    JNIEnv* env, jclass /* clazz */, jbyteArray compressedPayload, jint uncompressedSize) {
+    if (!compressedPayload) return nullptr;
+    jsize len = env->GetArrayLength(compressedPayload);
+    if (len == 0) return env->NewByteArray(0);
+
+    std::vector<uint8_t> buf(static_cast<size_t>(len));
+    env->GetByteArrayRegion(compressedPayload, 0, len, reinterpret_cast<jbyte*>(buf.data()));
+
+    try {
+        prism::Bbr2Engine bbr2;
+        std::vector<uint8_t> decompressed = bbr2.decompress_payload(buf.data(), buf.size(), static_cast<uint32_t>(uncompressedSize));
+
+        jbyteArray res = env->NewByteArray(static_cast<jsize>(decompressed.size()));
+        if (res && !decompressed.empty()) {
+            env->SetByteArrayRegion(res, 0, static_cast<jsize>(decompressed.size()),
+                                    reinterpret_cast<const jbyte*>(decompressed.data()));
+        }
+        return res;
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+JNIEXPORT jbyteArray JNICALL
+Java_com_prismv_test_JniVerificationTest_nativeCompressBbr2(
+    JNIEnv* env, jobject /* thiz */, jbyteArray bitstreamData, jint codecId) {
+    return Java_com_prismv_engine_VideoProcessingPipeline_nativeCompressBbr2(env, nullptr, bitstreamData, codecId);
+}
+
+JNIEXPORT jbyteArray JNICALL
+Java_com_prismv_test_JniVerificationTest_nativeDecompressBbr2(
+    JNIEnv* env, jobject /* thiz */, jbyteArray compressedPayload, jint uncompressedSize) {
+    return Java_com_prismv_engine_VideoProcessingPipeline_nativeDecompressBbr2(env, nullptr, compressedPayload, uncompressedSize);
+}
+
 } // extern "C"
 
 #endif // PRISM_ENABLE_JNI
