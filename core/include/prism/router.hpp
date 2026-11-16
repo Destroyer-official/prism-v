@@ -35,6 +35,8 @@ struct IngestMediaInfo {
     double estimated_bbr_savings_ratio = 0.18; // Default ~18% for H.264
     bool is_raw_sensor = false;
     bool is_container_standard = true;
+    bool prefer_psc2 = false;
+    bool is_quad_bayer = false;
 };
 
 /**

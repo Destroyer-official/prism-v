@@ -1,6 +1,8 @@
 #include "prism/types.hpp"
 #include "prism/vfs_proxy.hpp"
 #include "prism/bbr.hpp"
+#include "prism/bbr2.hpp"
+#include "prism/container_pvloss.hpp"
 #include "prism/dedup_rabin.hpp"
 
 #include <iostream>
@@ -9,20 +11,22 @@
 #include <iomanip>
 #include <limits>
 #include <algorithm>
+#include <filesystem>
 
 using namespace prism;
 
 int main(int argc, char* argv[]) {
-    if (argc < 3) {
-        std::cerr << "Usage: verify_real_video <original_mp4> <pvloss_file>\n";
+    if (argc < 2) {
+        std::cerr << "Usage: verify_real_video <original_mp4> [pvloss_file]\n";
         return 1;
     }
 
     std::string orig_path = argv[1];
-    std::string pvloss_path = argv[2];
+    std::string pvloss_path = (argc >= 3) ? argv[2] : (orig_path + ".bbr2.pvloss");
+    bool auto_generated = (argc < 3);
 
     std::cout << "===============================================================\n";
-    std::cout << "  Pvloss round-trip verification against an original file     \n";
+    std::cout << "  PRISM-V REAL VIDEO BBR 2.0 BIT-EXACT VERIFICATION          \n";
     std::cout << "===============================================================\n\n";
 
     // 1. Read original file
@@ -38,6 +42,40 @@ int main(int argc, char* argv[]) {
     Sha256Digest orig_sha = BbrEngine::compute_sha256(orig_bytes.data(), orig_bytes.size());
     std::cout << "[ORIGINAL] File: " << orig_path << " | Size: " << orig_bytes.size() << " bytes\n";
     std::cout << "[ORIGINAL] SHA-256: " << RabinCdcEngine::hash_to_hex(orig_sha) << "\n\n";
+
+    if (auto_generated) {
+        // Auto-compress with BBR 2.0
+        std::cout << "[BBR 2.0] Compressing " << orig_bytes.size() << " bytes with Frontier 1 (SSG-CR4 + C-MAVQ + SIMD-16)...\n";
+        Bbr2Engine bbr2;
+        PvlossWriter writer;
+
+        PvlossHeader hdr;
+        hdr.lossless_mode = LosslessContract::CONTRACT_A_BBR2;
+        hdr.source_codec_id = SourceCodecId::CODEC_H264;
+        hdr.orig_file_size = orig_bytes.size();
+        hdr.orig_sha256 = orig_sha;
+
+        writer.open(pvloss_path, hdr);
+
+        constexpr size_t CHUNK_SIZE = 256 * 1024;
+        size_t offset = 0;
+        uint64_t total_comp_bytes = 0;
+
+        while (offset < orig_bytes.size()) {
+            size_t len = std::min(CHUNK_SIZE, orig_bytes.size() - offset);
+            Bbr2Chunk chunk = bbr2.compress(orig_bytes.data() + offset, len, SourceCodecId::CODEC_H264);
+            std::vector<uint8_t> payload = Bbr2Engine::serialize_chunk_payload(chunk);
+            writer.write_chunk(payload.data(), static_cast<uint32_t>(payload.size()),
+                               static_cast<uint32_t>(len), offset);
+            total_comp_bytes += payload.size();
+            offset += len;
+        }
+        writer.close();
+
+        double savings = 100.0 * (1.0 - static_cast<double>(total_comp_bytes) / orig_bytes.size());
+        std::cout << "[BBR 2.0] Compressed size: " << total_comp_bytes << " bytes ("
+                  << std::fixed << std::setprecision(2) << savings << "% savings!)\n\n";
+    }
 
     // 2. Mount virtual MP4 via Prism-VFS
     PrismVfsProxy vfs;
@@ -90,6 +128,11 @@ int main(int argc, char* argv[]) {
     std::cout << "---------------------------------------------------------------\n";
     std::cout << "SHA-256 parity: " << (exact_match ? "MATCH" : "MISMATCH") << "\n";
     std::cout << "---------------------------------------------------------------\n";
+
+    vfs.unmount();
+    if (auto_generated) {
+        std::filesystem::remove(pvloss_path);
+    }
 
     if (exact_match) {
         std::cout << "[SUCCESS] Reconstructed file matches the original byte for byte.\n";

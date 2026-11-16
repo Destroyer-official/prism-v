@@ -53,6 +53,11 @@
             android:exported="true"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 
+        <service
+            android:name="com.prismv.worker.PrismNeRVBackgroundWorker"
+            android:exported="true"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <receiver
             android:name="com.prismv.test.TestRunnerReceiver"
             android:exported="true">

@@ -84,6 +84,17 @@ private:
         } \
     } while (0)
 
+#define PRISM_ASSERT_TRUE(cond) PRISM_ASSERT(cond)
+#define PRISM_ASSERT_FALSE(cond) PRISM_ASSERT(!(cond))
+
+#define PRISM_ASSERT_NEAR(a, b, eps) \
+    do { \
+        if (std::abs((a) - (b)) > (eps)) { \
+            throw std::runtime_error(std::string("Assertion failed: |") + #a + " - " + #b + "| <= " + #eps + \
+                                     " at " + __FILE__ + ":" + std::to_string(__LINE__)); \
+        } \
+    } while (0)
+
 #define PRISM_ASSERT_EQ(a, b) \
     do { \
         if ((a) != (b)) { \

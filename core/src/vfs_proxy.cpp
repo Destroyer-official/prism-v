@@ -53,11 +53,22 @@ const std::vector<uint8_t>& PrismVfsProxy::get_or_decompress_chunk(const PidxEnt
 
     // Decompress 256 KB chunk in RAM
     std::vector<uint8_t> compressed_payload = reader_.read_chunk_payload(entry);
-    BbrChunk bchunk;
-    bchunk.uncompressed_size = entry.uncompressed_size;
-    bchunk.rans_payload = std::move(compressed_payload);
+    std::vector<uint8_t> decomp;
 
-    std::vector<uint8_t> decomp = bbr_engine_.decompress(bchunk);
+    if (reader_.header().lossless_mode == LosslessContract::CONTRACT_A_BBR2) {
+        decomp = bbr2_engine_.decompress_payload(compressed_payload.data(),
+                                                 compressed_payload.size(),
+                                                 entry.uncompressed_size);
+    } else if (reader_.header().lossless_mode == LosslessContract::CONTRACT_C_PSC2) {
+        decomp = Psc2Engine::decompress_chunk_payload(compressed_payload.data(),
+                                                      compressed_payload.size(),
+                                                      entry.uncompressed_size);
+    } else {
+        BbrChunk bchunk;
+        bchunk.uncompressed_size = entry.uncompressed_size;
+        bchunk.rans_payload = std::move(compressed_payload);
+        decomp = bbr_engine_.decompress(bchunk);
+    }
 
     // Evict oldest if full (64 chunks = 16 MB)
     if (lru_list_.size() >= MAX_CACHE_CHUNKS) {

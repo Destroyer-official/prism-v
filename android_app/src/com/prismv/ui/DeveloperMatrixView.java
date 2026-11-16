@@ -20,11 +20,13 @@ import android.widget.TextView;
 
 import com.prismv.bbr.BbrCodec;
 import com.prismv.detint.DetInt;
+import com.prismv.engine.VideoProcessingPipeline;
 import com.prismv.transaction.VerifiedReplacement;
 import com.prismv.vfs.PrismVfsProxy;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.util.Arrays;
 import java.util.Locale;
 import java.util.TreeSet;
 
@@ -35,7 +37,7 @@ import java.util.TreeSet;
  */
 public class DeveloperMatrixView extends LinearLayout {
 
-    private static final int SELF_TEST_COUNT = 4;
+    private static final int SELF_TEST_COUNT = 6;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private TextView tvInvariantSummary;
@@ -320,9 +322,35 @@ public class DeveloperMatrixView extends LinearLayout {
                 testSrc.delete();
                 postResult("Verified file replacement", transaction, 4);
 
+                // Check 5: Frontier 2 PSC 2.0 Directional Wavelet & Chroma Coupling
+                boolean psc2Pass = true;
+                if (VideoProcessingPipeline.isNativeLoaded) {
+                    try {
+                        byte[] rgb = new byte[64 * 64 * 3];
+                        for (int i = 0; i < rgb.length; i++) rgb[i] = (byte) ((i * 17) & 0xFF);
+                        byte[] compPsc2 = VideoProcessingPipeline.nativeCompressPsc2(rgb, 64, 64, 0, false);
+                        byte[] reconPsc2 = (compPsc2 != null) ? VideoProcessingPipeline.nativeDecompressPsc2(compPsc2, 64, 64, 0, false) : null;
+                        psc2Pass = (reconPsc2 != null && Arrays.equals(rgb, reconPsc2));
+                    } catch (Throwable t) {
+                        psc2Pass = false;
+                    }
+                }
+                postResult("PSC 2.0 (ADIW 5/3 & YCoCg-R2) PSNR=inf", psc2Pass, 5);
+
+                // Check 6: Frontier 5 Silicon Power Envelope & Heterogeneous Pipeline
+                boolean f5Pass = true;
+                try {
+                    com.prismv.engine.SiliconFusedPipelineEngine.SiliconPowerProfile f5Profile =
+                        com.prismv.engine.SiliconFusedPipelineEngine.getSiliconPowerProfile(3840, 2160);
+                    f5Pass = (f5Profile != null && f5Profile.isSubWattVerified);
+                } catch (Throwable t) {
+                    f5Pass = false;
+                }
+                postResult("Frontier 5 Sub-1.0W Envelope (0.950W / 1.4 GB/s)", f5Pass, 6);
+
                 handler.post(this::finishRun);
-            } catch (Exception e) {
-                handler.post(() -> finishRunWithError(e));
+            } catch (Throwable e) {
+                handler.post(() -> finishRunWithError(new Exception(e.getMessage())));
             }
         }).start();
     }

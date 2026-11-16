@@ -59,6 +59,9 @@ sample_video/
 *.xml.dump
 dump_*.xml
 uidump.xml
+ui_*.xml
+view_tree.xml
+screenshot*.png
 window_dump*.xml
 test_log*.txt
 *.log

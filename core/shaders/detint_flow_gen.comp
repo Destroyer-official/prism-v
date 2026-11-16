@@ -1,0 +1,97 @@
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_int8 : enable
+#extension GL_EXT_shader_explicit_arithmetic_types_int16 : enable
+
+/**
+ * @brief Prism-DetInt-Flow: 1-Step Distilled Flow-Matching Generator Compute Shader.
+ * 
+ * Target: Mobile Vulkan 1.3/1.4 (Adreno 750/830, Immortalis-G925, Apple Silicon via MoltenVK).
+ * Guarantee: Cross-silicon bit-exact integer arithmetic down to the exact LSB.
+ */
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// Binding 0: Base Anchor Frame (Y-Plane, 8-bit luma)
+layout(set = 0, binding = 0) readonly buffer BaseAnchorBuffer {
+    uint8_t base_pixels[];
+};
+
+// Binding 1: Backward Dense Warping Field (Interleaved dx, dy in 8.8 fixed-point)
+layout(set = 0, binding = 1) readonly buffer FlowFieldBuffer {
+    int16_t flow_vectors[]; // dx = flow_vectors[2*i], dy = flow_vectors[2*i + 1]
+};
+
+// Binding 2: Semantic Frame Descriptor (Pose, Blendshapes, Audio LPC)
+layout(set = 0, binding = 2) uniform SemanticUniforms {
+    int32_t width;
+    int32_t height;
+    int32_t expr_modulation; // Scaled blendshape energy bias
+    int32_t is_anchor_frame;
+};
+
+// Binding 3: Reconstructed Output Frame (Y-Plane, 8-bit luma)
+layout(set = 0, binding = 3) writeonly buffer OutputFrameBuffer {
+    uint8_t out_pixels[];
+};
+
+// Deterministic Dyadic Rescaling matching detint.cpp
+int dyadic_rescale(int acc, int m_scale, int s_shift) {
+    int rounded = (acc * m_scale + (1 << (s_shift - 1))) >> s_shift;
+    return clamp(rounded, -32767, 32767);
+}
+
+void main() {
+    uvec2 gid = gl_GlobalInvocationID.xy;
+    if (gid.x >= uint(width) || gid.y >= uint(height)) {
+        return;
+    }
+
+    uint idx = gid.y * uint(width) + gid.x;
+
+    // Direct anchor pass-through
+    if (is_anchor_frame != 0) {
+        out_pixels[idx] = base_pixels[idx];
+        return;
+    }
+
+    // 1. Bilinear backward warp from base anchor frame
+    int flow_idx = int(idx) * 2;
+    int flow_x = int(flow_vectors[flow_idx]);     // 8.8 fixed-point
+    int flow_y = int(flow_vectors[flow_idx + 1]);
+
+    int sx_fp = (int(gid.x) << 8) - flow_x;
+    int sy_fp = (int(gid.y) << 8) - flow_y;
+
+    sx_fp = clamp(sx_fp, 0, (width - 1) << 8);
+    sy_fp = clamp(sy_fp, 0, (height - 1) << 8);
+
+    int x0 = sx_fp >> 8;
+    int y0 = sy_fp >> 8;
+    int x1 = min(x0 + 1, width - 1);
+    int y1 = min(y0 + 1, height - 1);
+
+    int fx = sx_fp & 0xFF;
+    int fy = sy_fp & 0xFF;
+
+    uint p00 = uint(base_pixels[y0 * width + x0]);
+    uint p01 = uint(base_pixels[y0 * width + x1]);
+    uint p10 = uint(base_pixels[y1 * width + x0]);
+    uint p11 = uint(base_pixels[y1 * width + x1]);
+
+    uint top = ((256u - uint(fx)) * p00 + uint(fx) * p01 + 128u) >> 8;
+    uint bot = ((256u - uint(fx)) * p10 + uint(fx) * p11 + 128u) >> 8;
+    uint warped_px = ((256u - uint(fy)) * top + uint(fy) * bot + 128u) >> 8;
+
+    // 2. 1-Step Flow-Matching Velocity Synthesis (INT8/INT16)
+    uint base_px = uint(base_pixels[idx]);
+    int diff = int(base_px) - int(warped_px);
+
+    // Velocity evaluation matching PrismDetIntFlowGenerator
+    int v_acc = diff * 48 + expr_modulation;
+    int velocity = (v_acc + 32) >> 6;
+    velocity = clamp(velocity, -64, 63);
+
+    // 3. Final Reconstructed Sample
+    int recon = int(warped_px) + velocity;
+    out_pixels[idx] = uint8_t(clamp(recon, 0, 255));
+}

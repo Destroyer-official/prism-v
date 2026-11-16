@@ -1,0 +1,161 @@
+// ============================================================================
+// Prism-V Frontier 4: Prism-Spatial 4D Gaussian Splatting Compute Rasterizer
+// Target: Mobile Vulkan 1.3/1.4 (Snapdragon 8 Elite / Dimensity 9400 / Apple M)
+// Extensions: GL_EXT_shader_explicit_arithmetic_types_float16,
+//             GL_KHR_shader_subgroup_arithmetic
+// ============================================================================
+
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : enable
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// ----------------------------------------------------------------------------
+// Uniform Buffer: Camera Poses & Stereo Projection
+// ----------------------------------------------------------------------------
+layout(set = 0, binding = 0) uniform CameraUniforms {
+    mat4 u_view_proj_left;      // View-Projection matrix for Left Eye
+    mat4 u_view_proj_right;     // View-Projection matrix for Right Eye
+    vec4 u_cam_pos_left;        // Left eye camera center (X, Y, Z, 1.0)
+    vec4 u_cam_pos_right;       // Right eye camera center (X, Y, Z, 1.0)
+    int  u_screen_width;        // e.g. 3840
+    int  u_screen_height;       // e.g. 2160
+    int  u_eye_mode;            // 0 = Mono/Left, 1 = Right, 2 = Stereo Side-by-Side
+    float u_virtual_ipd_mm;     // Inter-pupillary distance in mm (default 63.0)
+};
+
+// ----------------------------------------------------------------------------
+// 3D Gaussian Splat Structure in GPU SSBO (32-byte aligned)
+// ----------------------------------------------------------------------------
+struct GpuGaussian {
+    vec4 pos_alpha;    // x, y, z, opacity alpha in [0, 1]
+    vec4 rot_quat;     // q_w, q_x, q_y, q_z (unit quaternion)
+    vec4 scale_flags;  // s_x, s_y, s_z, flags (0x01=static, 0x02=specular)
+    vec4 color_dc_sh;  // Y, U, V, sh_codebook_idx
+};
+
+layout(set = 0, binding = 1, std430) readonly buffer GaussianBuffer {
+    GpuGaussian u_gaussians[];
+};
+
+// Tile-Sorted Splat Indices: (tile_idx * MAX_SPLATS_PER_TILE + local_idx)
+layout(set = 0, binding = 2, std430) readonly buffer TileIndexBuffer {
+    uint u_tile_splat_indices[];
+};
+
+layout(set = 0, binding = 3, std430) readonly buffer TileCountBuffer {
+    uint u_tile_splat_counts[];
+};
+
+// Output Color Surface (AHardwareBuffer or SurfaceView image)
+layout(set = 0, binding = 4, rgba8) writeonly uniform image2D u_output_color;
+
+// Shared Memory for Tile Splats (Cache up to 256 splats per 16x16 workgroup)
+shared vec4 s_pos_screen[256];      // Screen-space X, Y, Depth, InvDet
+shared vec4 s_conic_opacity[256];   // Conic A, B, C, Opacity
+shared vec4 s_color_yuv[256];       // Color (Y, U, V, 1.0)
+
+// Fast BT.709 YUV to RGB Conversion
+vec3 yuv_to_rgb(vec3 yuv) {
+    float y = yuv.x;
+    float u = yuv.y - 0.5;
+    float v = yuv.z - 0.5;
+    float r = y + 1.5748 * v;
+    float g = y - 0.1873 * u - 0.4681 * v;
+    float b = y + 1.8556 * u;
+    return clamp(vec3(r, g, b), 0.0, 1.0);
+}
+
+void main() {
+    uvec2 tile_id = gl_WorkGroupID.xy;
+    uvec2 local_id = gl_LocalInvocationID.xy;
+    uint linear_tid = local_id.y * 16 + local_id.x;
+
+    ivec2 pixel_coords = ivec2(gl_GlobalInvocationID.xy);
+    if (pixel_coords.x >= u_screen_width || pixel_coords.y >= u_screen_height) {
+        return;
+    }
+
+    uint tiles_x = (uint(u_screen_width) + 15) / 16;
+    uint tile_linear_idx = tile_id.y * tiles_x + tile_id.x;
+
+    uint total_splats = 0;
+    if (tile_linear_idx < u_tile_splat_counts.length()) {
+        total_splats = u_tile_splat_counts[tile_linear_idx];
+    }
+
+    // Alpha accumulation state
+    vec3 acc_color = vec3(0.0);
+    float transmittance = 1.0;
+
+    // Process splats in cooperative batches of 256
+    uint num_batches = (total_splats + 255) / 256;
+
+    for (uint b = 0; b < num_batches; ++b) {
+        uint splat_offset = b * 256 + linear_tid;
+
+        // Collaborative fetch into workgroup shared memory
+        if (splat_offset < total_splats) {
+            uint global_splat_idx = u_tile_splat_indices[tile_linear_idx * 1024 + splat_offset];
+            GpuGaussian g = u_gaussians[global_splat_idx];
+
+            // 1. Transform to Camera Space
+            mat4 vp = (u_eye_mode == 1) ? u_view_proj_right : u_view_proj_left;
+            vec4 p_clip = vp * vec4(g.pos_alpha.xyz, 1.0);
+            float inv_w = 1.0 / max(p_clip.w, 0.001);
+            vec2 p_ndc = p_clip.xy * inv_w;
+            vec2 p_screen = (p_ndc * 0.5 + 0.5) * vec2(float(u_screen_width), float(u_screen_height));
+
+            s_pos_screen[linear_tid] = vec4(p_screen, p_clip.z * inv_w, 1.0);
+            
+            // Approximate 2D covariance projection (simplified isotropic conic for demonstration)
+            float radius = max(1.0, exp(g.scale_flags.x) * 100.0 * inv_w);
+            float conic = 1.0 / (radius * radius);
+            s_conic_opacity[linear_tid] = vec4(conic, 0.0, conic, g.pos_alpha.w);
+
+            s_color_yuv[linear_tid] = vec4(g.color_dc_sh.xyz / 255.0, 1.0);
+        } else {
+            s_conic_opacity[linear_tid] = vec4(0.0);
+        }
+
+        memoryBarrierShared();
+        barrier();
+
+        // Accumulate blending for this tile's pixels
+        uint batch_count = min(256u, total_splats - b * 256);
+        for (uint i = 0; i < batch_count; ++i) {
+            if (transmittance < 0.0039) { // Early ray termination: 1/255
+                break;
+            }
+
+            vec2 d = vec2(pixel_coords) - s_pos_screen[i].xy;
+            vec4 conic_op = s_conic_opacity[i];
+            float power = -0.5 * (conic_op.x * d.x * d.x + 2.0 * conic_op.y * d.x * d.y + conic_op.z * d.y * d.y);
+
+            if (power > 0.0 || power < -4.0) {
+                continue; // Splat outside bounding radius
+            }
+
+            float alpha = min(0.99, conic_op.w * exp(power));
+            if (alpha < 0.005) {
+                continue;
+            }
+
+            float weight = alpha * transmittance;
+            acc_color += s_color_yuv[i].xyz * weight;
+            transmittance *= (1.0 - alpha);
+        }
+
+        memoryBarrierShared();
+        barrier();
+
+        if (transmittance < 0.0039) {
+            break;
+        }
+    }
+
+    // Convert accumulated YUV to RGB output
+    vec3 final_rgb = yuv_to_rgb(acc_color);
+    imageStore(u_output_color, pixel_coords, vec4(final_rgb, 1.0 - transmittance));
+}

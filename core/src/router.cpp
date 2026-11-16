@@ -83,17 +83,33 @@ RoutingDecision IngestRouter::route_media(const IngestMediaInfo& info, bool user
 
     // Lossless Tri-Contract Evaluation per Section 3.1
     if (info.is_raw_sensor || info.family == CodecFamily::RAW_BAYER_CFA) {
-        // Contract C: Mode L-PSC (Bayer CFA 4-plane)
-        decision.contract = LosslessContract::CONTRACT_C_PSC;
-        decision.recommended_codec_id = SourceCodecId::CODEC_BAYER_RAW10;
-        decision.mode_name = "Mode L-PSC (Bayer CFA)";
-        decision.rationale = "Contract C: Camera2 RAW sensor capture. Splits 4 Bayer sub-planes with a reversible LeGall 5/3 integer wavelet and rANS8 entropy coding.";
+        if (info.prefer_psc2 || info.is_quad_bayer || info.codec_id == SourceCodecId::CODEC_QUAD_BAYER_RAW) {
+            // Contract C: Mode L-PSC 2.0 (Quad-Bayer CFA)
+            decision.contract = LosslessContract::CONTRACT_C_PSC2;
+            decision.recommended_codec_id = SourceCodecId::CODEC_QUAD_BAYER_RAW;
+            decision.mode_name = "Mode L-PSC 2.0 (Quad-Bayer CFA)";
+            decision.rationale = "Contract C (Frontier 2): Camera2 Quad-Bayer RAW sensor capture. Adaptive Directional Integer Wavelet (ADIW 5/3 & 9/7), unit-triangular A-IKLT spectral decorrelation, and lock-free wavefront SIMD rANS8 entropy coding.";
+        } else {
+            // Contract C: Mode L-PSC (Bayer CFA 4-plane)
+            decision.contract = LosslessContract::CONTRACT_C_PSC;
+            decision.recommended_codec_id = SourceCodecId::CODEC_BAYER_RAW10;
+            decision.mode_name = "Mode L-PSC (Bayer CFA)";
+            decision.rationale = "Contract C: Camera2 RAW sensor capture. Splits 4 Bayer sub-planes with a reversible LeGall 5/3 integer wavelet and rANS8 entropy coding.";
+        }
     } else if (info.family == CodecFamily::RAW_YUV) {
-        // Contract C: Mode L-PSC (Raw YUV)
-        decision.contract = LosslessContract::CONTRACT_C_PSC;
-        decision.recommended_codec_id = SourceCodecId::CODEC_YUV420_8;
-        decision.mode_name = "Mode L-PSC (YUV)";
-        decision.rationale = "Contract C: Uncompressed camera capture. Reversible YCoCg-R, LeGall 5/3 lifting wavelet, MED prediction, and rANS8 entropy coding.";
+        if (info.prefer_psc2) {
+            // Contract C: Mode L-PSC 2.0 (Raw YUV)
+            decision.contract = LosslessContract::CONTRACT_C_PSC2;
+            decision.recommended_codec_id = SourceCodecId::CODEC_YUV420_8;
+            decision.mode_name = "Mode L-PSC 2.0 (YUV)";
+            decision.rationale = "Contract C (Frontier 2): Uncompressed camera capture with ADIW integer lifting, YCoCg-R2 shears, and lock-free wavefront SIMD.";
+        } else {
+            // Contract C: Mode L-PSC (Raw YUV)
+            decision.contract = LosslessContract::CONTRACT_C_PSC;
+            decision.recommended_codec_id = SourceCodecId::CODEC_YUV420_8;
+            decision.mode_name = "Mode L-PSC (YUV)";
+            decision.rationale = "Contract C: Uncompressed camera capture. Reversible YCoCg-R, LeGall 5/3 lifting wavelet, MED prediction, and rANS8 entropy coding.";
+        }
     } else if (info.family == CodecFamily::AUDIO_ONLY || !info.is_container_standard || info.estimated_bbr_savings_ratio < 0.03) {
         // Contract B: Mode L-Remux
         decision.contract = LosslessContract::CONTRACT_B_REMUX;
@@ -101,11 +117,11 @@ RoutingDecision IngestRouter::route_media(const IngestMediaInfo& info, bool user
         decision.mode_name = "Mode L-Remux";
         decision.rationale = "Contract B: Container repacking without re-encoding; packet payloads are verified with a SHA-256 digest.";
     } else {
-        // Contract A: Mode L-BBR
-        decision.contract = LosslessContract::CONTRACT_A_BBR;
+        // Contract A: Mode L-BBR 2.0 (Frontier 1)
+        decision.contract = LosslessContract::CONTRACT_A_BBR2;
         decision.recommended_codec_id = (info.family == CodecFamily::H265_HEVC) ? SourceCodecId::CODEC_HEVC : SourceCodecId::CODEC_H264;
-        decision.mode_name = "Mode L-BBR";
-        decision.rationale = "Contract A: Pre-existing compressed video. Bitstream recompression with a Micro-MLP probability model and 8-way rANS; losslessness is checked against SHA-256.";
+        decision.mode_name = "Mode L-BBR 2.0";
+        decision.rationale = "Contract A (Frontier 1): Pre-existing compressed video. Bitstream recompression via Attentive Spatial Syntax Graph (SSG-CR4), C-MAVQ 64-symbol VCTs, and 16-way SIMD rANS with SHA-256 bit-exact contract.";
     }
 
     return decision;

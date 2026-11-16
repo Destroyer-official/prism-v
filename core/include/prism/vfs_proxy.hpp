@@ -5,6 +5,8 @@
 #include "prism/types.hpp"
 #include "prism/container_pvloss.hpp"
 #include "prism/bbr.hpp"
+#include "prism/bbr2.hpp"
+#include "prism/psc2.hpp"
 #include <cstdint>
 #include <vector>
 #include <string>
@@ -74,6 +76,8 @@ private:
     std::string pvloss_path_;
     PvlossReader reader_;
     BbrEngine bbr_engine_;
+    Bbr2Engine bbr2_engine_;
+    Psc2Engine psc2_engine_;
     mutable std::mutex mutex_;
     bool is_mounted_ = false;
 

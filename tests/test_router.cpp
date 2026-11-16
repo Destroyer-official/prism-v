@@ -16,8 +16,8 @@ PRISM_TEST(test_router_lossless_tri_contract_and_hybrid_dispatch) {
     PRISM_ASSERT(info_h264.is_container_standard);
 
     auto dec_h264 = IngestRouter::route_media(info_h264, true);
-    PRISM_ASSERT_EQ(dec_h264.contract, LosslessContract::CONTRACT_A_BBR);
-    PRISM_ASSERT_EQ(dec_h264.mode_name, "Mode L-BBR");
+    PRISM_ASSERT_EQ(dec_h264.contract, LosslessContract::CONTRACT_A_BBR2);
+    PRISM_ASSERT_EQ(dec_h264.mode_name, "Mode L-BBR 2.0");
     PRISM_ASSERT(dec_h264.is_lossless);
 
     // 2. Test Ingest Probe: Tight AV1 Stream (<3% estimated BBR savings) -> Contract B (Mode L-Remux)
@@ -48,7 +48,22 @@ PRISM_TEST(test_router_lossless_tri_contract_and_hybrid_dispatch) {
     PRISM_ASSERT_EQ(dec_bayer.recommended_codec_id, SourceCodecId::CODEC_BAYER_RAW10);
     PRISM_ASSERT_EQ(dec_bayer.mode_name, "Mode L-PSC (Bayer CFA)");
 
-    // 4. Test Lossy Request: Mode Y-Hybrid
+    // 4. Test Ingest Probe: Camera2 Quad-Bayer RAW Sensor Capture -> Contract C (Mode L-PSC 2.0)
+    info_bayer.is_quad_bayer = true;
+    auto dec_psc2_bayer = IngestRouter::route_media(info_bayer, true);
+    PRISM_ASSERT_EQ(dec_psc2_bayer.contract, LosslessContract::CONTRACT_C_PSC2);
+    PRISM_ASSERT_EQ(dec_psc2_bayer.recommended_codec_id, SourceCodecId::CODEC_QUAD_BAYER_RAW);
+    PRISM_ASSERT_EQ(dec_psc2_bayer.mode_name, "Mode L-PSC 2.0 (Quad-Bayer CFA)");
+
+    // 5. Test Raw YUV with prefer_psc2 -> Mode L-PSC 2.0 (YUV)
+    IngestMediaInfo info_yuv;
+    info_yuv.family = CodecFamily::RAW_YUV;
+    info_yuv.prefer_psc2 = true;
+    auto dec_psc2_yuv = IngestRouter::route_media(info_yuv, true);
+    PRISM_ASSERT_EQ(dec_psc2_yuv.contract, LosslessContract::CONTRACT_C_PSC2);
+    PRISM_ASSERT_EQ(dec_psc2_yuv.mode_name, "Mode L-PSC 2.0 (YUV)");
+
+    // 6. Test Lossy Request: Mode Y-Hybrid
     auto dec_lossy = IngestRouter::route_media(info_h264, false); // user_requested_lossless = false
     PRISM_ASSERT(!dec_lossy.is_lossless);
     PRISM_ASSERT_EQ(dec_lossy.mode_name, "Mode Y-Hybrid");

@@ -160,3 +160,67 @@ PRISM_TEST(test_container_isobmff_metadata_ledger_preservation) {
 
     PRISM_ASSERT_EQ(out_meta.matrix.get_rotation_degrees(), 90);
 }
+
+PRISM_TEST(test_container_isobmff_dual_track_gen_mux_demux) {
+    std::vector<IsoMp4Engine::Track1Sample> t1(2);
+    t1[0].nal_data = {0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0x00};
+    t1[1].nal_data = {0x00, 0x00, 0x00, 0x01, 0x68, 0xCE, 0x38};
+
+    std::vector<IsoMp4Engine::Track2Sample> t2(2);
+    t2[0].residual_latents = {0xAA, 0xBB, 0xCC, 0xDD};
+    t2[1].residual_latents = {0x11, 0x22, 0x33, 0x44};
+
+    PrismGenBox pgen;
+    pgen.prism_version = 2;
+    pgen.keypoint_count = 32;
+    pgen.anchor_interval = 240;
+    pgen.fsq_stage1_levels = 15;
+    pgen.fsq_stage2_levels = 7;
+    pgen.max_macs_per_pixel = 450;
+    pgen.has_audio_concealment = true;
+
+    Afgs1Params afgs;
+    afgs.grain_scale = 10;
+
+    IsoMp4Engine::MetadataLedger meta;
+    meta.has_colr = true;
+    meta.colr.colour_primaries = 1;
+    meta.colr.transfer_characteristics = 1;
+    meta.colr.matrix_coefficients = 1;
+
+    std::vector<AudioSample> audio(1);
+    audio[0].payload = {0xFF, 0xF1, 0x50, 0x80};
+
+    auto pkg = IsoMp4Engine::mux_dual_track_gen(t1, t2, pgen, afgs, &meta, &audio);
+    PRISM_ASSERT(!pkg.raw_mp4_bytes.empty());
+    PRISM_ASSERT(pkg.has_pgen);
+    PRISM_ASSERT_EQ(pkg.track1_sample_count, 2);
+    PRISM_ASSERT_EQ(pkg.track2_sample_count, 2);
+    PRISM_ASSERT_EQ(pkg.audio_sample_count, 1);
+
+    // Demux and verify
+    std::vector<IsoMp4Engine::Track1Sample> out_t1;
+    std::vector<IsoMp4Engine::Track2Sample> out_t2;
+    PrismGenBox out_pgen{};
+    Afgs1Params out_afgs{};
+    IsoMp4Engine::MetadataLedger out_meta{};
+    std::vector<AudioSample> out_audio;
+
+    bool ok = IsoMp4Engine::demux_dual_track_gen(pkg.raw_mp4_bytes.data(),
+                                                pkg.raw_mp4_bytes.size(),
+                                                out_t1, out_t2, out_pgen, out_afgs,
+                                                &out_meta, &out_audio);
+    PRISM_ASSERT(ok);
+    PRISM_ASSERT_EQ(out_t1.size(), 2);
+    PRISM_ASSERT_EQ(out_t2.size(), 2);
+    PRISM_ASSERT_EQ(out_pgen.prism_version, 2);
+    PRISM_ASSERT_EQ(out_pgen.keypoint_count, 32);
+    PRISM_ASSERT_EQ(out_pgen.anchor_interval, 240);
+    PRISM_ASSERT_EQ(out_pgen.fsq_stage1_levels, 15);
+    PRISM_ASSERT_EQ(out_pgen.fsq_stage2_levels, 7);
+    PRISM_ASSERT_EQ(out_pgen.max_macs_per_pixel, 450);
+    PRISM_ASSERT(out_pgen.has_audio_concealment);
+    PRISM_ASSERT_EQ(out_afgs.grain_scale, 10);
+    PRISM_ASSERT(out_meta.has_colr);
+    PRISM_ASSERT_EQ(out_audio.size(), 1);
+}

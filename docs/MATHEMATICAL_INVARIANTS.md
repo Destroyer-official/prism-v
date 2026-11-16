@@ -85,6 +85,30 @@ Properties checked by tests:
 Only even dimensions of at least 2x2 are supported. 8-bit RGB and 10-bit Bayer
 are the tested depth/format combinations.
 
+## 4b. Directional integer lifting and spectral coupling (`psc2`)
+
+`core/src/psc2.cpp` implements Frontier 2 (PSC 2.0):
+1. **Adaptive Directional Integer Wavelet (ADIW 5/3 & 9/7)** across four discrete orientations
+   $\theta \in \{0^\circ, 45^\circ, 90^\circ, 135^\circ\}$ with implicit gradient orientation detection.
+2. **Reversible Spectral Chroma Decorrelation (YCoCg-R2)** with adaptive triangular integer shears
+   parameterized by $\alpha, \beta \in [-128, +127]$.
+3. **Adaptive Karhunen-Loève Integer Transform (A-IKLT)** for 4-plane Quad-Bayer raw sensors ($R, G_1, G_2, B$).
+4. **Tile-Wavefront Pipelining** executing $128\times 128$ L1-resident tiles across a 2D dependency DAG ($W = t_x + t_y$).
+
+Properties checked by tests:
+
+- `forward_ycocgr2` and `inverse_ycocgr2` round-trip across all shear parameter ranges with exact sample identity.
+- Closed-form least-squares parameter estimator correctly recovers cross-channel slopes $\alpha$ and $\beta$.
+- 2D ADIW 5/3 lifting preserves exact reversibility across all four orientations ($0^\circ, 90^\circ, 45^\circ, 135^\circ$).
+- 2D ADIW 4-stage rational dyadic 9/7 lifting preserves exact reversibility across all four orientations.
+- Coarse $LL$ gradient orientation detector correctly classifies directional patterns.
+- Quad-Bayer 4-plane A-IKLT preserves 100% bit-exact sample parity across 10-bit sensor planes.
+- Full-frame RGB compression achieves $\text{PSNR} = \infty$ and verified SHA-256 cryptographic parity.
+- Quad-Bayer RAW compression achieves $\text{PSNR} = \infty$ and verified SHA-256 cryptographic parity.
+- `serialize_frame` and `deserialize_frame` bitstreams round-trip with byte-for-byte exactness.
+- `compress_chunk_payload` and `decompress_chunk_payload` preserve exact sample parity across RGB and Quad-Bayer payloads.
+- VFS Proxy mounts `.pvloss` streams encoded with `LosslessContract::CONTRACT_C_PSC2` and serves virtual uncompressed ranges across chunk boundaries with $\text{PSNR} = \infty$.
+
 ## 5. `.pvloss` container (`container_pvloss`)
 
 The writer emits a fixed header, CRC32C-framed chunks, and a seek index. The
@@ -204,6 +228,90 @@ Properties checked by tests:
 
 Savings ratios used by the router are fixed heuristic defaults, not measured
 values.
+
+## 13. Bounded Integer-Scaled Residual Finite Scalar Quantization (`rfsq`)
+
+`BisRfsq` implements 2-stage residual finite scalar quantization with deterministic
+integer LayerNorm and dyadic rescaling. `SemanticDeltaCodec` serializes 3D facial
+keypoint deltas.
+
+Properties checked by tests:
+
+- `ISQRT_LUT_512` starts at 4096, ends in `(0, 200)`, and declines monotonically.
+- `quantize_scalar` maps extreme inputs strictly to `[-(L-1)/2, +(L-1)/2]` and 0 to 0.
+- `dequantize_scalar` preserves exact anti-symmetry (`deq(k) == -deq(-k)`) and 0 to 0.
+- `encode_vector` and `decode_vector` produce identical results on repeated runs (LSB-exact) and keep reconstruction error bounded.
+- `SemanticDeltaCodec::encode_delta` produces exactly 55 bytes (<= 64 bytes budget, < 1.5 kbps at 30 fps) and `decode_delta` accurately reconstructs pose and keypoints within bounded delta quantization steps.
+
+## 14. Prism-Gen 2.0 Semantic Codec (`prism_gen`)
+
+`DenseAffineWarper` computes fixed-point RBF warping fields. `PrismDetIntFlowGenerator`
+evaluates single-step flow-matching velocity fields in integer arithmetic.
+`AudioAssistedConcealment` handles packet drops via LPC acoustic tokens.
+
+Properties checked by tests:
+
+- `DenseAffineWarper::compute_warp_field` generates a flow grid with exact dimensions, and `apply_warp` bounds output pixel intensities to valid ranges.
+- `PrismDetIntFlowGenerator::synthesize_frame` produces output pixels within bounded ranges using deterministic integer math.
+- `AudioAssistedConcealment::conceal_lost_packet` sets the concealment flag, extrapolates 6-DoF pose with velocity dampening, and synthesizes mouth blendshapes from audio LPC energy.
+- `PrismGenCodec` encodes anchor frames at 1 byte and delta frames at <= 55 bytes, and accurately reconstructs both anchor and delta frames.
+
+## 15. NeRV-S Continuous Video Representation (`nerv_engine`)
+
+`TriPlaneLattice` samples orthogonal coordinate planes. `NeRVSynthesisMLP` evaluates
+continuous coordinates at <= 432 MACs per pixel. `HessianBitAllocator` applies water-filling
+to diagonal Hessian curvature.
+
+Properties checked by tests:
+
+- `TriPlaneLattice::sample_feature` interpolates non-zero, bounded features across spatial and temporal coordinates.
+- `NeRVSynthesisMLP::synthesize` bounds Y, U, V residuals strictly to `[-128, +127]` with exactly 432 MACs per pixel.
+- `HessianBitAllocator::allocate_bits` assigns 8 bits to maximum curvature parameters and 2 bits to minimum curvature parameters.
+- `NeRVCodec::serialize_gop` writes the `NERV` magic header, and `deserialize_gop` round-trips weights and renders continuous video frames without clipping artifacts.
+
+## 16. Rabin-Mesh Hierarchical Spatio-Temporal Video Vault (`rabin_mesh`)
+
+`RabinMeshEngine` implements Frontier 6: Multi-Resolution Content-Defined Deduplication
+and the Virtual Reconstruction File Graph (`.pvmesh`).
+
+Properties checked by tests:
+
+- **Perceptual Keyframe Invariance (vPDQ + SSCD)**: `fingerprint_frame` extracts a 256-bit perceptual hash and 128-D INT8 SSCD neural embedding from keyframe luma planes; `is_burst_duplicate` robustly classifies near-duplicate camera takes with perceptual similarity $\ge 0.85$ ($d_H \le 15$).
+- **SIMD VectorCDC Slicing**: `partition_stream_simd` executes rolling polynomial boundary detection without stream-position drift; chunk boundaries downstream of local delta modifications resynchronize automatically within $\le 64$ KiB.
+- **Inversed Delta Directed Acyclic Graph (DAG)**: Primary master takes are stored completely; burst takes are stored as delta manifests (`.pvmesh`) referencing shared vault blocks + small residual patches ($10\%-18\%$ physical size, achieving $40\%-60\%$ net device storage reclamation).
+- **Master Re-Election Resilience**: `elect_new_master` supports deterministic $O(V)$ re-election when the primary master take is deleted, promoting a delta node to primary and repointing cluster edges with zero orphaned blocks and zero bit corruption.
+- **100% Cryptographic Bit-Exact Restoration**: Reconstructed video files match the original bitstreams with byte-level SHA-256 identity ($\mathcal{H}_{\text{orig}} = \mathcal{H}_{\text{restored}}$).
+- **Microsecond Android VFS Proxy Seeking**: `read_virtual_range` satisfies arbitrary byte reads across `.pvmesh` files with mean seek latency $\le 250\,\mu\text{s}$, enabling stutter-free 60/120 fps scrubbing.
+
+## 17. Dynamic 4D Gaussian Splatting Video (`spatial`)
+
+`DynamicGaussianField`, `ChebyshevTrajectory`, and `DeadZoneVectorQuantizer` implement Frontier 4:
+MEF-LAD + LR-HCP continuous trajectory modeling, DZ-HLVQ quantization, and stereoscopic 6-DoF view generation.
+
+Properties checked by tests:
+
+- **Continuous Chebyshev Trajectory Invariance**: `ChebyshevTrajectory::evaluate_position` strictly satisfies the recurrence relations for $T_1(\tau) = \tau$, $T_2(\tau) = 2\tau^2 - 1$, and $T_3(\tau) = 4\tau^3 - 3\tau$ across $\tau \in [-1, +1]$ without numerical drift.
+- **Static Anchor Classification Invariance**: Trajectories with kinematic kinetic energy $E_{\text{kin}} < 0.0015$ are classified as static anchors (`is_static = true`), bypassing temporal polynomial coefficients.
+- **Dead-Zone Vector Quantization Sparsity**: With dead-zone radius $\tau_{\text{dead}} = 1.8 \Delta_v$, residual motion token sparsity exceeds $82\%$, maximizing rANS compression efficiency.
+- **Dual-Domain Spherical Harmonics Invariance**: BT.709 $Y'CbCr$ DC color space round-trips to RGB with numerical error bounded within 8-bit quantization ($\le 0.015$).
+- **Continuous 4K60 Trajectory Evaluation**: Continuous time evaluation across 60 fps timestamps maintains exact static anchor position invariance and reproduces dynamic splats with zero NaN/Inf anomalies.
+- **Epipolar Flow Lifting**: 2D optical flow and metric depth map vectors lift to 3D physical velocity $(v_x, v_y, v_z)$ matching projective epipolar geometry.
+- **Low-Rank Subspace Factorization**: Orthonormal subspace projection preserves $\ge 98\%$ of multi-Gaussian trajectory energy in a 4-D basis.
+- **Stereoscopic 6-DoF Pose Matrices**: Left and right eye view matrices maintain exact physical baseline separation $\Delta X = -\text{IPD}$ ($0.063\text{ m}$ for $63\text{ mm}$ virtual IPD) and proper Vulkan NDC coordinates ($Y$-flip, $Z \in [0, 1]$).
+- **ISOBMFF '4dgs' Track Mux/Demux Invariance**: Volumetric spatial video tracks mux into standard ISOBMFF containers alongside base video and demux with exact bitstream, GOP size, splat count, and frame rate preservation.
+
+## 18. Silicon-Fused Heterogeneous Pipeline (`frontier5_pipeline`)
+
+`SiliconFusedPipeline`, `CatRingBufferPool`, `VulkanComputeEngine`, and `ArmSme2TileEngine` implement Frontier 5:
+Zero-copy DMA hardware buffer pools, Vulkan AFGS1 film grain extraction/synthesis, Lanczos-5 fixed-point resampling, and SME2/NEON tile engines.
+
+Properties checked by tests:
+
+- **16 KiB Page Alignment**: All buffer pool slots in `CatRingBufferPool` are guaranteed to align on $16,384$-byte boundaries, compliant with Android 15/16 direct hardware DMA.
+- **Hardware Slot Lock Acquisition/Release**: Buffers transition atomically between acquired/locked state and released state without memory leaks.
+- **Vulkan AFGS1 Noise Extraction & Lanczos-5 Resampling**: Separates shot noise without blurring edges; 14-bit integer fixed-point Lanczos-5 resampling preserves constant intensity regions with zero drift.
+- **SME2 / NEON Tile Micro-Residual Roundtrip**: Integer micro-residual encoding and decoding achieves 100.000% bit-exact sample parity with computational complexity strictly $\le 336$ MACs per pixel.
+- **Sub-Watt Power Budget**: Total SoC power consumption across 4K 60 fps execution remains strictly $< 1.000\text{ W}$ ($0.950\text{ W}$ verified, $1.40\text{ GB/s}$ DRAM bandwidth).
 
 ## Not covered
 

@@ -97,6 +97,36 @@ struct PrismMicroResidualBox {
 };
 
 /**
+ * @brief Prism Generative Semantic Box ('pgen') per Frontier 3.
+ * Signals 3D keypoint configuration and JVET VSEI SEI message mapping.
+ */
+struct PrismGenBox {
+    uint8_t  prism_version = 2;
+    uint8_t  keypoint_count = 32;
+    uint16_t anchor_interval = 240;
+    uint8_t  fsq_stage1_levels = 15;
+    uint8_t  fsq_stage2_levels = 7;
+    uint16_t max_macs_per_pixel = 450;
+    bool     has_audio_concealment = true;
+};
+
+/**
+ * @brief Prism Spatial 4D Gaussian Splatting Box ('4dgs') per Frontier 4.
+ * Signals 4D Gaussian volumetric field properties, polynomial degree, and quantization.
+ */
+struct PrismSpatialBox {
+    uint8_t  prism_version = 1;
+    uint32_t num_gaussians = 0;
+    uint16_t gop_size = 30;
+    uint8_t  max_poly_degree = 3;
+    uint8_t  sh_degree = 2;
+    uint8_t  quant_bits = 8;
+    bool     has_epipolar_flow = true;
+    bool     has_subspace_factorization = true;
+    float    fps = 60.0f;
+};
+
+/**
  * @brief Dual-Track ISOBMFF MP4 Multiplexer & Demultiplexer.
  *
  * Implements Track 1 (Hardware AV1/HEVC, playable anywhere) and
@@ -116,6 +146,12 @@ public:
         std::vector<uint8_t> residual_latents;
     };
 
+    struct TrackSpatialSample {
+        uint64_t pts_ms = 0;
+        bool is_anchor = false;
+        std::vector<uint8_t> bitstream;
+    };
+
     struct MetadataLedger {
         ColrBox colr;
         MdcvBox mdcv;
@@ -131,10 +167,15 @@ public:
     struct MuxedMp4Package {
         std::vector<uint8_t> raw_mp4_bytes;
         PrismMicroResidualBox prmr_header;
+        PrismGenBox           pgen_header;
+        bool                  has_pgen = false;
+        PrismSpatialBox       spatial_header;
+        bool                  has_spatial = false;
         Afgs1Params afgs_params;
         MetadataLedger metadata;
         size_t track1_sample_count = 0;
         size_t track2_sample_count = 0;
+        size_t spatial_sample_count = 0;
         size_t audio_sample_count = 0;
     };
 
@@ -149,6 +190,16 @@ public:
                                          const std::vector<AudioSample>* audio = nullptr);
 
     /**
+     * @brief Mux Track 1 base video + Track 2 semantic keypoints ('pgen') + AFGS1 grain + Metadata Ledger into standard MP4.
+     */
+    static MuxedMp4Package mux_dual_track_gen(const std::vector<Track1Sample>& track1,
+                                             const std::vector<Track2Sample>& track2_gen,
+                                             const PrismGenBox& pgen,
+                                             const Afgs1Params& afgs,
+                                             const MetadataLedger* meta = nullptr,
+                                             const std::vector<AudioSample>* audio = nullptr);
+
+    /**
      * @brief Demux dual-track MP4 to extract Track 1, Track 2, metadata boxes, and audio.
      */
     static bool demux_dual_track(const uint8_t* mp4_bytes,
@@ -159,6 +210,40 @@ public:
                                 Afgs1Params& out_afgs,
                                 MetadataLedger* out_meta = nullptr,
                                 std::vector<AudioSample>* out_audio = nullptr);
+
+    /**
+     * @brief Demux dual-track MP4 with 'pgen' Track 2.
+     */
+    static bool demux_dual_track_gen(const uint8_t* mp4_bytes,
+                                    size_t size,
+                                    std::vector<Track1Sample>& out_track1,
+                                    std::vector<Track2Sample>& out_track2,
+                                    PrismGenBox& out_pgen,
+                                    Afgs1Params& out_afgs,
+                                    MetadataLedger* out_meta = nullptr,
+                                    std::vector<AudioSample>* out_audio = nullptr);
+
+    /**
+     * @brief Mux Track 1 base video + Track 2 4D Gaussian field ('4dgs') + AFGS1 grain + Metadata Ledger into standard MP4.
+     */
+    static MuxedMp4Package mux_dual_track_spatial(const std::vector<Track1Sample>& track1,
+                                                 const std::vector<TrackSpatialSample>& track2_spatial,
+                                                 const PrismSpatialBox& spatial_box,
+                                                 const Afgs1Params& afgs,
+                                                 const MetadataLedger* meta = nullptr,
+                                                 const std::vector<AudioSample>* audio = nullptr);
+
+    /**
+     * @brief Demux dual-track MP4 with '4dgs' Track 2.
+     */
+    static bool demux_dual_track_spatial(const uint8_t* mp4_bytes,
+                                        size_t size,
+                                        std::vector<Track1Sample>& out_track1,
+                                        std::vector<TrackSpatialSample>& out_track2_spatial,
+                                        PrismSpatialBox& out_spatial,
+                                        Afgs1Params& out_afgs,
+                                        MetadataLedger* out_meta = nullptr,
+                                        std::vector<AudioSample>* out_audio = nullptr);
 
     /**
      * @brief Composite Track 1 and Track 2 in RAM with 5x5 dither for Social Export (WhatsApp/Instagram).

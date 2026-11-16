@@ -29,16 +29,37 @@ import java.util.Locale;
 public final class VideoProcessingPipeline {
     private static final String TAG = "PrismV";
 
+    public static boolean isNativeLoaded = false;
     static {
         try {
             System.loadLibrary("prism_jni");
-        } catch (UnsatisfiedLinkError e) {
+            isNativeLoaded = true;
+        } catch (Throwable e) {
+            isNativeLoaded = false;
             Log.w(TAG, "Native library prism_jni not available: " + e.getMessage());
         }
     }
 
     public static native String nativeProbeAndRoute(byte[] headerData, long fileSize, boolean userLossless);
     public static native boolean nativeRemuxContainer(String inputPath, String outputPath);
+    public static native byte[] nativeEncodeSemanticFrame(byte[] frameYuv, long frameIndex, short[] keypoints3d, short[] pose6dof);
+    public static native byte[] nativeDecodeSemanticFrame(byte[] payloadBytes, byte[] baseAnchorFrame, int width, int height);
+    public static native byte[] nativeNeRVRenderFrame(byte[] gopPayload, byte[] baseFrame, float tContinuous, int width, int height);
+    public static native boolean nativeVerifyRfsqParity();
+    public static native byte[] nativeProcessFrontier5Frame(byte[] frameData, int width, int height);
+    public static native float[] nativeGetFrontier5Metrics(int width, int height);
+    public static native byte[] nativeExecuteVulkanLanczos5(byte[] srcPlane, int srcW, int srcH, int dstW, int dstH);
+    public static native byte[] nativeMuxFrontier5Container(byte[] baseNalu, byte[] residualPayload, byte[] afgsParams, int width, int height, long ptsMs);
+
+    // Frontier 6: Global Graph Deduplication & Semantic Video Vault (Rabin-Mesh)
+    public static native long[] nativeScanMeshBurstCandidates(String[] videoPaths, float similarityThreshold);
+    public static native long nativeIngestMeshCluster(String primaryVideoPath, String[] deltaVideoPaths, String vaultDir, String clusterUuid);
+    public static native boolean nativeRestoreMeshVideo(String manifestPath, String vaultDir, String outPath);
+    public static native byte[] nativeReadVirtualMeshRange(String manifestPath, String vaultDir, long offset, int length);
+
+    // Frontier 2: PSC 2.0 Directional Integer Lifting & Cross-Plane Spectral Coupling
+    public static native byte[] nativeCompressPsc2(byte[] rawPixels, int width, int height, int filterType, boolean isQuadBayer);
+    public static native byte[] nativeDecompressPsc2(byte[] compressedFrame, int width, int height, int filterType, boolean isQuadBayer);
 
     public static class CompressionDossier {
         public final String fileName;

@@ -29,6 +29,7 @@ set(PRISM_CORE_SOURCES
     core/src/rans8.cpp
     core/src/bbr.cpp
     core/src/psc.cpp
+    core/src/psc2.cpp
     core/src/tile_pool.cpp
     core/src/coolchic.cpp
     core/src/afgs1.cpp
@@ -39,6 +40,14 @@ set(PRISM_CORE_SOURCES
     core/src/dedup_rabin.cpp
     core/src/remux.cpp
     core/src/router.cpp
+    core/src/rfsq.cpp
+    core/src/prism_gen.cpp
+    core/src/nerv_engine.cpp
+    core/src/rans16.cpp
+    core/src/bbr2.cpp
+    core/src/rabin_mesh.cpp
+    core/src/frontier5_pipeline.cpp
+    core/src/spatial.cpp
 )
 
 # Core library target
@@ -79,6 +88,7 @@ set(PRISM_TEST_SOURCES
     tests/test_rans8.cpp
     tests/test_bbr.cpp
     tests/test_psc.cpp
+    tests/test_psc2.cpp
     tests/test_coolchic.cpp
     tests/test_afgs1.cpp
     tests/test_container.cpp
@@ -88,6 +98,14 @@ set(PRISM_TEST_SOURCES
     tests/test_remux.cpp
     tests/test_router.cpp
     tests/test_robustness.cpp
+    tests/test_rfsq.cpp
+    tests/test_prism_gen.cpp
+    tests/test_nerv.cpp
+    tests/test_rans16.cpp
+    tests/test_bbr2.cpp
+    tests/test_rabin_mesh.cpp
+    tests/test_frontier5_pipeline.cpp
+    tests/test_spatial.cpp
 )
 
 add_executable(prism_tests ${PRISM_TEST_SOURCES})
@@ -102,16 +120,41 @@ target_link_libraries(prism PRIVATE prism_core)
 add_executable(exp_1a_bbr tools/exp_1a_bbr.cpp)
 target_link_libraries(exp_1a_bbr PRIVATE prism_core)
 
+add_executable(exp_1a_bbr2 tools/exp_1a_bbr2.cpp)
+target_link_libraries(exp_1a_bbr2 PRIVATE prism_core)
+
+add_executable(exp_2a_psc2 tools/exp_2a_psc2.cpp)
+target_link_libraries(exp_2a_psc2 PRIVATE prism_core)
+
 add_executable(exp_1b_lossy tools/exp_1b_lossy.cpp)
 target_link_libraries(exp_1b_lossy PRIVATE prism_core)
+
+add_executable(exp_1b_frontier5 tools/exp_1b_frontier5.cpp)
+target_link_libraries(exp_1b_frontier5 PRIVATE prism_core)
+
+add_executable(exp_1c_frontier3 tools/exp_1c_frontier3.cpp)
+target_link_libraries(exp_1c_frontier3 PRIVATE prism_core)
+
+add_executable(exp_1d_frontier4 tools/exp_1d_frontier4.cpp)
+target_link_libraries(exp_1d_frontier4 PRIVATE prism_core)
+
+add_executable(exp_1e_frontier6 tools/exp_1e_frontier6.cpp)
+target_link_libraries(exp_1e_frontier6 PRIVATE prism_core)
 
 add_executable(verify_real_video tools/verify_real_video.cpp)
 target_link_libraries(verify_real_video PRIVATE prism_core)
 
+add_executable(verify_mesh_dedup tools/verify_mesh_dedup.cpp)
+target_link_libraries(verify_mesh_dedup PRIVATE prism_core)
+
 enable_testing()
 add_test(NAME AllPrismTests COMMAND prism_tests)
 add_test(NAME Exp1A_BBR COMMAND exp_1a_bbr)
+add_test(NAME Exp2A_PSC2 COMMAND exp_2a_psc2)
 add_test(NAME Exp1B_Lossy COMMAND exp_1b_lossy)
+add_test(NAME Exp1C_Frontier3 COMMAND exp_1c_frontier3)
+add_test(NAME Exp1D_Frontier4 COMMAND exp_1d_frontier4)
+add_test(NAME Exp1E_Frontier6 COMMAND exp_1e_frontier6)
 
 # Installation targets
 include(GNUInstallDirs)
