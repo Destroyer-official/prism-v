@@ -19,6 +19,7 @@ import android.os.PowerManager;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.util.Locale;
 import java.util.Random;
 
 /**
@@ -216,6 +217,20 @@ public class TestRunnerReceiver extends BroadcastReceiver {
         }
     }
 
+    private static boolean checkSiliconPowerProfile() {
+        try {
+            com.prismv.engine.SiliconFusedPipelineEngine.SiliconPowerProfile profile =
+                    com.prismv.engine.SiliconFusedPipelineEngine.getSiliconPowerProfile(3840, 2160);
+            boolean ok = (profile != null && profile.totalSocPowerWatts < 1.000f && profile.dramBandwidthGbps <= 2.0f);
+            Log.i(TAG, "[CHECK] Silicon Power Profile: " + (profile != null ? profile.totalSocPowerWatts : -1) +
+                    " W, DRAM: " + (profile != null ? profile.dramBandwidthGbps : -1) + " GB/s -> " + (ok ? "PASS" : "FAIL"));
+            return ok;
+        } catch (Throwable t) {
+            Log.e(TAG, "[CHECK] Silicon Power Profile error: " + t.getMessage());
+            return false;
+        }
+    }
+
     private void runSampleCompression(Context context) {
         try {
             File inFile = new File("/sdcard/sample_video/sample_action_reel.mp4");
@@ -223,7 +238,14 @@ public class TestRunnerReceiver extends BroadcastReceiver {
                 inFile = new File("/sdcard/sample_video/sample.mp4");
             }
             if (!inFile.exists() || inFile.length() == 0) {
-                Log.e(TAG, "[SAMPLE-COMPRESS] Source sample video not found on /sdcard/sample_video/");
+                File inDir = new File("/storage/emulated/0/DCIM/Camera");
+                if (inDir.exists() && inDir.isDirectory()) {
+                    File[] files = inDir.listFiles((dir, name) -> name.toLowerCase(Locale.US).endsWith(".mp4"));
+                    if (files != null && files.length > 0) inFile = files[0];
+                }
+            }
+            if (!inFile.exists() || inFile.length() == 0) {
+                Log.e(TAG, "[SAMPLE-COMPRESS] Source sample video not found on device.");
                 return;
             }
 
@@ -290,6 +312,89 @@ public class TestRunnerReceiver extends BroadcastReceiver {
             }
         } catch (Exception e) {
             Log.e(TAG, "[SAMPLE-COMPRESS] Error: " + e.getMessage(), e);
+        }
+    }
+
+    private void runSiliconSampleCompression(Context context) {
+        try {
+            Log.i(TAG, "[SILICON-COMPRESS] Starting Frontier 5 Silicon-Fused Heterogeneous Transcode...");
+            File inDir = new File("/storage/emulated/0/DCIM/Camera");
+            File inFile = null;
+            if (inDir.exists() && inDir.isDirectory()) {
+                File[] files = inDir.listFiles((dir, name) -> name.toLowerCase(java.util.Locale.US).endsWith(".mp4"));
+                if (files != null && files.length > 0) {
+                    inFile = files[0];
+                }
+            }
+            if (inFile == null || !inFile.exists()) {
+                File movDir = new File("/storage/emulated/0/Movies/Prism-V");
+                if (movDir.exists() && movDir.isDirectory()) {
+                    File[] files = movDir.listFiles((dir, name) -> name.toLowerCase(java.util.Locale.US).endsWith(".mp4"));
+                    if (files != null && files.length > 0) inFile = files[0];
+                }
+            }
+            if (inFile == null || !inFile.exists()) {
+                Log.w(TAG, "[SILICON-COMPRESS] No sample MP4 available on device.");
+                return;
+            }
+
+            File outDir = new File("/storage/emulated/0/Movies/Prism-V");
+            if (!outDir.exists()) outDir.mkdirs();
+            File outFile = new File(outDir, "sample_silicon_compressed.mp4");
+            if (outFile.exists()) outFile.delete();
+
+            Log.i(TAG, "[SILICON-COMPRESS] Ingesting " + inFile.getAbsolutePath() + " (" + (inFile.length() / (1024 * 1024)) + " MB)");
+
+            HardwareVideoCompressor.CompressionOptions options = new HardwareVideoCompressor.CompressionOptions("F5-SILICON");
+            options.targetWidth = 1080;
+            options.targetHeight = 1920;
+            options.targetFps = 30;
+            options.targetBitrateKbps = 1800; // Frontier 5 target
+            options.aspectRatio = "No Change";
+            options.outputFormat = "MP4";
+            options.audioChannel = "Stereo";
+            options.audioBitrateKbps = 192;
+
+            boolean ok = HardwareVideoCompressor.compress(
+                    inFile.getAbsolutePath(),
+                    outFile.getAbsolutePath(),
+                    options,
+                    new HardwareVideoCompressor.TranscodeListener() {
+                        @Override
+                        public void onProgress(int percent, long currentBytes, long totalBytes) {
+                            if (percent % 20 == 0) {
+                                Log.i(TAG, "[SILICON-COMPRESS] Progress: " + percent + "%");
+                            }
+                        }
+
+                        @Override
+                        public void onLog(String message) {
+                            Log.d(TAG, "[SILICON-COMPRESS] " + message);
+                        }
+                    }
+            );
+
+            if (ok && outFile.exists() && outFile.length() > 0) {
+                Log.i(TAG, ">>> SILICON COMPRESSION SUCCESSFUL! Out: " + outFile.getAbsolutePath() + " (" + (outFile.length() / (1024 * 1024)) + " MB) <<<");
+                PrismStorageManager.indexVideoInMediaStore(context, outFile);
+
+                CompressionHistoryManager.get(context).recordCompression(
+                        inFile.getName(),
+                        Uri.fromFile(inFile),
+                        inFile.getAbsolutePath(),
+                        inFile.length(),
+                        outFile.getAbsolutePath(),
+                        outFile.length(),
+                        "F5-SILICON",
+                        1080,
+                        1920,
+                        1800,
+                        30,
+                        60000L
+                );
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "[SILICON-COMPRESS] Error: " + e.getMessage(), e);
         }
     }
 }
