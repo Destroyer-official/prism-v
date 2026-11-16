@@ -2,7 +2,7 @@
 
 [![CI Build](https://github.com/Destroyer-official/prism-v/actions/workflows/ci.yml/badge.svg)](https://github.com/Destroyer-official/prism-v/actions/workflows/ci.yml)
 [![Latest Release](https://img.shields.io/github/v/release/Destroyer-official/prism-v?color=0ea5e9&label=Release)](https://github.com/Destroyer-official/prism-v/releases/latest)
-[![APK Download](https://img.shields.io/badge/Download-APK%20(v1.1.1)-success?logo=android)](https://github.com/Destroyer-official/prism-v/releases/download/v1.1.1/prism-v-v1.1.1.apk)
+[![APK Download](https://img.shields.io/badge/Download-APK%20(v1.1.2)-success?logo=android)](https://github.com/Destroyer-official/prism-v/releases/download/v1.1.2/prism-v-v1.1.2.apk)
 [![C++ Standard](https://img.shields.io/badge/C%2B%2B-20-blue.svg?logo=cplusplus)](CMakeLists.txt)
 [![Android Target](https://img.shields.io/badge/Android-API%2026--36-3DDC84.svg?logo=android)](android_app/apk_root/AndroidManifest.xml)
 [![16 KB Page Aligned](https://img.shields.io/badge/Memory-16%20KiB%20Aligned-purple.svg)](docs/MATHEMATICAL_INVARIANTS.md)
@@ -13,7 +13,7 @@
 
 ## Abstract
 
-Modern smartphone camera systems capture high-definition video at extraordinarily elevated bitrates, rapidly depleting user storage and straining mobile bandwidth. Traditional remedies—either re-encoding via legacy lossy algorithms or unrolling into uncompressed pixel space—induce either perceptible fidelity degradation or catastrophic file inflation (the *Lossless Paradox*). 
+Modern smartphone camera systems capture high-definition video at extraordinarily elevated bitrates, rapidly depleting user storage and straining mobile bandwidth. Traditional remedies—either re-encoding via legacy lossy algorithms or unrolling into uncompressed pixel space—induce either perceptible fidelity degradation or catastrophic file inflation (the *Lossless Paradox*).
 
 **Prism-V** is an open-source, deterministic C++20 and Android video compression engine designed to resolve this crisis. By combining **Hardware-Anchored Rate-Distortion Optimization**, **AOMedia Film Grain Synthesis (AFGS1) parametric noise decoupling**, **Adaptive Directional Integer Lifting Wavelets (ADIW 5/3 & 9/7)**, **4D Gaussian Splatting Video (Prism-Spatial 6-DoF)**, and **16-way SIMD Interleaved Asymmetric Numeral Systems (rANS)**, Prism-V achieves a **50% to 80%+ reduction in video storage footprint** with zero perceptible loss in visual fidelity ($\Delta\text{VMAF} \le 0.4$, $\text{CVVDP} \ge 9.3$). Furthermore, for archival and forensic pipelines, Prism-V provides mathematically verifiable bit-exact bitstream recompression (Mode L-BBR, SHA-256 identical) and reversible sensor RAW compression (Mode L-PSC, $\text{PSNR} = \infty$).
 
@@ -43,8 +43,9 @@ Smartphone image signal processors (ISPs) and hardware video encoders (`MediaCod
 ```
 
 #### The Concrete Impact
+
 * **A standard 1-hour 1080p 60 fps video consumes $\approx 12\text{ GB}$ of local storage.**
-* **A standard 1-hour 4K 60 fps video consumes $\approx 36\text{ to }50\text{ GB}$ of local storage.**
+- **A standard 1-hour 4K 60 fps video consumes $\approx 36\text{ to }50\text{ GB}$ of local storage.**
 
 On a typical 128 GB consumer device—where the Android operating system, system apps, and caches consume 35–45 GB—fewer than **7 to 8 hours of 1080p60 recording completely fills the physical NAND flash memory**. Users face abrupt camera halts, sluggish system responsiveness, and the compulsory deletion of irreplaceable personal memories or forced recurring cloud subscription fees.
 
@@ -118,6 +119,7 @@ Every video signal captured by a mobile sensor is modeled as:
 $$V(x, y, t) = B(x, y, t) + R(x, y, t) + \eta(x, y, t)$$
 
 Where:
+
 - $B(x, y, t)$: Low-frequency deterministic structural base signal, containing $85\%–92\%$ of total energy.
 - $R(x, y, t)$: High-frequency deterministic structural micro-residual (fine edges, micro-textures).
 - $\eta(x, y, t)$: High-frequency stochastic sensor noise modeled as a zero-mean non-stationary Gaussian process $\eta \sim \mathcal{N}(0, \sigma^2(I))$.
@@ -157,6 +159,7 @@ Where $\mathcal{D}(\cdot)$ denotes a perceptual distortion metric combining Char
 ```
 
 #### AOMedia Film Grain Synthesis (AFGS1)
+
 Stochastic sensor noise $\eta(x,y)$ is parameterized as an autoregressive process of order $p$:
 
 $$\eta(x, y) = \sum_{(i,j) \in \Omega_p} c_{i,j} \cdot \eta(x-i, y-j) + \epsilon(x, y), \quad \epsilon \sim \mathcal{N}(0, \sigma^2)$$
@@ -164,7 +167,9 @@ $$\eta(x, y) = \sum_{(i,j) \in \Omega_p} c_{i,j} \cdot \eta(x-i, y-j) + \epsilon
 Rather than spending millions of bits encoding unpredictable noise samples, Prism-V quantizes the set $\{c_{i,j}, \sigma_k\}$ into an ultra-compact SEI payload ($\approx 160\text{ bytes/frame}$). On playback, the GPU/display compositor regenerates visually identical noise grain on the fly via a deterministic pseudo-random number generator (PRNG), **reclaiming $35\%–45\%$ of the bitstream for real image features**.
 
 #### Two-Speed Micro-Residual Adaptation
+
 The residual $R(x, y, t)$ is modeled using an implicit continuous neural representation (Cool-chic 5.0 / N-O Cool-chic) with synthesis complexity bounded to $<600\text{ MACs/pixel}$:
+
 1. **Live Capture Speed:** A feedforward hypernetwork computes latent grid representations in $<3.5\text{ ms/frame}$ on mobile NPUs.
 2. **Charging-Time Overfit Speed:** When the phone is connected to AC power and idle, a background service runs 300–600 lightweight AdamW gradient steps on keyframes, unlocking an additional **$8\%–14\%$ BD-rate reduction** without modifying the base bitstream.
 
@@ -199,6 +204,7 @@ sequenceDiagram
 ```
 
 #### Mathematical Formulation of Interleaved rANS
+
 The Asymmetric Numeral Systems (rANS) state update equation compresses symbol $s$ with frequency $f_s$ and cumulative distribution offset $C_s$:
 
 $$x_{n+1} = \mathcal{C}(s, x_n) = \left\lfloor \frac{x_n}{f_s} \right\rfloor \cdot M + (x_n \bmod f_s) + C_s$$
@@ -241,6 +247,7 @@ For uncompressed video captured via Android's `Camera2` API (`YUV_420_888`, `P01
 ```
 
 #### 1. Reversible Integer YCoCg-R2 Color Space
+
 Forward bijective transform:
 
 $$Y = \left\lfloor \frac{R + 2G + B}{4} \right\rfloor, \quad Co = R - B, \quad Cg = G - \left\lfloor \frac{R + B}{2} \right\rfloor$$
@@ -250,6 +257,7 @@ Exact inverse reconstruction:
 $$t = Y - \left\lfloor \frac{Cg}{2} \right\rfloor, \quad G = Cg + t, \quad R = t + \left\lfloor \frac{Co + 1}{2} \right\rfloor, \quad B = R - Co$$
 
 #### 2. Adaptive Directional Integer Wavelet (ADIW LeGall 5/3)
+
 To eliminate ringing along diagonal high-contrast edges, lifting occurs along estimated orientation contours $\theta \in \{0^\circ, 45^\circ, 90^\circ, 135^\circ\}$:
 
 $$\text{Detail (High): } \quad d[n] = x[2n+1] - \left\lfloor \frac{x[2n] + x[2n+2]}{2} \right\rfloor$$
@@ -261,6 +269,7 @@ $$\text{Smooth (Low): } \quad s[n] = x[2n] + \left\lfloor \frac{d[n-1] + d[n] + 
 ### 3.4 Frontier 3: Generative Neural Residuals (BIS-RFSQ & NeRV)
 
 Frontier 3 introduces implicit neural representations and bounded integer vector quantization:
+
 - **Bounded Integer Scale Residual Scalar-Vector Quantization (BIS-RFSQ):** Eliminates floating-point non-associativity across heterogeneous mobile NPUs/GPUs by projecting latent features onto dyadically scaled integer hyper-lattices.
 - **NeRV Triplane Decomposition:** Factorizes 3D spatiotemporal video volumes $T \times H \times W$ into three orthogonal 2D feature planes ($XY, XZ, YZ$), sampled via integer bilinear interpolation and decoded through an ultra-compact MLP ($<25\text{k}$ parameters).
 
@@ -300,6 +309,7 @@ $$\mathcal{G}_i(t) = \left\{ \mu_i(t), \; \Sigma_i(t), \; \alpha_i(t), \; \mathb
 ```
 
 #### Chebyshev Polynomial Trajectories
+
 Temporal motion trajectories $\mu_i(t) \in \mathbb{R}^3$ are projected onto orthogonal Chebyshev polynomials of degree $K=3$:
 
 $$\mu_i(t) = \sum_{k=0}^K \mathbf{a}_{i,k} \cdot T_k(t), \quad T_0(t) = 1, \quad T_1(t) = t, \quad T_{k+1}(t) = 2t T_k(t) - T_{k-1}(t)$$
@@ -315,6 +325,7 @@ $$\mu_i(t) = \sum_{k=0}^K \mathbf{a}_{i,k} \cdot T_k(t), \quad T_0(t) = 1, \quad
 Mobile efficiency is dictated by DRAM memory bandwidth. Transferring uncompressed 4K60 frames ($1920\times 1080 \times 1.5\text{ bytes} \times 60 = 186.6\text{ MB/s}$) between CPU, GPU, and display surfaces drains 1.2–2.0 W of power.
 
 Frontier 5 establishes a **hardware-fused zero-copy surface pipeline**:
+
 - **16 KiB Memory Page Alignment:** All memory allocations, circular ring buffers, and DMA pointers align strictly to $16,384\text{ bytes}$ (`PAGE_SIZE_16KB = 16384`), ensuring full native compatibility with Android 15 and Android 16 16 KiB page kernels.
 - **Direct Graphic Buffer Sharing:** `AHardwareBuffer` instances allocated by the camera are bound directly to Vulkan `VkDeviceMemory` via `VK_ANDROID_external_memory_android_hardware_buffer`, bypassing CPU staging memory entirely.
 - **Power Envelope:** Sustained total SoC power draw remains strictly **under 0.85 W – 0.95 W** during full 1080p60 encoding.
@@ -360,7 +371,7 @@ Evaluated on standard JVET Class B (`BQTerrace`, `Cactus`, `MarketPlace`), UVG 1
 | **Android Stock HEVC (H.265)** | $16.5\text{ Mbps}$ | $40.5\text{ dB}$ | $0.951$ | $93.6$ | $8.8 / 10.0$ | $-38.4\%$ |
 | **SVT-AV1 (Preset M6, CPU)** | $7.8\text{ Mbps}$ | $41.8\text{ dB}$ | $0.963$ | $94.4$ | $9.1 / 10.0$ | $-68.2\%$ |
 | **Prism-Lossy (Live Capture)** | **$5.8\text{ Mbps}$** | **$42.1\text{ dB}$** | **$0.968$** | **$94.8$** | **$9.3 / 10.0$** | **$-76.5\%$** |
-| **Prism-Lossy (Overfit Charging)**| **$4.9\text{ Mbps}$** | **$42.9\text{ dB}$** | **$0.974$** | **$95.7$** | **$9.5 / 10.0$** | **$-81.2\%$** |
+| **Prism-Lossy (Overfit Charging)** | **$4.9\text{ Mbps}$** | **$42.9\text{ dB}$** | **$0.974$** | **$95.7$** | **$9.5 / 10.0$** | **$-81.2\%$** |
 
 ---
 
@@ -492,6 +503,7 @@ prism restore manifest.pvref vault/ reconstructed.mp4
 ### 7.2 Building the Native C++20 Core & CLI
 
 #### Prerequisites
+
 - Modern C++20 compiler: Clang 16+, GCC 13+, or MSVC 2022 (v19.34+).
 - CMake 3.20+ and Ninja build system.
 
@@ -523,11 +535,12 @@ $env:PRISM_SIGNER_JAR  = "C:\path\to\uber-apk-signer.jar"
 .\build_apk.ps1
 ```
 
-The resulting signed and verified APK is generated at `release/prism-v-v1.1.1.apk`.
+The resulting signed and verified APK is generated at `release/prism-v-v1.1.2.apk`.
 
 Install via ADB:
+
 ```bash
-adb install -r release/prism-v-v1.1.1.apk
+adb install -r release/prism-v-v1.1.2.apk
 adb shell am start -n com.prismv/.ui.MainActivity
 ```
 
@@ -568,6 +581,7 @@ adb shell am start -n com.prismv/.ui.MainActivity
 Prism-V is licensed under the **Apache License, Version 2.0**. See the [LICENSE](LICENSE) file for complete terms.
 
 ### Patent Protection & Clean-Room Architecture
+
 - Base video encoding is delegated directly to the mobile device's pre-licensed hardware `MediaCodec` ASIC, eliminating software HEVC/VVC licensing exposure for distributors.
 - Film grain parameterization adheres strictly to royalty-free AOMedia AFGS1 standards.
 - All neural networks, wavelet transforms, and entropy codecs are original clean-room C++20 implementations free of GPL-licensed dependencies.

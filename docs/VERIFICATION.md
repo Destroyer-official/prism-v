@@ -2,7 +2,7 @@
 
 This document records the official verification receipts, hardware test results, and deterministic test executions for the Prism-V media engine and Android application across all 6 Research Frontiers.
 
-**Target Release:** `v1.1.1` (Production Gold)  
+**Target Release:** `v1.1.2` (Production Gold)  
 **Latest Verification Date:** 2026-11-16  
 **Verification Scope:** Native C++20 Core (87/87 Tests), CTest Suites (7/7 Suites), Java JNI Interop, Physical Hardware Android 16 (Samsung SM-E156B) Live Execution & Screen Proofs.
 
