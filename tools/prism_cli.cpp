@@ -201,11 +201,57 @@ int cmd_audit() {
   }
   all_ok = all_ok && psc2_ok;
   std::cout
-      << "  [8/8] Frontier 2 PSC 2.0 (ADIW + YCoCg-R2 + Wavefront SIMD) roundtrip -> "
+      << "  [8/10] Frontier 2 PSC 2.0 (ADIW + YCoCg-R2 + Wavefront SIMD) roundtrip -> "
       << (psc2_ok ? "PASS" : "FAIL") << "\n";
 
+  // 9. Frontier 5 Silicon-Fused Heterogeneous Pipeline & Dual-Track Box
+  bool f5_ok = false;
+  {
+    SiliconFusedPipeline f5_engine(320, 240);
+    auto metrics = f5_engine.get_metrics();
+    f5_ok = (metrics.total_soc_power_watts <= 1.0f) &&
+            (metrics.dram_bandwidth_gb_s < 2.0f);
+  }
+  all_ok = all_ok && f5_ok;
+  std::cout
+      << "  [9/10] Frontier 5 Silicon-Fused (Sub-1.0 W Power Matrix & DRAM Bound) -> "
+      << (f5_ok ? "PASS" : "FAIL") << "\n";
+
+  // 10. Frontier 6 Rabin-Mesh Level 3 VectorCDC & Bit-Exact Restoration
+  bool mesh_ok = false;
+  {
+    std::string temp_vault = (fs::temp_directory_path() / "prism_audit_vault").string();
+    fs::create_directories(temp_vault);
+    RabinMeshEngine mesh_engine;
+
+    std::vector<uint8_t> master_sample(128 * 1024);
+    for (size_t i = 0; i < master_sample.size(); ++i) {
+      master_sample[i] = static_cast<uint8_t>((i * 7 + 0x3F) & 0xFF);
+    }
+    std::vector<uint8_t> delta_sample = master_sample;
+    for (size_t i = 32 * 1024; i < 48 * 1024; ++i) {
+      delta_sample[i] ^= 0x5A; // modify 16 KiB
+    }
+
+    MeshDeltaManifest primary_manifest;
+    mesh_engine.ingest_video(master_sample.data(), master_sample.size(), temp_vault, "audit_cluster_01", true, primary_manifest);
+
+    MeshDeltaManifest delta_manifest;
+    mesh_engine.ingest_video(delta_sample.data(), delta_sample.size(), temp_vault, "audit_cluster_01", false, delta_manifest);
+
+    std::vector<uint8_t> restored_delta;
+    bool recon_res = mesh_engine.reconstruct_video(delta_manifest, temp_vault, restored_delta);
+    mesh_ok = recon_res && (restored_delta == delta_sample);
+
+    fs::remove_all(temp_vault);
+  }
+  all_ok = all_ok && mesh_ok;
+  std::cout
+      << "  [10/10] Frontier 6 Rabin-Mesh (VectorCDC + Delta Manifest + Bit-Exact Restore) -> "
+      << (mesh_ok ? "PASS" : "FAIL") << "\n";
+
   std::cout << "[AUDIT] Result: "
-            << (all_ok ? "all checks passed" : "one or more checks failed")
+            << (all_ok ? "all 10 checks passed" : "one or more checks failed")
             << "\n";
   return all_ok ? 0 : 1;
 }

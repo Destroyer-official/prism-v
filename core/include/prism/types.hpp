@@ -31,6 +31,10 @@ constexpr uint32_t BOX_TYPE_PGEN =
     0x7067656E; // 'pgen' (Frontier 3: Prism-Gen Semantic Box)
 constexpr uint32_t BOX_TYPE_PSC2 =
     0x70736332; // 'psc2' (Frontier 2: PSC 2.0 Directional Lifting & Coupling)
+constexpr uint32_t BOX_TYPE_PVMH =
+    0x70766D68; // 'pvmh' (Frontier 6: Prism Virtual Mesh Vault Box)
+constexpr uint32_t BOX_TYPE_PVMD =
+    0x70766D64; // 'pvmd' (Frontier 6: Prism Virtual Mesh Delta Manifest Box)
 
 // Memory & Page Alignment Constants
 constexpr size_t PAGE_SIZE_16KB = 16384; // Android 15+ mandated 16 KB page size
@@ -45,7 +49,8 @@ enum class LosslessContract : uint8_t {
   CONTRACT_B_REMUX = 0x02, // Mode L-Remux: Packet-Preserving Remux
   CONTRACT_C_PSC = 0x03,   // Mode L-PSC: Bijective Wavelet-Checkerboard Codec
   CONTRACT_A_BBR2 = 0x04,  // Mode L-BBR 2.0: Frontier 1 Graph-Syntax & SIMD-16
-  CONTRACT_C_PSC2 = 0x05 // Mode L-PSC 2.0: Frontier 2 ADIW & Spectral Coupling
+  CONTRACT_C_PSC2 = 0x05,  // Mode L-PSC 2.0: Frontier 2 ADIW & Spectral Coupling
+  CONTRACT_D_MESH = 0x06   // Mode L-Mesh: Frontier 6 Rabin-Mesh Global Deduplication Vault
 };
 
 // Source Codec Identifiers

@@ -205,7 +205,7 @@ public class LayeredSettingsView extends LinearLayout {
         CategorySection sec = createCategory(context, "2. DEFAULT VIDEO COMPRESSION ENGINE", "codec av1 hevc neural micro-residual grain afgs1 hdr");
 
         addPillSelectorSetting(context, sec, "Default Compression Profile", "Baseline strategy for newly added videos",
-                new String[]{"H-ARCH", "E-LOW", "L-BBR"},
+                new String[]{"H-ARCH", "E-LOW", "F5-SILICON", "L-BBR"},
                 prefs.getDefaultCompressionMode(), (selected) -> {
                     prefs.setDefaultCompressionMode(selected);
                     if (getContext() instanceof Activity) {

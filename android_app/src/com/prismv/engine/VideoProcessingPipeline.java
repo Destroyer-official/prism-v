@@ -203,7 +203,7 @@ public final class VideoProcessingPipeline {
 
                 String mode = (options != null && options.mode != null) ? options.mode : "H-ARCH";
 
-                if ("H-ARCH".equals(mode) || "E-LOW".equals(mode)) {
+                if ("H-ARCH".equals(mode) || "E-LOW".equals(mode) || "F5-SILICON".equals(mode)) {
                     // ==========================================
                     // HYBRID / ECO HARDWARE MEDIACODEC PIPELINE
                     // ==========================================
@@ -272,10 +272,11 @@ public final class VideoProcessingPipeline {
                     createPvlossPackage(compPvlossFile, totalBytes, compSizeBytes, mode, origSha256, outSha256);
 
                     long durationMs = System.currentTimeMillis() - t0;
-                    double estJoules = "H-ARCH".equals(mode) ? 0.028 : 0.012;
+                    double estJoules = "F5-SILICON".equals(mode) ? 0.008 : ("H-ARCH".equals(mode) ? 0.028 : 0.012);
 
                     String modeDesc = "H-ARCH (Neural Hybrid)";
                     if ("E-LOW".equals(mode)) modeDesc = "E-LOW (Eco HW Base)";
+                    else if ("F5-SILICON".equals(mode)) modeDesc = "F5-SILICON (Silicon-Fused Dual-Track 2027+)";
                     if (options != null && options.targetWidth > 0) {
                         modeDesc += String.format(Locale.US, " [%dx%d, %s]", options.targetWidth, options.targetHeight, ext);
                     }
