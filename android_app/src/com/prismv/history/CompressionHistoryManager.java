@@ -52,6 +52,8 @@ public final class CompressionHistoryManager {
         public String formattedDate;
         public double percentReduction;
         public long spaceSavedBytes;
+        public boolean isSourceTrashed;
+        public String trashedSourcePath;
 
         public Uri getOriginalUri() {
             if (originalUriStr != null && !originalUriStr.isEmpty()) {
@@ -144,6 +146,21 @@ public final class CompressionHistoryManager {
         record.spaceSavedBytes = saved;
 
         List<Record> list = getRecords();
+        // Deduplicate: remove any existing record with the exact same compressedPath
+        if (compressedPath != null && !compressedPath.isEmpty()) {
+            for (int i = list.size() - 1; i >= 0; i--) {
+                Record existing = list.get(i);
+                if (existing.compressedPath != null && existing.compressedPath.equals(compressedPath)) {
+                    if ((originalUri == null || originalUri.toString().isEmpty()) && existing.originalUriStr != null && !existing.originalUriStr.isEmpty()) {
+                        record.originalUriStr = existing.originalUriStr;
+                    }
+                    if ((originalPath == null || originalPath.isEmpty()) && existing.originalPath != null && !existing.originalPath.isEmpty()) {
+                        record.originalPath = existing.originalPath;
+                    }
+                    list.remove(i);
+                }
+            }
+        }
         // Insert at index 0 so newest is first
         list.add(0, record);
         saveRecords(list);
@@ -154,6 +171,7 @@ public final class CompressionHistoryManager {
 
     public synchronized List<Record> getRecords() {
         List<Record> list = new ArrayList<>();
+        java.util.HashSet<String> seenPaths = new java.util.HashSet<>();
         String json = prefs.getString(KEY_RECORDS, "[]");
         try {
             JSONArray arr = new JSONArray(json);
@@ -177,6 +195,15 @@ public final class CompressionHistoryManager {
                 r.formattedDate = o.optString("formattedDate");
                 r.percentReduction = o.optDouble("percentReduction");
                 r.spaceSavedBytes = o.optLong("spaceSavedBytes");
+                r.isSourceTrashed = o.optBoolean("isSourceTrashed", false);
+                r.trashedSourcePath = o.optString("trashedSourcePath", "");
+
+                if (r.compressedPath != null && !r.compressedPath.isEmpty()) {
+                    if (seenPaths.contains(r.compressedPath)) {
+                        continue; // Skip duplicate record for identical output file
+                    }
+                    seenPaths.add(r.compressedPath);
+                }
                 list.add(r);
             }
         } catch (Exception e) {
@@ -193,6 +220,22 @@ public final class CompressionHistoryManager {
             }
         }
         return list.isEmpty() ? null : list.get(0);
+    }
+
+    public synchronized void updateRecord(Record updated) {
+        if (updated == null) return;
+        List<Record> list = getRecords();
+        for (int i = 0; i < list.size(); i++) {
+            Record r = list.get(i);
+            if ((updated.id != null && updated.id.equals(r.id)) ||
+                (updated.compressedPath != null && updated.compressedPath.equals(r.compressedPath))) {
+                list.set(i, updated);
+                saveRecords(list);
+                return;
+            }
+        }
+        list.add(0, updated);
+        saveRecords(list);
     }
 
     public synchronized void deleteRecord(String id) {
@@ -254,6 +297,8 @@ public final class CompressionHistoryManager {
                 o.put("formattedDate", r.formattedDate);
                 o.put("percentReduction", r.percentReduction);
                 o.put("spaceSavedBytes", r.spaceSavedBytes);
+                o.put("isSourceTrashed", r.isSourceTrashed);
+                o.put("trashedSourcePath", r.trashedSourcePath);
                 arr.put(o);
             }
             prefs.edit().putString(KEY_RECORDS, arr.toString()).apply();

@@ -95,7 +95,44 @@ public class DeveloperMatrixView extends LinearLayout {
 
         addView(buildDeviceCard(context));
         addView(buildEncoderCard(context));
+        addView(buildBenchmarkAndTelemetryCard(context));
         addView(buildSelfTestCard(context));
+    }
+
+    private LinearLayout buildBenchmarkAndTelemetryCard(Context context) {
+        LinearLayout card = createCard(context, "SILICON BENCHMARK & HARDWARE TELEMETRY");
+
+        TextView note = new TextView(context);
+        note.setText("Deep silicon tier capability probes, hardware video codec diagnostics, and real-time CPU/RAM/Thermal telemetry.");
+        note.setTextColor(Color.parseColor("#94A3B8"));
+        note.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        note.setPadding(0, 0, 0, dp(10));
+        card.addView(note);
+
+        Button btnBenchmark = new Button(context);
+        btnBenchmark.setText("Run Silicon Benchmark & Codec Probe");
+        btnBenchmark.setTextColor(Color.WHITE);
+        btnBenchmark.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        btnBenchmark.setTypeface(Typeface.DEFAULT_BOLD);
+        btnBenchmark.setBackground(createRoundedDrawable(Color.parseColor("#4338CA"), Color.parseColor("#6366F1"), dp(1), dp(10)));
+        btnBenchmark.setOnClickListener(v -> ToolboxDialogs.showSiliconBenchmarkDialog(context));
+        LinearLayout.LayoutParams btnParams1 = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(42));
+        btnParams1.setMargins(0, 0, 0, dp(8));
+        btnBenchmark.setLayoutParams(btnParams1);
+        card.addView(btnBenchmark);
+
+        Button btnTelemetry = new Button(context);
+        btnTelemetry.setText("Open Hardware & Thermal Telemetry");
+        btnTelemetry.setTextColor(Color.WHITE);
+        btnTelemetry.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        btnTelemetry.setTypeface(Typeface.DEFAULT_BOLD);
+        btnTelemetry.setBackground(createRoundedDrawable(Color.parseColor("#0E7490"), Color.parseColor("#06B6D4"), dp(1), dp(10)));
+        btnTelemetry.setOnClickListener(v -> ToolboxDialogs.showSystemResourceManagerDialog(context));
+        LinearLayout.LayoutParams btnParams2 = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(42));
+        btnTelemetry.setLayoutParams(btnParams2);
+        card.addView(btnTelemetry);
+
+        return card;
     }
 
     private LinearLayout buildDeviceCard(Context context) {

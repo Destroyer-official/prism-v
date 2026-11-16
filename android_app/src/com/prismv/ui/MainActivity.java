@@ -535,11 +535,6 @@ public class MainActivity extends Activity {
         if (openTool != null && !openTool.isEmpty()) {
             intent.removeExtra("OPEN_TOOL");
             mainHandler.postDelayed(() -> {
-                if (!openTool.equalsIgnoreCase("skin") && !openTool.equalsIgnoreCase("theme")
-                        && !openTool.equalsIgnoreCase("skins") && !openTool.equalsIgnoreCase("themes")
-                        && !openTool.equalsIgnoreCase("apply_skin")) {
-                    switchTab(2); // Toolbox tab
-                }
                 launchToolByName(openTool);
             }, 300);
         }
@@ -550,59 +545,77 @@ public class MainActivity extends Activity {
         switch (toolName.toLowerCase(Locale.US)) {
             case "trimmer":
             case "trim":
+                switchTab(2);
                 ToolboxDialogs.showTrimmerDialog(this, selectedVideoUri, sourceDurationSec, this::applyTrimSettings);
                 break;
             case "privacy":
             case "shield":
             case "sanitize":
+                switchTab(2);
                 ToolboxDialogs.showPrivacySanitizerDialog(this, selectedVideoUri);
                 break;
             case "fit_to_size":
             case "calculator":
             case "size":
+                switchTab(2);
                 ToolboxDialogs.showFitToSizeDialog(this, sourceDurationSec, this::applyCustomTargetBitrate);
                 break;
             case "dedup":
             case "radar":
+                switchTab(2);
                 ToolboxDialogs.showDeduplicationRadar(this);
                 break;
             case "copilot":
             case "gemini":
+                switchTab(0);
                 openGeminiCopilot();
+                break;
+            case "saved_videos":
+            case "library":
+                switchTab(1);
                 break;
             case "merger":
             case "stitcher":
+                switchTab(2);
                 ToolboxDialogs.showMergerDialog(this, batchVideoList);
                 break;
             case "frame_grabber":
             case "gif":
             case "studio":
+                switchTab(2);
                 ToolboxDialogs.showFrameAndGifStudioDialog(this, selectedVideoUri);
                 break;
             case "blur":
             case "redact":
+                switchTab(2);
                 ToolboxDialogs.showPrivacyBlurDialog(this, selectedVideoUri);
                 break;
             case "tonemap":
             case "hdr":
             case "aces":
+                switchTab(2);
                 ToolboxDialogs.showColorToneMapDialog(this, selectedVideoUri);
                 break;
             case "lan_nas":
             case "wifi":
             case "server":
+                switchTab(2);
                 ToolboxDialogs.showLanNasTransferDialog(this);
                 break;
             case "batch_queue":
             case "queue":
+                switchTab(0);
                 ToolboxDialogs.showBatchQueueDialog(this, batchVideoList);
                 break;
             case "vault":
             case "trash":
+                switchTab(2);
                 ToolboxDialogs.showTrashVaultDialog(this);
                 break;
             case "settings":
             case "preferences":
+            case "integration":
+            case "system":
                 switchTab(4);
                 break;
             case "onboarding":
@@ -613,11 +626,13 @@ public class MainActivity extends Activity {
             case "audio_studio":
             case "subtitle":
             case "subtitles":
+                switchTab(2);
                 ToolboxDialogs.showAudioSubtitleDialog(this, selectedVideoUri);
                 break;
             case "transform":
             case "geometry":
             case "rotate":
+                switchTab(2);
                 ToolboxDialogs.showTransformEditDialog(this, selectedVideoUri, (rot, flip, spd, crop, eis) -> {
                     customRotationDegrees = rot;
                     customFlipHorizontal = flip;
@@ -628,44 +643,44 @@ public class MainActivity extends Activity {
                 break;
             case "enhancer":
             case "audio_enhancer":
+                switchTab(2);
                 ToolboxDialogs.showAudioEnhancerDialog(this, selectedVideoUri);
                 break;
             case "benchmark":
             case "silicon":
+                switchTab(3);
                 ToolboxDialogs.showSiliconBenchmarkDialog(this);
                 break;
             case "presets":
             case "preset_manager":
+                switchTab(2);
                 ToolboxDialogs.showPresetManagerDialog(this);
                 break;
             case "telemetry":
             case "resources":
+                switchTab(3);
                 ToolboxDialogs.showSystemResourceManagerDialog(this);
-                break;
-            case "integration":
-            case "system":
-                ToolboxDialogs.showSystemIntegrationDialog(this);
                 break;
             case "player":
             case "cinema":
-                ToolboxDialogs.showPrismPlayerDialog(this, selectedVideoUri);
+                switchTab(1);
                 break;
             case "skin":
             case "skins":
             case "theme":
             case "themes":
-                showSkinSwitcher();
+                switchTab(4);
                 break;
             case "apply_skin":
                 String targetSkin = getIntent().getStringExtra("SKIN_NAME");
                 if (targetSkin != null) {
                     applyThemeByName(targetSkin);
                 } else {
-                    showSkinSwitcher();
+                    switchTab(4);
                 }
                 break;
             default:
-                PrismHud.showInfo(this, "Toolbox: " + toolName);
+                PrismHud.showInfo(this, "Prism-V: " + toolName);
                 break;
         }
     }
@@ -1552,155 +1567,29 @@ public class MainActivity extends Activity {
         root.setPadding(dp(16), dp(16), dp(16), dp(36));
 
         TextView tvTitle = new TextView(this);
-        tvTitle.setText("PRISM-V ADVANCED TOOLBOX");
+        tvTitle.setText("PRISM-V VIDEO TOOLBOX");
         tvTitle.setTextColor(Color.WHITE);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         tvTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
         root.addView(tvTitle);
 
         TextView tvSub = new TextView(this);
-        tvSub.setText("Specialized utilities to crop, trim, sanitize and allocate file budgets.");
+        tvSub.setText("Curated creator & security utilities to edit, trim, filter, sanitize, and budget videos.");
         tvSub.setTextColor(ThemeStyles.COLOR_CYAN_TEXT);
         tvSub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-        tvSub.setPadding(0, dp(4), 0, dp(14));
+        tvSub.setPadding(0, dp(4), 0, dp(10));
         root.addView(tvSub);
+
+        // 1. VIDEO EDITING & GEOMETRY
+        addToolboxCategoryHeader(root, "VIDEO EDITING & GEOMETRY");
 
         addToolboxCard(root,
                 "IN-APP VIDEO TRIMMER",
-                "Cut unwanted intro/outro frames to reduce size before compression.",
+                "Cut unwanted intro/outro frames to reduce size and isolate clips before compression.",
                 "LOSSLESS CUT", "#059669", "#10B981", "OPEN VIDEO TRIMMER",
                 v -> ToolboxDialogs.showTrimmerDialog(this, selectedVideoUri, sourceDurationSec, (s, e, cutOut) -> {
                     applyTrimSettings(s, e, cutOut);
                 }));
-
-        addToolboxCard(root,
-                "PRIVACY & METADATA SHIELD",
-                "Strip GPS coordinates, camera serial numbers, and device tags.",
-                "EXIF CLEANER", "#2563EB", "#38BDF8", "CONFIGURE PRIVACY SHIELD",
-                v -> ToolboxDialogs.showPrivacySanitizerDialog(this, selectedVideoUri));
-
-        addToolboxCard(root,
-                "EXACT FIT-TO-SIZE CALCULATOR",
-                "Target strict upload limits: WhatsApp (16MB/64MB), Discord (25MB), Gmail.",
-                "SMART BITRATE", "#D97706", "#F59E0B", "CALCULATE TARGET MB",
-                v -> ToolboxDialogs.showFitToSizeDialog(this, sourceDurationSec, (bitrate, mb) -> {
-                    applyCustomTargetBitrate(bitrate, mb);
-                }));
-
-        addToolboxCard(root,
-                "GALLERY DEDUPLICATION RADAR",
-                "Rabin Content-Defined Chunk scanner finds burst shots and duplicate takes.",
-                "RABIN CHUNKS", "#7C3AED", "#A855F7", "SCAN & RECLAIM STORAGE",
-                v -> ToolboxDialogs.showDeduplicationRadar(this));
-
-        addToolboxCard(root,
-                "GOOGLE GEMINI 1.5 FLASH AI COPILOT",
-                "100% Real Google Gemini AI assistant with live chat, video DNA context and 1-tap preset application.",
-                "GEMINI FLASH", "#4338CA", "#A5B4FC", "LAUNCH GEMINI AI",
-                v -> openGeminiCopilot());
-
-        addToolboxCard(root,
-                "SAVED VIDEOS EXPLORER & VAULT",
-                "Browse all compressed videos on chip in Movies/Prism-V, play in gallery, share, or compare in Duo.",
-                "PUBLIC VAULT", "#0E7490", "#06B6D4", "EXPLORE SAVED VIDEOS",
-                v -> CompressedVideosView.showLibraryDialog(this, record -> {
-                    if (record.isCompressedFileExisting()) {
-                        switchTab(1);
-                        if (duoPlayerView != null) {
-                            duoPlayerView.loadFromHistoryRecord(record);
-                        }
-                    }
-                }));
-
-        addToolboxCard(root,
-                "VIDEO CLIP MERGER & STITCHER",
-                "Combine multiple takes with Media3 auto-normalization and 50ms audio crossfades.",
-                "MEDIA3 COMPOSITION", "#0284C7", "#38BDF8", "OPEN CLIP MERGER",
-                v -> ToolboxDialogs.showMergerDialog(this, batchVideoList));
-
-        addToolboxCard(root,
-                "FRAME GRABBER & GIF/WEBP STUDIO",
-                "Extract Ultra HDR JPEG/AVIF still photos and generate animated WebP/GIF stickers.",
-                "FRAME & GIF", "#D97706", "#F59E0B", "LAUNCH STUDIO",
-                v -> ToolboxDialogs.showFrameAndGifStudioDialog(this, selectedVideoUri));
-
-        addToolboxCard(root,
-                "PRIVACY BLUR & REDACTION BRUSH",
-                "Motion-tracked GPU bounding boxes to blur bystander faces, plates and text.",
-                "GPU REDACTION", "#DC2626", "#F87171", "OPEN REDACTION BRUSH",
-                v -> ToolboxDialogs.showPrivacyBlurDialog(this, selectedVideoUri));
-
-        addToolboxCard(root,
-                "HDR-TO-SDR & ACES TONE-MAPPER",
-                "Convert 10-bit HDR10/Dolby Vision to vibrant 8-bit SDR without gray wash-out.",
-                "ACES FILMIC", "#7C3AED", "#C084FC", "APPLY TONE-MAPPER",
-                v -> ToolboxDialogs.showColorToneMapDialog(this, selectedVideoUri));
-
-        addToolboxCard(root,
-                "HOT-FOLDER & LOCAL PC/NAS TRANSFER",
-                "Zero-cloud Wi-Fi HTTP/WebDAV/SMB server & folder auto-optimization watcher.",
-                "LOCAL NAS", "#0D9488", "#2DD4BF", "OPEN TRANSFER & WATCHER",
-                v -> ToolboxDialogs.showLanNasTransferDialog(this));
-
-        addToolboxCard(root,
-                "ACTIVE BATCH QUEUE MANAGER",
-                "Multi-video compression queue with per-item pause/skip and dynamic disk guard.",
-                "BATCH QUEUE", "#2563EB", "#60A5FA", "VIEW ACTIVE QUEUE",
-                v -> ToolboxDialogs.showBatchQueueDialog(this, batchVideoList));
-
-        addToolboxCard(root,
-                "30-DAY TRASH & BIOMETRIC VAULT",
-                "Safe 30-day original recovery net + biometric encrypted private storage.",
-                "SAFE VAULT", "#4F46E5", "#818CF8", "OPEN VAULT & TRASH",
-                v -> ToolboxDialogs.showTrashVaultDialog(this));
-
-        addToolboxCard(root,
-                "EBU R128 AUDIO ENHANCER & BOOSTER",
-                "Standardized broadcast loudness (-14 LUFS), +6dB anti-clip volume boost, and vocal presence lift.",
-                "EBU R128", "#059669", "#10B981", "ENHANCE AUDIO",
-                v -> ToolboxDialogs.showAudioEnhancerDialog(this, selectedVideoUri));
-
-        addToolboxCard(root,
-                "ON-CHIP SILICON CAPABILITY BENCHMARK",
-                "5-second hardware diagnostic verifying hardware video codecs, vector SIMD, and awarded Silicon Tier.",
-                "BENCHMARK", "#4F46E5", "#818CF8", "RUN BENCHMARK",
-                v -> ToolboxDialogs.showSiliconBenchmarkDialog(this));
-
-        addToolboxCard(root,
-                "CUSTOM WORKFLOW RECIPES & PRESETS",
-                "Save, load, and QR-share encoding presets for WhatsApp, Discord, YouTube, and Archival.",
-                "RECIPES", "#0284C7", "#38BDF8", "MANAGE PRESETS",
-                v -> ToolboxDialogs.showPresetManagerDialog(this));
-
-        addToolboxCard(root,
-                "SYSTEM HARDWARE & THERMAL TELEMETRY",
-                "Real-time RSS working RAM gauge, CPU cluster dispatch, ADPF thermal headroom, and power limits.",
-                "TELEMETRY", "#D97706", "#F59E0B", "OPEN TELEMETRY",
-                v -> ToolboxDialogs.showSystemResourceManagerDialog(this));
-
-        addToolboxCard(root,
-                "SYSTEM OS INTEGRATION MANAGER",
-                "Android 16 ProgressStyle status bar live chip, Picture-in-Picture window, and foldable tabletop.",
-                "OS INTEGRATION", "#0D9488", "#2DD4BF", "CONFIGURE INTEGRATION",
-                v -> ToolboxDialogs.showSystemIntegrationDialog(this));
-
-        addToolboxCard(root,
-                "PRISM 120Hz CINEMA PLAYER",
-                "Cinema viewport with live AI Track-2 Cool-chic neural residual toggle, 8x zoom, and frame stepper.",
-                "CINEMA PLAYER", "#7C3AED", "#A855F7", "OPEN CINEMA PLAYER",
-                v -> ToolboxDialogs.showPrismPlayerDialog(this, selectedVideoUri));
-
-        addToolboxCard(root,
-                "FIRST-LAUNCH ONBOARDING & SILICON CALIBRATION",
-                "Zero-permission privacy promise, 3-second hardware micro-benchmark, and Persona tier selector.",
-                "CALIBRATION", "#0284C7", "#00E5FF", "RUN CALIBRATION",
-                v -> ToolboxDialogs.showOnboardingCalibrationDialog(this, null));
-
-        addToolboxCard(root,
-                "AUDIO & SUBTITLE STUDIO",
-                "Extract audio to Opus/M4A/MP3/FLAC, transcode bitrates, and inject soft or burned-in subtitles.",
-                "AUDIO & SUBS", "#065F46", "#10B981", "OPEN AUDIO STUDIO",
-                v -> ToolboxDialogs.showAudioSubtitleDialog(this, selectedVideoUri));
 
         addToolboxCard(root,
                 "TRANSFORM & GEOMETRY STUDIO",
@@ -1717,13 +1606,116 @@ public class MainActivity extends Activity {
                 }));
 
         addToolboxCard(root,
-                "SYSTEM PREFERENCES & SETTINGS",
-                "Configure 52 granular engine, audio, thermal, notification and privacy rules.",
-                "DATASTORE", "#475569", "#94A3B8", "OPEN PREFERENCES",
-                v -> switchTab(4));
+                "VIDEO CLIP MERGER & STITCHER",
+                "Combine multiple takes with Media3 auto-normalization and 50ms audio crossfades.",
+                "MEDIA3 COMPOSITION", "#0284C7", "#38BDF8", "OPEN CLIP MERGER",
+                v -> ToolboxDialogs.showMergerDialog(this, batchVideoList));
+
+        addToolboxCard(root,
+                "FRAME GRABBER & GIF/WEBP STUDIO",
+                "Extract Ultra HDR JPEG/AVIF still photos and generate animated WebP/GIF stickers.",
+                "FRAME & GIF", "#D97706", "#F59E0B", "LAUNCH STUDIO",
+                v -> ToolboxDialogs.showFrameAndGifStudioDialog(this, selectedVideoUri));
+
+        // 2. COMPRESSION & TARGET SIZING
+        addToolboxCategoryHeader(root, "COMPRESSION & TARGET SIZING");
+
+        addToolboxCard(root,
+                "EXACT FIT-TO-SIZE CALCULATOR",
+                "Target strict upload limits: WhatsApp (16MB/64MB), Discord (25MB), and Gmail.",
+                "SMART BITRATE", "#D97706", "#F59E0B", "CALCULATE TARGET MB",
+                v -> ToolboxDialogs.showFitToSizeDialog(this, sourceDurationSec, (bitrate, mb) -> {
+                    applyCustomTargetBitrate(bitrate, mb);
+                }));
+
+        addToolboxCard(root,
+                "CUSTOM WORKFLOW RECIPES & PRESETS",
+                "Save, load, and QR-share encoding presets for WhatsApp, Discord, YouTube, and Archival.",
+                "RECIPES", "#0284C7", "#38BDF8", "MANAGE PRESETS",
+                v -> ToolboxDialogs.showPresetManagerDialog(this));
+
+        // 3. AUDIO & SUBTITLES
+        addToolboxCategoryHeader(root, "AUDIO & SUBTITLES");
+
+        addToolboxCard(root,
+                "AUDIO & SUBTITLE STUDIO",
+                "Extract audio to Opus/M4A/MP3/FLAC, transcode bitrates, and inject soft or burned-in subtitles.",
+                "AUDIO & SUBS", "#065F46", "#10B981", "OPEN AUDIO STUDIO",
+                v -> ToolboxDialogs.showAudioSubtitleDialog(this, selectedVideoUri));
+
+        addToolboxCard(root,
+                "EBU R128 AUDIO ENHANCER & BOOSTER",
+                "Standardized broadcast loudness (-14 LUFS), +6dB anti-clip volume boost, and vocal presence lift.",
+                "EBU R128", "#059669", "#10B981", "ENHANCE AUDIO",
+                v -> ToolboxDialogs.showAudioEnhancerDialog(this, selectedVideoUri));
+
+        // 4. COLOR & PRIVACY PROTECTION
+        addToolboxCategoryHeader(root, "COLOR & PRIVACY PROTECTION");
+
+        addToolboxCard(root,
+                "HDR-TO-SDR & ACES TONE-MAPPER",
+                "Convert 10-bit HDR10/Dolby Vision to vibrant 8-bit SDR without gray wash-out.",
+                "ACES FILMIC", "#7C3AED", "#C084FC", "APPLY TONE-MAPPER",
+                v -> ToolboxDialogs.showColorToneMapDialog(this, selectedVideoUri));
+
+        addToolboxCard(root,
+                "PRIVACY & METADATA SHIELD",
+                "Strip GPS coordinates, camera serial numbers, and device tags before sharing.",
+                "EXIF CLEANER", "#2563EB", "#38BDF8", "CONFIGURE PRIVACY SHIELD",
+                v -> ToolboxDialogs.showPrivacySanitizerDialog(this, selectedVideoUri));
+
+        addToolboxCard(root,
+                "PRIVACY BLUR & REDACTION BRUSH",
+                "Motion-tracked GPU bounding boxes to blur bystander faces, plates, and sensitive text.",
+                "GPU REDACTION", "#DC2626", "#F87171", "OPEN REDACTION BRUSH",
+                v -> ToolboxDialogs.showPrivacyBlurDialog(this, selectedVideoUri));
+
+        // 5. STORAGE & TRANSFERS
+        addToolboxCategoryHeader(root, "STORAGE & TRANSFERS");
+
+        addToolboxCard(root,
+                "GALLERY DEDUPLICATION RADAR",
+                "Rabin Content-Defined Chunk scanner finds burst shots and duplicate takes to reclaim storage.",
+                "RABIN CHUNKS", "#7C3AED", "#A855F7", "SCAN & RECLAIM STORAGE",
+                v -> ToolboxDialogs.showDeduplicationRadar(this));
+
+        addToolboxCard(root,
+                "HOT-FOLDER & LOCAL PC/NAS TRANSFER",
+                "Zero-cloud Wi-Fi HTTP/WebDAV/SMB server & folder auto-optimization watcher.",
+                "LOCAL NAS", "#0D9488", "#2DD4BF", "OPEN TRANSFER & WATCHER",
+                v -> ToolboxDialogs.showLanNasTransferDialog(this));
+
+        addToolboxCard(root,
+                "30-DAY TRASH & BIOMETRIC VAULT",
+                "Safe 30-day original recovery net + biometric encrypted private storage.",
+                "SAFE VAULT", "#4F46E5", "#818CF8", "OPEN VAULT & TRASH",
+                v -> ToolboxDialogs.showTrashVaultDialog(this));
 
         scroll.addView(root);
         return scroll;
+    }
+
+    private void addToolboxCategoryHeader(LinearLayout parent, String title) {
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dp(2), dp(16), dp(2), dp(6));
+
+        View pill = new View(this);
+        LinearLayout.LayoutParams pillParams = new LinearLayout.LayoutParams(dp(3), dp(14));
+        pillParams.setMargins(0, 0, dp(8), 0);
+        pill.setLayoutParams(pillParams);
+        pill.setBackgroundColor(ThemeStyles.COLOR_CYAN_PRIMARY);
+        header.addView(pill);
+
+        TextView tv = new TextView(this);
+        tv.setText(title);
+        tv.setTextColor(ThemeStyles.COLOR_CYAN_TEXT);
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        tv.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
+        header.addView(tv);
+
+        parent.addView(header);
     }
 
     // ==========================================
@@ -1916,12 +1908,28 @@ public class MainActivity extends Activity {
         cardBatchQueue.setLayoutParams(lp);
         cardBatchQueue.setVisibility(View.GONE);
 
+        LinearLayout rowBatchHeader = new LinearLayout(this);
+        rowBatchHeader.setOrientation(LinearLayout.HORIZONTAL);
+        rowBatchHeader.setGravity(Gravity.CENTER_VERTICAL);
+
         tvBatchHeader = new TextView(this);
         tvBatchHeader.setText("BATCH QUEUE (0 Videos)");
         tvBatchHeader.setTextColor(Color.WHITE);
         tvBatchHeader.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         tvBatchHeader.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
-        cardBatchQueue.addView(tvBatchHeader);
+        rowBatchHeader.addView(tvBatchHeader, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        TextView tvManageQueue = new TextView(this);
+        tvManageQueue.setText("MANAGE QUEUE ↗");
+        tvManageQueue.setTextColor(ThemeStyles.COLOR_CYAN_TEXT);
+        tvManageQueue.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        tvManageQueue.setTypeface(Typeface.DEFAULT_BOLD);
+        tvManageQueue.setPadding(dp(8), dp(4), dp(8), dp(4));
+        tvManageQueue.setBackground(createRoundedDrawable(Color.parseColor("#091A30"), ThemeStyles.COLOR_CYAN_PRIMARY, dp(1), dp(8)));
+        tvManageQueue.setOnClickListener(v -> ToolboxDialogs.showBatchQueueDialog(this, batchVideoList));
+        rowBatchHeader.addView(tvManageQueue);
+
+        cardBatchQueue.addView(rowBatchHeader);
 
         tvBatchSummary = new TextView(this);
         tvBatchSummary.setText("Total Batch Size: 0 MB • Tap a video to inspect its DNA:");
@@ -4405,7 +4413,7 @@ public class MainActivity extends Activity {
     public void onConfigurationChanged(android.content.res.Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
         if (duoPlayerView != null) {
-            duoPlayerView.post(() -> duoPlayerView.applyUnifiedTransform());
+            duoPlayerView.post(() -> duoPlayerView.onViewportResized());
         }
     }
 

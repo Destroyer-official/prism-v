@@ -205,6 +205,51 @@ public final class PrismStorageManager {
         return list;
     }
 
+    public static final long TRASH_RETENTION_MS = 30L * 24 * 60 * 60 * 1000L; // 30 Days
+
+    /**
+     * Calculates days remaining for a trashed file before 30-day automatic purge.
+     */
+    public static int getDaysRemainingInTrash(File trashedFile) {
+        if (trashedFile == null || !trashedFile.exists()) return 0;
+        long ageMs = System.currentTimeMillis() - trashedFile.lastModified();
+        long remainingMs = TRASH_RETENTION_MS - ageMs;
+        if (remainingMs <= 0) return 0;
+        return (int) Math.ceil((double) remainingMs / (24L * 60 * 60 * 1000L));
+    }
+
+    /**
+     * Automatically purges trashed files older than 30 days.
+     */
+    public static int cleanupExpiredTrash(Context context) {
+        int purged = 0;
+        long cutoff = System.currentTimeMillis() - TRASH_RETENTION_MS;
+        File trashFolder = getTrashFolder(context);
+        if (trashFolder.exists() && trashFolder.isDirectory()) {
+            File[] files = trashFolder.listFiles();
+            if (files != null) {
+                for (File f : files) {
+                    if (f.isFile() && f.lastModified() < cutoff) {
+                        if (f.delete()) purged++;
+                    }
+                }
+            }
+        }
+        return purged;
+    }
+
+    /**
+     * Returns total bytes currently occupied by the 30-day Trash Vault.
+     */
+    public static long getTrashTotalSizeBytes(Context context) {
+        long total = 0;
+        List<File> files = listTrashVideos(context);
+        for (File f : files) {
+            total += f.length();
+        }
+        return total;
+    }
+
     /**
      * Safely moves an original video file into the 30-day Trash Vault.
      */
@@ -229,6 +274,13 @@ public final class PrismStorageManager {
                 }
                 file.delete();
                 ok = true;
+            }
+            if (ok) {
+                dest.setLastModified(System.currentTimeMillis());
+                try {
+                    MediaScannerConnection.scanFile(context.getApplicationContext(),
+                            new String[]{file.getAbsolutePath()}, null, null);
+                } catch (Exception ignored) {}
             }
             return ok;
         } catch (Exception e) {

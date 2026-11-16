@@ -270,13 +270,25 @@ public class PrismMediaProcessingService extends Service {
                 }
 
                 totalOriginalBytes += inFile.length();
-                String itemName = inFile.getName();
+                String rawItemName = inFile.getName();
+                if (rawItemName != null && rawItemName.startsWith("input_")) {
+                    rawItemName = rawItemName.substring("input_".length());
+                }
+                final String itemName = rawItemName;
 
                 // Target Output in Movies/Prism-V/
                 String ext = "MP4".equalsIgnoreCase(outputFormat) ? ".mp4" :
                              "MKV".equalsIgnoreCase(outputFormat) ? ".mkv" :
                              "MOV".equalsIgnoreCase(outputFormat) ? ".mov" : ".mp4";
-                File outFile = PrismStorageManager.getOutputFile(this, itemName, ext);
+                String singleOutputPath = (totalVideos == 1) ? intent.getStringExtra(EXTRA_OUTPUT_PATH) : null;
+                File outFile;
+                if (singleOutputPath != null && !singleOutputPath.trim().isEmpty()) {
+                    outFile = new File(singleOutputPath);
+                    File parent = outFile.getParentFile();
+                    if (parent != null && !parent.exists()) parent.mkdirs();
+                } else {
+                    outFile = PrismStorageManager.getOutputFile(this, itemName, ext);
+                }
                 String outPath = outFile.getAbsolutePath();
 
                 Log.i(TAG, String.format(Locale.US, "[FGS] Transcoding [%d/%d]: %s -> %s", itemIdx, totalVideos, itemName, outPath));
