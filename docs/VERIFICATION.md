@@ -2,7 +2,7 @@
 
 This document records the official verification receipts, hardware test results, and deterministic test executions for the Prism-V media engine and Android application across all 6 Research Frontiers.
 
-**Target Release:** `v1.0.0` (Production Gold)  
+**Target Release:** `v1.0.2` (Production Gold)  
 **Latest Verification Date:** 2026-11-16  
 **Verification Scope:** Native C++20 Core (87/87 Tests), CTest Suites (7/7 Suites), Java JNI Interop, Physical Hardware Android 16 (Samsung SM-E156B) Live Execution & Screen Proofs.
 
@@ -203,16 +203,19 @@ All screenshots captured via direct ADB framebuffer read on `SM-E156B`:
 | **SC-04** | Deduplication Radar | [screenshot_dedup_radar_card.png](file:///c:/Users/des/OneDrive/Desktop/video_compression/screenshot_dedup_radar_card.png) | 278.9 KB | Screen 09 Radar Dialog scanning 18 videos, detecting 4 burst takes, offering 414.3 MB instant storage recovery. |
 | **SC-05** | Rabin-Mesh Ingest | [screenshot_mesh_vault_dedup_success.png](file:///c:/Users/des/OneDrive/Desktop/video_compression/screenshot_mesh_vault_dedup_success.png) | 257.0 KB | Vault ingestion commitment with transparent VFS virtual proxy linkage. |
 | **SC-06** | Matrix Diagnostics | [screenshot_04_tools_dedup.png](file:///c:/Users/des/OneDrive/Desktop/video_compression/screenshot_04_tools_dedup.png) | 241.5 KB | Matrix Diagnostics displaying all 6 device self-tests PASSED in emerald green. |
+| **SC-07** | Prism-Spatial 6-DoF Deck | [docs/assets/screenshots/09_spatial_6dof_deck.png](file:///c:/Users/des/OneDrive/Desktop/video_compression/docs/assets/screenshots/09_spatial_6dof_deck.png) | 416.3 KB | Duo Comparison Deck in Spatial 6-DoF mode with live attitude HUD, touch orbit, and 4DGS splat telemetry. |
+| **SC-08** | Prism-Spatial Studio | [docs/assets/screenshots/10_spatial_studio.png](file:///c:/Users/des/OneDrive/Desktop/video_compression/docs/assets/screenshots/10_spatial_studio.png) | 275.4 KB | Spatial 4DGS Studio dialog with multi-lens camera radar, hyper-lattice VQ, and direct Duo Deck launcher. |
+| **SC-09** | XR Stereoscopic 3D Mode | [screenshot_spatial_xr_stereo.png](file:///c:/Users/des/OneDrive/Desktop/video_compression/screenshot_spatial_xr_stereo.png) | 410.0 KB | Binocular stereoscopic VR/XR eye-pair rendering with inter-pupillary offset in Duo Deck. |
 
 ---
 
 ## 6. Official Production Release Artifact
 
 ```text
-Artifact Path: release/prism-v-v1.0.0.apk
+Artifact Path: release/prism-v-v1.0.2.apk (and release/prism-v-v1.0.0.apk)
 Package: com.prismv
-Version Name: 1.0.0
-Version Code: 1
+Version Name: 1.0.2
+Version Code: 2
 Size: 628,047 bytes (613.3 KB)
 Min SDK: 26 (Android 8.0 Oreo)
 Target SDK: 36 (Android 16 Preview)

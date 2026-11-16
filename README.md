@@ -4,17 +4,17 @@
 
 # Prism-V
 
-**Next-Generation Hardware Video Compression & Forensic Inspection Engine**
+**Next-Generation Hardware Video Compression, 4D Gaussian Splatting & Forensic Inspection Engine**
 
 [![CI Build](https://github.com/Destroyer-official/prism-v/actions/workflows/ci.yml/badge.svg)](https://github.com/Destroyer-official/prism-v/actions/workflows/ci.yml)
 [![Latest Release](https://img.shields.io/github/v/release/Destroyer-official/prism-v?color=0ea5e9&label=Release)](https://github.com/Destroyer-official/prism-v/releases/latest)
-[![APK Download](https://img.shields.io/badge/Download-APK%20(v1.0.0)-success?logo=android)](https://github.com/Destroyer-official/prism-v/releases/download/v1.0.0/prism-v-v1.0.0.apk)
+[![APK Download](https://img.shields.io/badge/Download-APK%20(v1.0.2)-success?logo=android)](https://github.com/Destroyer-official/prism-v/releases/download/v1.0.2/prism-v-v1.0.2.apk)
 [![C++ Standard](https://img.shields.io/badge/C%2B%2B-20-blue.svg?logo=cplusplus)](CMakeLists.txt)
 [![Android Target](https://img.shields.io/badge/Android-API%2026--36-3DDC84.svg?logo=android)](android_app/apk_root/AndroidManifest.xml)
 [![16 KB Page Aligned](https://img.shields.io/badge/Memory-16%20KiB%20Aligned-purple.svg)](docs/MATHEMATICAL_INVARIANTS.md)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-*A unified, production-grade video compression and comparison platform combining a deterministic C++20 core engine, hardware MediaCodec acceleration, and an on-device forensic analysis suite.*
+*A unified, production-grade video compression and spatial computing platform combining a deterministic C++20 core engine, 4D Gaussian Splatting (Prism-Spatial 6-DoF), hardware MediaCodec acceleration, and an on-device forensic analysis suite spanning Frontiers 1–6.*
 
 [Download Latest APK](https://github.com/Destroyer-official/prism-v/releases/latest) • [Explore Architecture](docs/ARCHITECTURE.md) • [Mathematical Invariants](docs/MATHEMATICAL_INVARIANTS.md) • [Verification Receipts](docs/VERIFICATION.md)
 
@@ -33,22 +33,25 @@ It bridges low-level high-performance computing in modern **C++20** with an adva
 │                     Prism-V Unified Media Architecture                  │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  Android Presentation Layer                                             │
-│    • Duo Comparison Deck (Atomic Sync, 5 Display Modes, Frame Stepping) │
+│    • Duo Comparison Deck (Atomic Sync, 6 Modes, Spatial 6-DoF & Silicon)│
+│    • Multi-Camera Radar (Camera2 API, Wide/Tele/Ultra/ToF Array)        │
 │    • Hardware Telemetry HUD (FPS, Bitrate, Thermals, Energy Envelope)   │
 │    • Forensic Toolbox (Subframe Trimming, Fit-to-Size, Subject Blur)    │
+│    • Prism-Spatial Studio (4DGS Hyper-Lattice VQ & Vulkan Rasterizer)   │
 │    • Gemini AI Copilot (Context-Aware Compression Diagnostics)          │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  Service & Background Processing                                        │
 │    • PrismMediaProcessingService (Foreground Service + Notification)    │
 │    • Hardware MediaCodec Transcoder (HEVC / AVC / AV1 Pipeline)         │
+│    • RabinMeshWorker & SpatialProcessingWorker Task Queues              │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  Native C++20 Engine (prism_core) via JNI Bridge                        │
-│    • rANS-8 SIMD Entropy Engine (8-way Interleaved Renormalization)     │
-│    • BBR Rate Controller (Integer Probability Models, Zero-Expansion)   │
-│    • PSC Codec (Reversible YCoCg-R + 2D LeGall 5/3 Wavelets)            │
-│    • .pvloss Container Engine (CRC32C Framing, O(1) Seek Index)         │
-│    • Content-Defined Rabin Vault (Deduplication + SHA-256 Hashes)       │
-│    • Atomic Transactions & VFS Proxy (Rollback Safe Replacements)       │
+│    • Frontier 1: BBR 2.0 SSG-CR4 Spectral Entropy & SIMD-16 rANS        │
+│    • Frontier 2: PSC 2.0 Reversible Wavelet & Lossless Sensor RAW       │
+│    • Frontier 3: Generative Neural Residuals (BIS-RFSQ & NeRV)          │
+│    • Frontier 4: Prism-Spatial 4DGS (Chebyshev Trajectories, 91.3M/s)   │
+│    • Frontier 5: Silicon-Fused Zero-Copy Ring & DMA AFGS1/Lanczos       │
+│    • Frontier 6: Rabin-Mesh Semantic Deduplication Vault & O(1) Seek    │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  OS & Hardware (Android 8.0 - 16, 16 KiB Page Size, Linux, Windows)     │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -66,18 +69,24 @@ It bridges low-level high-performance computing in modern **C++20** with an adva
 |:---:|:---:|
 | <img src="docs/assets/screenshots/03_toolbox_hub.png" width="400" alt="Forensic Toolbox" /><br/>*Subframe trimmer, bit budget allocator, and privacy shielding tools.* | <img src="docs/assets/screenshots/08_matrix_dashboard.png" width="400" alt="Developer Matrix" /><br/>*Real-time encoder latency histograms, memory page allocations, and codec capabilities.* |
 
+| Prism-Spatial 6-DoF Duo Deck | Prism-Spatial 4DGS Studio |
+|:---:|:---:|
+| <img src="docs/assets/screenshots/09_spatial_6dof_deck.png" width="400" alt="Prism-Spatial 6-DoF Duo Deck" /><br/>*Frontier 4 6-DoF spatial video mode, interactive 360° orbit attitude HUD, and stereoscopic XR eye view.* | <img src="docs/assets/screenshots/10_spatial_studio.png" width="400" alt="Prism-Spatial 4DGS Studio" /><br/>*Multi-lens camera radar (Wide/Tele/Ultra/ToF array), hyper-lattice VQ, and 91.3M splats/sec Vulkan compute.* |
+
 ---
 
 ## Core Capabilities
 
 ### 1. Duo Comparison Deck
 - **Zero-Drift Atomic Sync**: Utilizes Android's hardware `MediaPlayer.SEEK_CLOSEST` targeting exact master stream timestamps, ensuring both decoders freeze and resume on the exact identical frame ($\Delta = 0\text{ ms}$).
-- **Five Interactive Comparison Modes**:
+- **Six Interactive Comparison Modes**:
   1. **Curtain Mode**: Fluid vertical/horizontal wipe divider with parent-touch intercept suppression (`requestDisallowInterceptTouchEvent`).
   2. **Dual Mode**: Side-by-side split screen with aspect-ratio preservation and custom zoom matrices.
   3. **Peek Mode**: Touch-and-hold instant reveal of original uncompressed frames.
   4. **Solo Mode**: Quick single-tap toggling between source and compressed outputs.
   5. **Fullscreen Cinema**: High-immersion panoramic inspection mode with auto-hiding controls.
+  6. **Spatial 6-DoF Mode**: Interactive 3D touch orbital panning, binocular XR stereoscopic 3D mode, and real-time attitude telemetry HUD ($\phi, \theta, \psi, \text{zoom}, \Delta\text{lat}$) driven by 4D Gaussian Splatting.
+  7. **Silicon Mode**: Hardware-fused zero-copy direct surface rendering and DMA ring buffer validation.
 - **Precision Subframe Stepping**: Step forward and backward frame-by-frame at exact intervals ($1/30\text{s}$ and $1/60\text{s}$).
 - **Independent & Synchronous Speed Control**: Variable playback rates ($0.25\times$, $0.5\times$, $1.0\times$, $1.5\times$, $2.0\times$) with state-safe parameter application.
 
@@ -149,11 +158,11 @@ It bridges low-level high-performance computing in modern **C++20** with an adva
 
 Download the production-signed, zipalign-verified APK directly from our releases:
 
-👉 **[Download Prism-V v1.0.0 APK](https://github.com/Destroyer-official/prism-v/releases/download/v1.0.0/prism-v-v1.0.0.apk)**
+👉 **[Download Prism-V v1.0.2 APK](https://github.com/Destroyer-official/prism-v/releases/download/v1.0.2/prism-v-v1.0.2.apk)**
 
 Install via ADB:
 ```bash
-adb install -r release/prism-v-v1.0.0.apk
+adb install -r release/prism-v-v1.0.2.apk
 adb shell am start -n com.prismv/.ui.MainActivity
 ```
 
@@ -234,12 +243,13 @@ See [docs/MATHEMATICAL_INVARIANTS.md](docs/MATHEMATICAL_INVARIANTS.md) for full 
 Prism-V is verified against real hardware targets and continuous integration environments:
 
 - **Host Matrix**: Windows 11 x64 (MSVC 19.44), Ubuntu 24.04 LTS (GCC 13, Clang 16), macOS Sonoma (AppleClang 15).
-- **Physical Device Target**: Samsung Galaxy SM-E156B (Android 14, API 34).
+- **Physical Device Target**: Samsung Galaxy SM-E156B (Android 16 Preview, API Level 36 / API 34+).
 - **Duo Player Live Test Results**:
   - **Frame Desync Delta**: $\Delta = 0\text{ ms}$ on pause (Decoders synchronizing on exact frame numbers: e.g. Frame 38, 179, 3284).
   - **Curtain Divider**: Zero touch-locking from 16% to 74% continuous wipe gestures.
-  - **Mode Switching**: Zero black frame artifacts across Curtain, Dual, Peek, Solo, and Cinema transitions.
-- **Unit Test Coverage**: 39 native test suites passing 100% with zero failures.
+  - **Spatial 6-DoF**: Zero stutter 3D orbital touch navigation, stereoscopic binocular mode, and attitude HUD telemetry.
+  - **Mode Switching**: Zero black frame artifacts across Curtain, Dual, Peek, Solo, Spatial, Silicon, and Cinema transitions.
+- **Unit Test Coverage**: 87 native tests passing 100% with zero failures (8/8 invariant audit checks verified).
 
 Full test logs, ADB broadcast instructions, and hardware receipts are cataloged in [docs/VERIFICATION.md](docs/VERIFICATION.md).
 
