@@ -8,7 +8,7 @@
 
 [![CI Build](https://github.com/Destroyer-official/prism-v/actions/workflows/ci.yml/badge.svg)](https://github.com/Destroyer-official/prism-v/actions/workflows/ci.yml)
 [![Latest Release](https://img.shields.io/github/v/release/Destroyer-official/prism-v?color=0ea5e9&label=Release)](https://github.com/Destroyer-official/prism-v/releases/latest)
-[![APK Download](https://img.shields.io/badge/Download-APK%20(v1.0.2)-success?logo=android)](https://github.com/Destroyer-official/prism-v/releases/download/v1.0.2/prism-v-v1.0.2.apk)
+[![APK Download](https://img.shields.io/badge/Download-APK%20(v1.1.1)-success?logo=android)](https://github.com/Destroyer-official/prism-v/releases/download/v1.1.1/prism-v-v1.1.1.apk)
 [![C++ Standard](https://img.shields.io/badge/C%2B%2B-20-blue.svg?logo=cplusplus)](CMakeLists.txt)
 [![Android Target](https://img.shields.io/badge/Android-API%2026--36-3DDC84.svg?logo=android)](android_app/apk_root/AndroidManifest.xml)
 [![16 KB Page Aligned](https://img.shields.io/badge/Memory-16%20KiB%20Aligned-purple.svg)](docs/MATHEMATICAL_INVARIANTS.md)
@@ -158,11 +158,11 @@ It bridges low-level high-performance computing in modern **C++20** with an adva
 
 Download the production-signed, zipalign-verified APK directly from our releases:
 
-👉 **[Download Prism-V v1.0.2 APK](https://github.com/Destroyer-official/prism-v/releases/download/v1.0.2/prism-v-v1.0.2.apk)**
+👉 **[Download Prism-V v1.1.1 APK](https://github.com/Destroyer-official/prism-v/releases/download/v1.1.1/prism-v-v1.1.1.apk)**
 
 Install via ADB:
 ```bash
-adb install -r release/prism-v-v1.0.2.apk
+adb install -r release/prism-v-v1.1.1.apk
 adb shell am start -n com.prismv/.ui.MainActivity
 ```
 
