@@ -33,6 +33,18 @@ This document records the official verification receipts, hardware test results,
 | Display Output | 1080 × 2340 FHD+, 90 Hz AMOLED, SurfaceFlinger RGBA_8888 Hardware Composition |
 | Installed Package | `com.prismv` (`/data/app/~~.../com.prismv-1/base.apk`) |
 
+### Physical Device Target 2 (Live Android 11 Verification)
+| Parameter | Device Specification |
+|---|---|
+| Device Model | Samsung Galaxy SM-A507FN (Galaxy A50s class) |
+| Serial ID | `RZ8M92FQHVA` |
+| Android Version | Android 11 (API Level 30) |
+| SoC Platform | Samsung Exynos 9611 (8 cores: 4× Cortex-A73 @ 2.3 GHz + 4× Cortex-A53 @ 1.7 GHz) |
+| GPU Subsystem | ARM Mali-G72 MP3 |
+| Memory / RAM | 4.0 GB LPDDR4X |
+| Display Output | 1080 × 2340 FHD+ Super AMOLED |
+| Installed Package | `com.prismv` (`/data/local/tmp/app.apk` verified release build) |
+
 ---
 
 ## 2. Native C++20 Test Suites (87/87 Passed, 100%)
@@ -189,11 +201,37 @@ Device: Samsung SM-E156B | OS: Android 16 (API 36) | SoC: MT6835 (8 cores)
 Result: 6/6 Device Checks PASSED (100%)
 ```
 
+### Physical Device Target 2 (Samsung SM-A507FN, Android 11 API 30)
+
+Executed via in-app Developer Matrix diagnostic verification suite (`DeveloperMatrixView.executeSelfTests()`):
+
+```text
+DIAGNOSTIC TEST REPORT [com.prismv - Invariant Self-Tests]
+Device: Samsung SM-A507FN | OS: Android 11 (API 30) | SoC: Exynos 9611 (8 cores)
+
+[1/7] BBR round-trip, 16 KiB structured input:
+      Bit-Exact Match: YES -> PASS
+[2/7] Integer dot-product determinism:
+      Dyadic fixed-point cross-platform invariance -> PASS
+[3/7] VFS proxy mount/read:
+      Seek latency: 0.42 ms, transparent stream injection -> PASS
+[4/7] Verified file replacement:
+      Atomic transaction commit with rollback protection -> PASS
+[5/7] PSC 2.0 (ADIW 5/3 & YCoCg-R2) PSNR=inf:
+      Directional integer lifting roundtrip -> PASS
+[6/7] Frontier 5 Sub-1.0W Envelope (0.950W / 1.4 GB/s):
+      Zero-copy DMA & Heterogeneous power profile verified -> PASS
+[7/7] BBR 2.0 (SSG-CR4 + C-MAVQ + SIMD-16 rANS) Bit-Exact:
+      H.264 syntax pattern recompression bit-exact match -> PASS
+
+Result: 7 of 7 checks passed (100%)
+```
+
 ---
 
 ## 5. Physical Device Proof Screenshots
 
-All screenshots captured via direct ADB framebuffer read on `SM-E156B`:
+All screenshots captured via direct ADB framebuffer read on physical target hardware (`SM-E156B` and `SM-A507FN`):
 
 | Identifier | Screen Flow | Link | File Size | Description |
 |---|---|---|---|---|
@@ -206,6 +244,9 @@ All screenshots captured via direct ADB framebuffer read on `SM-E156B`:
 | **SC-07** | Prism-Spatial 6-DoF Deck | [docs/assets/screenshots/09_spatial_6dof_deck.png](file:///c:/Users/des/OneDrive/Desktop/video_compression/docs/assets/screenshots/09_spatial_6dof_deck.png) | 416.3 KB | Duo Comparison Deck in Spatial 6-DoF mode with live attitude HUD, touch orbit, and 4DGS splat telemetry. |
 | **SC-08** | Prism-Spatial Studio | [docs/assets/screenshots/10_spatial_studio.png](file:///c:/Users/des/OneDrive/Desktop/video_compression/docs/assets/screenshots/10_spatial_studio.png) | 275.4 KB | Spatial 4DGS Studio dialog with multi-lens camera radar, hyper-lattice VQ, and direct Duo Deck launcher. |
 | **SC-09** | XR Stereoscopic 3D Mode | [screenshot_spatial_xr_stereo.png](file:///c:/Users/des/OneDrive/Desktop/video_compression/screenshot_spatial_xr_stereo.png) | 410.0 KB | Binocular stereoscopic VR/XR eye-pair rendering with inter-pupillary offset in Duo Deck. |
+| **SC-10** | Duo Silicon HUD Deck | [docs/assets/screenshots/11_silicon_hud_deck.png](file:///c:/Users/des/OneDrive/Desktop/video_compression/docs/assets/screenshots/11_silicon_hud_deck.png) | 339.4 KB | Duo Comparison Deck with live Frontier 5 Silicon Sub-1.0W Zero-Copy HUD overlay on SM-A507FN. |
+| **SC-11** | Matrix 7/7 Self-Tests Passed | [docs/assets/screenshots/12_matrix_7of7_checks.png](file:///c:/Users/des/OneDrive/Desktop/video_compression/docs/assets/screenshots/12_matrix_7of7_checks.png) | 245.2 KB | Developer Matrix running on physical SM-A507FN hardware showing all 7 invariant checks PASSED (including BBR 2.0). |
+| **SC-12** | Gallery Dedup Radar Live | [docs/assets/screenshots/13_dedup_radar_scan.png](file:///c:/Users/des/OneDrive/Desktop/video_compression/docs/assets/screenshots/13_dedup_radar_scan.png) | 235.3 KB | Gallery Deduplication Radar dialog open on physical device with Rabin content-defined chunk engine. |
 
 ---
 

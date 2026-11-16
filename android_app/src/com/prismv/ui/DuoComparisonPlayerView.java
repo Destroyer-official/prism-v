@@ -692,6 +692,11 @@ public class DuoComparisonPlayerView extends LinearLayout {
         spatialOverlay.setVisibility(GONE);
         playerContainer.addView(spatialOverlay);
 
+        // Layer 6.6: Frontier 5 Silicon Power Profile & DMA HUD Overlay
+        siliconOverlay = createSiliconOverlay(context);
+        siliconOverlay.setVisibility(GONE);
+        playerContainer.addView(siliconOverlay);
+
         // Layer 7: Floating Zoom Indicator Badge
         tvZoomBadge = new TextView(context);
         tvZoomBadge.setText("1.0x (FIT)");
@@ -3053,7 +3058,10 @@ public class DuoComparisonPlayerView extends LinearLayout {
             case FRONTIER5_SILICON:
                 isSpatialActive = false;
                 if (spatialOverlay != null) spatialOverlay.setVisibility(GONE);
-                if (siliconOverlay != null) siliconOverlay.setVisibility(VISIBLE);
+                if (siliconOverlay != null) {
+                    siliconOverlay.setVisibility(VISIBLE);
+                    siliconOverlay.bringToFront();
+                }
                 containerCompressed.setVisibility(VISIBLE);
                 containerOriginal.setVisibility(VISIBLE);
                 dividerLine.setVisibility(VISIBLE);
@@ -4214,9 +4222,14 @@ public class DuoComparisonPlayerView extends LinearLayout {
     private LinearLayout createSiliconOverlay(Context context) {
         LinearLayout silicon = new LinearLayout(context);
         silicon.setOrientation(VERTICAL);
-        silicon.setPadding(dp(14), dp(12), dp(14), dp(12));
+        silicon.setPadding(dp(14), dp(8), dp(14), dp(8));
         silicon.setBackgroundColor(Color.parseColor("#E6050B18"));
         silicon.setGravity(Gravity.CENTER);
+
+        FrameLayout.LayoutParams siliconLp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        siliconLp.gravity = Gravity.BOTTOM;
+        silicon.setLayoutParams(siliconLp);
 
         // Title Row
         LinearLayout titleRow = new LinearLayout(context);

@@ -73,6 +73,10 @@ It bridges low-level high-performance computing in modern **C++20** with an adva
 |:---:|:---:|
 | <img src="docs/assets/screenshots/09_spatial_6dof_deck.png" width="400" alt="Prism-Spatial 6-DoF Duo Deck" /><br/>*Frontier 4 6-DoF spatial video mode, interactive 360° orbit attitude HUD, and stereoscopic XR eye view.* | <img src="docs/assets/screenshots/10_spatial_studio.png" width="400" alt="Prism-Spatial 4DGS Studio" /><br/>*Multi-lens camera radar (Wide/Tele/Ultra/ToF array), hyper-lattice VQ, and 91.3M splats/sec Vulkan compute.* |
 
+| Duo Silicon Sub-1.0W HUD Deck | Developer Matrix (7/7 Checks Passed) |
+|:---:|:---:|
+| <img src="docs/assets/screenshots/11_silicon_hud_deck.png" width="400" alt="Duo Silicon HUD Deck" /><br/>*Frontier 5 Silicon mode: live sub-1.0W heterogeneous SoC power breakdown (0.950W) and zero-copy DMA ring HUD.* | <img src="docs/assets/screenshots/12_matrix_7of7_checks.png" width="400" alt="Matrix 7/7 Checks Passed" /><br/>*Hardware diagnostics on physical device: 7 of 7 invariant checks passing (including Frontier 1 BBR 2.0 bit-exact).* |
+
 ---
 
 ## Core Capabilities

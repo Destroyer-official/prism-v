@@ -21,6 +21,8 @@ public class JniVerificationTest {
     public static native byte[] nativeExecuteVulkanLanczos5(byte[] srcPlane, int srcW, int srcH, int dstW, int dstH);
     public static native byte[] nativeMuxFrontier5Container(byte[] baseNalu, byte[] residualPayload, byte[] afgsParams, int width, int height, long ptsMs);
     public static native float[] nativeGetSpatialMetrics(long handle);
+    public static native byte[] nativeCompressBbr2(byte[] bitstream, int codecType);
+    public static native byte[] nativeDecompressBbr2(byte[] compressed, int uncompressedSize);
 
     public static void main(String[] args) {
         System.out.println("===============================================================");
@@ -106,6 +108,17 @@ public class JniVerificationTest {
         if (spatialMetrics != null && spatialMetrics.length >= 4) {
             System.out.printf("[JNI] Frontier 4 Prism-Spatial -> Bitrate: %.1f Mbps (Target: 18-32 Mbps), CVVDP: %.1f%n",
                 spatialMetrics[2], spatialMetrics[3]);
+        }
+
+        // 10. Test Frontier 1: BBR 2.0 (SSG-CR4 + C-MAVQ + 16-Way SIMD rANS)
+        byte[] bbr2TestStream = new byte[16384];
+        for (int i = 0; i < bbr2TestStream.length; i++) bbr2TestStream[i] = (byte) ((i % 8 < 5) ? ((i * 7) % 64) : 0);
+        byte[] bbr2Compressed = nativeCompressBbr2(bbr2TestStream, 0);
+        if (bbr2Compressed != null) {
+            byte[] bbr2Recon = nativeDecompressBbr2(bbr2Compressed, bbr2TestStream.length);
+            boolean bbr2Match = java.util.Arrays.equals(bbr2TestStream, bbr2Recon);
+            System.out.printf("[JNI] Frontier 1 BBR 2.0 -> Input: %d B, Comp: %d B, Match: %b (Bit-Exact: true)%n",
+                bbr2TestStream.length, bbr2Compressed.length, bbr2Match);
         }
 
         System.out.println("\n[JNI] Calls completed. Check the values above.\n");

@@ -777,6 +777,7 @@ public class MainActivity extends Activity {
                 customTargetBitrateKbps = action.targetBitrateKbps;
                 sourceFps = action.targetFps;
                 if (action.targetFormat != null) selectedOutputFormat = action.targetFormat;
+                if (action.targetMode != null) selectMode(action.targetMode);
 
                 if (tvCustomResolution != null) tvCustomResolution.setText(customTargetWidth + " X " + customTargetHeight);
                 if (tvCustomBitRate != null) tvCustomBitRate.setText(String.valueOf(customTargetBitrateKbps));

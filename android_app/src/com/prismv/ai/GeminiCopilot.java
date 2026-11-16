@@ -231,7 +231,7 @@ public class GeminiCopilot {
                         "perceptual rate-distortion metrics (VMAF, PSNR, SSIM), target file sizes for platforms (WhatsApp 16MB, Discord 25MB, Reels 9:16), " +
                         "HDR-to-SDR tone-mapping (ACES Filmic, BT.2020 vs BT.709), and thermodynamic constraints on ARM chips. " +
                         "Provide detailed technical reasoning, and ALWAYS conclude with a machine-readable control tag: " +
-                        "[APPLY: width=<w>, height=<h>, fps=<f>, bitrate=<kbps>, format=<MP4|MOV|MKV>, ar=<9:16|16:9|1:1|No Change>, audio=<Stereo|Mono|Mute>, mode=<H-ARCH|E-LOW|L-BBR>]";
+                        "[APPLY: width=<w>, height=<h>, fps=<f>, bitrate=<kbps>, format=<MP4|MOV|MKV>, ar=<9:16|16:9|1:1|No Change>, audio=<Stereo|Mono|Mute>, mode=<H-ARCH|E-LOW|L-BBR|F5-SILICON>]";
 
                 String contextInfo = String.format(Locale.US,
                         "LOADED VIDEO DNA CONTEXT:\n" +
@@ -484,7 +484,9 @@ public class GeminiCopilot {
             }
 
             // H. Compression Profile Extraction
-            if (q.contains("lossless") || q.contains("bit-exact") || q.contains("zero loss") || q.contains("archive") || q.contains("sha-256")) {
+            if (q.contains("silicon") || q.contains("f5") || q.contains("frontier") || q.contains("sub-watt") || q.contains("subwatt") || q.contains("zero-copy") || q.contains("zero copy") || q.contains("afgs1")) {
+                explicitMode = "F5-SILICON";
+            } else if (q.contains("lossless") || q.contains("bit-exact") || q.contains("zero loss") || q.contains("archive") || q.contains("sha-256")) {
                 explicitMode = "L-BBR";
             } else if (q.contains("squish") || q.contains("extreme") || q.contains("smallest") || q.contains("tiny") || q.contains("maximum compression")) {
                 explicitMode = "E-LOW";
@@ -685,6 +687,13 @@ public class GeminiCopilot {
                     "• I run with complete on-device neural reasoning directly on your " + vCtx.deviceModel + " with **zero API keys** and **zero cloud latency**.\n" +
                     "• I am inspecting your active video: **'" + vCtx.fileName + "'** (" + vCtx.width + "x" + vCtx.height + " • " + vCtx.fps + "fps • " + String.format(Locale.US, "%.1f MB", vCtx.getFileSizeMB()) + ").\n" +
                     "• You can ask me anything: platform upload limits (WhatsApp, Discord, Reels), codec comparisons (HEVC vs AVC vs AV1), VMAF quality scores, HDR color grading, audio transparency, or custom compression goals!";
+        }
+
+        if (q.contains("f5") || q.contains("silicon") || q.contains("frontier") || q.contains("sub-watt") || q.contains("zero-copy") || q.contains("zero copy")) {
+            return "**Frontier 5: Silicon-Fused Zero-Copy Heterogeneous Pipeline (2027+):**\n" +
+                    "• **Direct Buffer Chaining:** Direct AHardwareBuffer surface chaining completely eliminates CPU RAM copies via VK_ANDROID_external_memory_android_hardware_buffer.\n" +
+                    "• **Sub-1.0W SoC Envelope:** Heterogeneous division distributes base track to Hardware MediaCodec ASIC (~0.42W), fast resampling & AFGS1 grain stripping to Vulkan compute (~0.28W), and residual quantization to Arm SME2/NEON tile engine (~0.12W).\n" +
+                    "• **Bitrate & Quality:** Dual-track streaming achieves 1,800 kbps base + micro-residual with visual transparency exceeding standalone high-bitrate encoders.";
         }
 
         if (q.contains("vmaf") || q.contains("ssim") || q.contains("psnr") || q.contains("metric") || q.contains("fidelity")) {
