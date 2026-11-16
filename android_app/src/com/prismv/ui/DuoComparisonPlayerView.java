@@ -247,7 +247,8 @@ public class DuoComparisonPlayerView extends LinearLayout {
         ComparisonMode.HOLD_TO_PEEK,
         ComparisonMode.ERROR_SCORECARD,
         ComparisonMode.SOLO_OUTPUT,
-        ComparisonMode.SPATIAL_6DOF_CURTAIN
+        ComparisonMode.SPATIAL_6DOF_CURTAIN,
+        ComparisonMode.FRONTIER5_SILICON
     };
 
     // Standard Non-Fullscreen Sections (Hidden during Fullscreen)
@@ -421,13 +422,13 @@ public class DuoComparisonPlayerView extends LinearLayout {
         // ==========================================
         tabsRow = new LinearLayout(context);
         tabsRow.setOrientation(HORIZONTAL);
-        tabsRow.setWeightSum(6);
+        tabsRow.setWeightSum(7);
         tabsRow.setPadding(0, 0, 0, dp(10));
 
-        String[] modeLabels = new String[] { "Curtain", "Dual", "Peek", "Score", "Solo", "Spatial" };
-        modeTabButtons = new TextView[6];
+        String[] modeLabels = new String[] { "Curtain", "Dual", "Peek", "Score", "Solo", "Spatial", "Silicon" };
+        modeTabButtons = new TextView[7];
 
-        for (int i = 0; i < 6; i++) {
+        for (int i = 0; i < 7; i++) {
             final int index = i;
             TextView tab = new TextView(context);
             tab.setText(modeLabels[i]);
@@ -1171,13 +1172,14 @@ public class DuoComparisonPlayerView extends LinearLayout {
         View flexSpacer = new View(context);
         cinemaTopBar.addView(flexSpacer, new LinearLayout.LayoutParams(0, 0, 1.0f));
 
-        // Cinema Mode Switching Pills: [Curtain] [Dual] [Solo] [Spatial]
-        String[] cModeLabels = new String[] { "Curtain", "Dual", "Solo", "Spatial" };
+        // Cinema Mode Switching Pills: [Curtain] [Dual] [Solo] [Spatial] [Silicon]
+        String[] cModeLabels = new String[] { "Curtain", "Dual", "Solo", "Spatial", "Silicon" };
         ComparisonMode[] cModes = new ComparisonMode[] {
                 ComparisonMode.SPLIT_CURTAIN,
                 ComparisonMode.SIDE_BY_SIDE,
                 ComparisonMode.SOLO_OUTPUT,
-                ComparisonMode.SPATIAL_6DOF_CURTAIN
+                ComparisonMode.SPATIAL_6DOF_CURTAIN,
+                ComparisonMode.FRONTIER5_SILICON
         };
         cinemaModeButtons = new TextView[cModeLabels.length];
         for (int i = 0; i < cModeLabels.length; i++) {
