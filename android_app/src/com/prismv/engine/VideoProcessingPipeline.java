@@ -61,6 +61,10 @@ public final class VideoProcessingPipeline {
     public static native byte[] nativeCompressPsc2(byte[] rawPixels, int width, int height, int filterType, boolean isQuadBayer);
     public static native byte[] nativeDecompressPsc2(byte[] compressedFrame, int width, int height, int filterType, boolean isQuadBayer);
 
+    // Frontier 1: BBR 2.0 (SSG-CR4, C-MAVQ, SIMD-16 rANS)
+    public static native byte[] nativeCompressBbr2(byte[] bitstreamData, int codecId);
+    public static native byte[] nativeDecompressBbr2(byte[] compressedPayload, int uncompressedSize);
+
     public static class CompressionDossier {
         public final String fileName;
         public final long originalSizeBytes;
