@@ -57,6 +57,8 @@ public class TestRunnerReceiver extends BroadcastReceiver {
                     checkVerifiedReplacement(context);
                 } else if ("com.prismv.ACTION_COMPRESS_SAMPLE".equals(action)) {
                     runSampleCompression(context);
+                } else if ("com.prismv.ACTION_COMPRESS_F5_SILICON".equals(action)) {
+                    runSiliconSampleCompression(context);
                 } else if ("com.prismv.ACTION_START_SERVICE".equals(action)) {
                     Intent sIntent = new Intent(context, com.prismv.worker.PrismMediaProcessingService.class);
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -69,7 +71,7 @@ public class TestRunnerReceiver extends BroadcastReceiver {
                     boolean allPassed = runAllDeviceChecks(context);
                     Log.i(TAG, "=======================================================");
                     if (allPassed) {
-                        Log.i(TAG, ">>> ALL DEVICE SELF-CHECKS PASSED (6/6) <<<");
+                        Log.i(TAG, ">>> ALL DEVICE SELF-CHECKS PASSED (7/7) <<<");
                     } else {
                         Log.e(TAG, ">>> DEVICE SELF-CHECKS FAILED <<<");
                     }
@@ -91,8 +93,9 @@ public class TestRunnerReceiver extends BroadcastReceiver {
         boolean pass4 = checkGopPayloadRoundTrip();
         boolean pass5 = checkVfsProxySeek();
         boolean pass6 = checkVerifiedReplacement(context);
+        boolean pass7 = checkSiliconPowerProfile();
 
-        boolean totalPass = pass1 && pass2 && pass3 && pass4 && pass5 && pass6;
+        boolean totalPass = pass1 && pass2 && pass3 && pass4 && pass5 && pass6 && pass7;
 
         // Write results JSON to app internal files dir
         try {
@@ -107,7 +110,8 @@ public class TestRunnerReceiver extends BroadcastReceiver {
             json.append("    \"thermal_gear_table_bound\": ").append(pass3).append(",\n");
             json.append("    \"gop_payload_roundtrip\": ").append(pass4).append(",\n");
             json.append("    \"vfs_proxy_seek\": ").append(pass5).append(",\n");
-            json.append("    \"verified_replacement\": ").append(pass6).append("\n");
+            json.append("    \"verified_replacement\": ").append(pass6).append(",\n");
+            json.append("    \"silicon_sub_watt_profile\": ").append(pass7).append("\n");
             json.append("  },\n");
             json.append("  \"notes\": [\n");
             json.append("    \"thermal_gear_table_bound checks declared estimates, not measured joules\",\n");
