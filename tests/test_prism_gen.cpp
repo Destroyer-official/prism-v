@@ -1,6 +1,8 @@
 #include "test_harness.hpp"
 #include "prism/prism_gen.hpp"
 #include <vector>
+#include <filesystem>
+#include <fstream>
 
 using namespace prism;
 
@@ -120,4 +122,32 @@ PRISM_TEST(test_prism_gen_codec_roundtrip) {
     bool ok1 = codec.decode_frame(payload.data(), bytes1, nullptr, recon1.data());
     PRISM_ASSERT(ok1);
     PRISM_ASSERT(recon1[0] > 100 && recon1[0] < 200);
+}
+
+PRISM_TEST(test_prism_detint_flow_gen_spirv_validity) {
+    std::vector<std::string> candidate_paths = {
+        "core/shaders/detint_flow_gen.spv",
+        "../core/shaders/detint_flow_gen.spv",
+        "../../core/shaders/detint_flow_gen.spv"
+    };
+
+    std::string spv_path;
+    for (const auto& path : candidate_paths) {
+        if (std::filesystem::exists(path)) {
+            spv_path = path;
+            break;
+        }
+    }
+
+    PRISM_ASSERT(!spv_path.empty());
+    auto file_size = std::filesystem::file_size(spv_path);
+    PRISM_ASSERT(file_size >= 1024);
+    PRISM_ASSERT(file_size % 4 == 0);
+
+    // Verify SPIR-V magic number 0x07230203
+    std::ifstream file(spv_path, std::ios::binary);
+    PRISM_ASSERT(file.is_open());
+    uint32_t magic = 0;
+    file.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+    PRISM_ASSERT_EQ(magic, 0x07230203u);
 }

@@ -4,6 +4,8 @@
 #include "prism/bbr2.hpp"
 #include "prism/container_pvloss.hpp"
 #include "prism/dedup_rabin.hpp"
+#include "prism/isobmff.hpp"
+#include "prism/remux.hpp"
 
 #include <iostream>
 #include <fstream>
@@ -41,7 +43,20 @@ int main(int argc, char* argv[]) {
 
     Sha256Digest orig_sha = BbrEngine::compute_sha256(orig_bytes.data(), orig_bytes.size());
     std::cout << "[ORIGINAL] File: " << orig_path << " | Size: " << orig_bytes.size() << " bytes\n";
-    std::cout << "[ORIGINAL] SHA-256: " << RabinCdcEngine::hash_to_hex(orig_sha) << "\n\n";
+    std::cout << "[ORIGINAL] SHA-256: " << RabinCdcEngine::hash_to_hex(orig_sha) << "\n";
+
+    // Native Container & Ground-Truth Duration Probe
+    VideoMetadata meta;
+    if (NativeContainerParser::parse_file(orig_path, meta)) {
+        std::cout << "[NATIVE PROBE] Container: " << meta.container_format
+                  << " | Ground-Truth Duration: " << std::fixed << std::setprecision(2)
+                  << (meta.duration_us / 1000000.0) << "s (" << (meta.duration_us / 60000000.0) << " min)"
+                  << " | Bitrate: " << (meta.exact_bitrate_bps / 1000.0) << " kbps"
+                  << " | Dimensions: " << meta.width << "x" << meta.height
+                  << " | FPS: " << meta.fps << " | Codec: " << static_cast<int>(meta.video_codec)
+                  << " | Keyframes: " << meta.keyframe_pts_us.size() << "\n";
+    }
+    std::cout << "\n";
 
     if (auto_generated) {
         // Auto-compress with BBR 2.0

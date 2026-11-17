@@ -417,4 +417,315 @@ void Frontier5StreamMuxer::reset() {
     latest_afgs_ = {};
 }
 
+// ============================================================================
+// 6. HeterogeneousResourceGovernor Implementation
+// ============================================================================
+
+HeterogeneousResourceGovernor::HeterogeneousResourceGovernor(const ResourceConstraints& constraints)
+    : constraints_(constraints) {}
+
+void HeterogeneousResourceGovernor::set_constraints(const ResourceConstraints& constraints) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    constraints_ = constraints;
+}
+
+bool HeterogeneousResourceGovernor::try_acquire_memory_tokens(size_t bytes) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    size_t limit = constraints_.max_ram_mb * 1024 * 1024;
+    if (allocated_bytes_ + bytes <= limit) {
+        allocated_bytes_ += bytes;
+        return true;
+    }
+    return false;
+}
+
+void HeterogeneousResourceGovernor::release_memory_tokens(size_t bytes) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (allocated_bytes_ >= bytes) {
+        allocated_bytes_ -= bytes;
+    } else {
+        allocated_bytes_ = 0;
+    }
+}
+
+size_t HeterogeneousResourceGovernor::get_current_allocated_bytes() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return allocated_bytes_;
+}
+
+uint64_t HeterogeneousResourceGovernor::compute_affinity_mask(uint32_t total_system_cores) const {
+    if (total_system_cores == 0) return 0x01;
+    uint32_t cores = std::min<uint32_t>(total_system_cores, 64);
+
+    switch (constraints_.cpu_mode) {
+        case CpuCoreMode::ECO: {
+            // Little efficiency cores (first half of cores, e.g. cores 0..3 on an 8-core SoC)
+            uint32_t count = std::max<uint32_t>(1, cores / 2);
+            return (count >= 64) ? ~0ULL : ((1ULL << count) - 1ULL);
+        }
+        case CpuCoreMode::BALANCED: {
+            // Efficiency + Mid cores (all except prime core)
+            uint32_t count = (cores > 1) ? (cores - 1) : 1;
+            return (count >= 64) ? ~0ULL : ((1ULL << count) - 1ULL);
+        }
+        case CpuCoreMode::TURBO:
+        default: {
+            // All cores including prime core
+            return (cores >= 64) ? ~0ULL : ((1ULL << cores) - 1ULL);
+        }
+    }
+}
+
+int HeterogeneousResourceGovernor::compute_thread_nice_priority() const {
+    switch (constraints_.cpu_mode) {
+        case CpuCoreMode::ECO:      return 19;  // Maximum background niceness
+        case CpuCoreMode::BALANCED: return 0;   // Standard priority
+        case CpuCoreMode::TURBO:    return -10; // High performance priority
+        default:                    return 0;
+    }
+}
+
+bool HeterogeneousResourceGovernor::apply_affinity_to_current_thread(uint32_t total_system_cores) {
+#if defined(__linux__) || defined(__ANDROID__)
+    uint64_t mask = compute_affinity_mask(total_system_cores);
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    for (uint32_t c = 0; c < 64; ++c) {
+        if ((mask >> c) & 1ULL) {
+            CPU_SET(c, &cpuset);
+        }
+    }
+    return (sched_setaffinity(0, sizeof(cpu_set_t), &cpuset) == 0);
+#else
+    (void)total_system_cores;
+    return true; // No-op on non-Linux hosts
+#endif
+}
+
+// ============================================================================
+// 7. LockFreeChunkedParallelSlicer Implementation
+// ============================================================================
+
+std::vector<GopMicroTask> LockFreeChunkedParallelSlicer::slice_video_metadata(
+    const VideoMetadata& meta,
+    uint64_t target_chunk_duration_us) {
+
+    std::vector<GopMicroTask> tasks;
+    if (meta.duration_us == 0 && meta.frame_count == 0) {
+        return tasks;
+    }
+
+    uint64_t target_dur = (target_chunk_duration_us > 0) ? target_chunk_duration_us : 5000000ULL;
+    double fps = (meta.fps > 0.0) ? meta.fps : 30.0;
+    uint64_t frame_duration_us = static_cast<uint64_t>(1000000.0 / fps);
+    if (frame_duration_us == 0) frame_duration_us = 33333;
+
+    // Case 1: Keyframe timestamps provided by Agent 2's container demuxer
+    if (!meta.keyframe_pts_us.empty()) {
+        uint32_t chunk_id = 0;
+        size_t k_idx = 0;
+        const auto& kpts = meta.keyframe_pts_us;
+
+        while (k_idx < kpts.size()) {
+            uint64_t chunk_start_pts = kpts[k_idx];
+            size_t next_k = k_idx + 1;
+            while (next_k < kpts.size() && (kpts[next_k] - chunk_start_pts) < target_dur) {
+                next_k++;
+            }
+
+            uint64_t chunk_end_pts = (next_k < kpts.size()) ? kpts[next_k] : meta.duration_us;
+            uint32_t s_frame = static_cast<uint32_t>(chunk_start_pts / frame_duration_us);
+            uint32_t e_frame = static_cast<uint32_t>(chunk_end_pts / frame_duration_us);
+            if (e_frame <= s_frame) e_frame = s_frame + 1;
+
+            GopMicroTask task;
+            task.chunk_id = chunk_id++;
+            task.start_frame = s_frame;
+            task.end_frame = e_frame;
+            task.start_pts_us = chunk_start_pts;
+            task.end_pts_us = chunk_end_pts;
+            task.is_closed_gop = true;
+            tasks.push_back(task);
+
+            k_idx = next_k;
+        }
+        return tasks;
+    }
+
+    // Case 2: Uniform timeline division when keyframes are implicit
+    uint64_t total_duration = meta.duration_us;
+    if (total_duration == 0 && meta.frame_count > 0) {
+        total_duration = meta.frame_count * frame_duration_us;
+    }
+
+    uint32_t chunk_id = 0;
+    uint64_t current_pts = 0;
+    while (current_pts < total_duration) {
+        uint64_t next_pts = std::min(current_pts + target_dur, total_duration);
+        GopMicroTask task;
+        task.chunk_id = chunk_id++;
+        task.start_frame = static_cast<uint32_t>(current_pts / frame_duration_us);
+        task.end_frame = static_cast<uint32_t>(next_pts / frame_duration_us);
+        if (task.end_frame <= task.start_frame) task.end_frame = task.start_frame + 1;
+        task.start_pts_us = current_pts;
+        task.end_pts_us = next_pts;
+        task.is_closed_gop = true;
+        tasks.push_back(task);
+        current_pts = next_pts;
+    }
+
+    return tasks;
+}
+
+IsoMp4Engine::MuxedMp4Package LockFreeChunkedParallelSlicer::stitch_chunks_zero_copy(
+    const std::vector<EncodedChunkPayload>& completed_chunks,
+    uint32_t /* width */,
+    uint32_t /* height */,
+    uint32_t fps,
+    const IsoMp4Engine::MetadataLedger* meta) {
+
+    if (completed_chunks.empty()) return {};
+
+    std::vector<IsoMp4Engine::Track1Sample> all_track1;
+    std::vector<IsoMp4Engine::Track2Sample> all_track2;
+    Afgs1Params grain_params = completed_chunks[0].grain_params;
+
+    uint64_t accumulated_pts_ms = 0;
+    uint64_t frame_period_ms = (fps > 0) ? (1000 / fps) : 16;
+    if (frame_period_ms == 0) frame_period_ms = 1;
+
+    for (const auto& chunk : completed_chunks) {
+        uint64_t chunk_base_pts = accumulated_pts_ms;
+        uint64_t chunk_max_pts = 0;
+
+        for (const auto& s1 : chunk.base_samples) {
+            IsoMp4Engine::Track1Sample stitched_s1 = s1;
+            stitched_s1.pts_ms = chunk_base_pts + s1.pts_ms;
+            stitched_s1.dts_ms = chunk_base_pts + s1.dts_ms;
+            if (s1.pts_ms > chunk_max_pts) {
+                chunk_max_pts = s1.pts_ms;
+            }
+            all_track1.push_back(std::move(stitched_s1));
+        }
+
+        for (const auto& s2 : chunk.residual_samples) {
+            IsoMp4Engine::Track2Sample stitched_s2 = s2;
+            stitched_s2.pts_ms = chunk_base_pts + s2.pts_ms;
+            all_track2.push_back(std::move(stitched_s2));
+        }
+
+        if (chunk.duration_us > 0) {
+            accumulated_pts_ms += (chunk.duration_us / 1000);
+        } else if (!chunk.base_samples.empty()) {
+            accumulated_pts_ms += (chunk_max_pts + frame_period_ms);
+        }
+    }
+
+    PrismMicroResidualBox prmr;
+    prmr.prism_version = 1;
+    prmr.profile_idc = 0x05;
+    prmr.max_macs_per_pixel = 336;
+    prmr.latent_pyramid_levels = 4;
+    prmr.mlp_hidden_dim = 16;
+    prmr.gop_size = static_cast<uint16_t>(fps ? fps : 60);
+
+    return IsoMp4Engine::mux_dual_track(all_track1, all_track2, prmr, grain_params, meta);
+}
+
+// ============================================================================
+// 8. PredictiveThermalGearShifter Implementation
+// ============================================================================
+
+PredictiveThermalGearShifter::PredictiveThermalGearShifter(
+    float ambient_temp_c,
+    float r_th,
+    float c_th)
+    : ambient_temp_c_(ambient_temp_c),
+      r_th_(r_th > 0.01f ? r_th : 4.86f),
+      c_th_(c_th > 0.01f ? c_th : 9.25f) {
+    current_state_.chassis_temp_c = ambient_temp_c;
+    current_state_.predicted_headroom = 1.0f;
+    current_state_.active_soc_power_watts = 2.10f;
+    current_state_.current_gear = ShifterGear::GEAR_3_STANDARD;
+    current_state_.is_atomic_paused = false;
+}
+
+float PredictiveThermalGearShifter::get_gear_target_power(ShifterGear gear) {
+    switch (gear) {
+        case ShifterGear::GEAR_4_SUPER_TURBO:  return 3.20f;
+        case ShifterGear::GEAR_3_STANDARD:     return 2.10f;
+        case ShifterGear::GEAR_2_ECONOMY:      return 1.35f;
+        case ShifterGear::GEAR_1_GUARD:        return 0.75f;
+        case ShifterGear::GEAR_0_ATOMIC_YIELD: return 0.05f;
+        default:                               return 2.10f;
+    }
+}
+
+PredictiveThermalGearShifter::ThermalState PredictiveThermalGearShifter::update_thermal_model(
+    float active_power_watts,
+    float delta_t_sec) {
+
+    if (delta_t_sec > 0.0f) {
+        // Differential Equation: C_th * (dT/dt) = P_active - (T_chassis - T_ambient) / R_th
+        float heat_dissipated = (current_state_.chassis_temp_c - ambient_temp_c_) / r_th_;
+        float net_heat_rate = active_power_watts - heat_dissipated;
+        float delta_t_c = (net_heat_rate / c_th_) * delta_t_sec;
+        current_state_.chassis_temp_c += delta_t_c;
+
+        if (current_state_.chassis_temp_c < ambient_temp_c_) {
+            current_state_.chassis_temp_c = ambient_temp_c_;
+        }
+    }
+
+    // IEC 62368-1 mobile touch ceiling is 43.0 C (guard threshold 42.0 C)
+    const float SAFE_CEILING_C = 42.0f;
+    float temp_range = SAFE_CEILING_C - ambient_temp_c_;
+    if (temp_range <= 0.1f) temp_range = 17.0f;
+
+    float consumed_ratio = (current_state_.chassis_temp_c - ambient_temp_c_) / temp_range;
+    current_state_.predicted_headroom = std::clamp(1.0f - consumed_ratio, 0.0f, 1.5f);
+    current_state_.active_soc_power_watts = active_power_watts;
+
+    return current_state_;
+}
+
+PredictiveThermalGearShifter::ShifterGear PredictiveThermalGearShifter::evaluate_adpf_headroom(
+    float adpf_headroom_sample,
+    uint64_t current_time_ms) {
+
+    ShifterGear proposed_gear;
+    if (adpf_headroom_sample > 0.85f) {
+        proposed_gear = ShifterGear::GEAR_4_SUPER_TURBO;
+    } else if (adpf_headroom_sample > 0.65f) {
+        proposed_gear = ShifterGear::GEAR_3_STANDARD;
+    } else if (adpf_headroom_sample > 0.40f) {
+        proposed_gear = ShifterGear::GEAR_2_ECONOMY;
+    } else if (adpf_headroom_sample > 0.15f) {
+        proposed_gear = ShifterGear::GEAR_1_GUARD;
+    } else {
+        proposed_gear = ShifterGear::GEAR_0_ATOMIC_YIELD;
+    }
+
+    // Hysteresis Filter:
+    // Downshift is immediate (0 ms latency) to guarantee thermal safety
+    // Upshift requires at least 5000 ms of sustained stability
+    bool is_downshift = static_cast<uint8_t>(proposed_gear) < static_cast<uint8_t>(current_state_.current_gear);
+    bool is_upshift = static_cast<uint8_t>(proposed_gear) > static_cast<uint8_t>(current_state_.current_gear);
+
+    if (last_gear_change_ms_ == 0 || is_downshift) {
+        current_state_.current_gear = proposed_gear;
+        last_gear_change_ms_ = current_time_ms;
+    } else if (is_upshift) {
+        if (current_time_ms - last_gear_change_ms_ >= 5000ULL) {
+            current_state_.current_gear = proposed_gear;
+            last_gear_change_ms_ = current_time_ms;
+        }
+    }
+
+    current_state_.is_atomic_paused = (current_state_.current_gear == ShifterGear::GEAR_0_ATOMIC_YIELD);
+    current_state_.active_soc_power_watts = get_gear_target_power(current_state_.current_gear);
+
+    return current_state_.current_gear;
+}
+
 } // namespace prism

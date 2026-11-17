@@ -1,6 +1,9 @@
 #version 450
-#extension GL_EXT_shader_explicit_arithmetic_types_int8 : enable
-#extension GL_EXT_shader_explicit_arithmetic_types_int16 : enable
+#extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
+#extension GL_EXT_shader_8bit_storage : require
+#extension GL_EXT_shader_16bit_storage : require
+#extension GL_EXT_integer_dot_product : enable
 
 /**
  * @brief Prism-DetInt-Flow: 1-Step Distilled Flow-Matching Generator Compute Shader.
@@ -12,25 +15,25 @@
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 // Binding 0: Base Anchor Frame (Y-Plane, 8-bit luma)
-layout(set = 0, binding = 0) readonly buffer BaseAnchorBuffer {
+layout(set = 0, binding = 0, std430) readonly buffer BaseAnchorBuffer {
     uint8_t base_pixels[];
 };
 
 // Binding 1: Backward Dense Warping Field (Interleaved dx, dy in 8.8 fixed-point)
-layout(set = 0, binding = 1) readonly buffer FlowFieldBuffer {
+layout(set = 0, binding = 1, std430) readonly buffer FlowFieldBuffer {
     int16_t flow_vectors[]; // dx = flow_vectors[2*i], dy = flow_vectors[2*i + 1]
 };
 
 // Binding 2: Semantic Frame Descriptor (Pose, Blendshapes, Audio LPC)
-layout(set = 0, binding = 2) uniform SemanticUniforms {
-    int32_t width;
-    int32_t height;
-    int32_t expr_modulation; // Scaled blendshape energy bias
-    int32_t is_anchor_frame;
+layout(set = 0, binding = 2, std140) uniform SemanticUniforms {
+    int width;
+    int height;
+    int expr_modulation; // Scaled blendshape energy bias
+    int is_anchor_frame;
 };
 
 // Binding 3: Reconstructed Output Frame (Y-Plane, 8-bit luma)
-layout(set = 0, binding = 3) writeonly buffer OutputFrameBuffer {
+layout(set = 0, binding = 3, std430) writeonly buffer OutputFrameBuffer {
     uint8_t out_pixels[];
 };
 

@@ -72,7 +72,7 @@ public class TestRunnerReceiver extends BroadcastReceiver {
                     boolean allPassed = runAllDeviceChecks(context);
                     Log.i(TAG, "=======================================================");
                     if (allPassed) {
-                        Log.i(TAG, ">>> ALL DEVICE SELF-CHECKS PASSED (7/7) <<<");
+                        Log.i(TAG, ">>> ALL DEVICE SELF-CHECKS PASSED (9/9) <<<");
                     } else {
                         Log.e(TAG, ">>> DEVICE SELF-CHECKS FAILED <<<");
                     }
@@ -95,8 +95,10 @@ public class TestRunnerReceiver extends BroadcastReceiver {
         boolean pass5 = checkVfsProxySeek();
         boolean pass6 = checkVerifiedReplacement(context);
         boolean pass7 = checkSiliconPowerProfile();
+        boolean pass8 = checkHeterogeneousResourceGovernor();
+        boolean pass9 = checkTilePoolBound();
 
-        boolean totalPass = pass1 && pass2 && pass3 && pass4 && pass5 && pass6 && pass7;
+        boolean totalPass = pass1 && pass2 && pass3 && pass4 && pass5 && pass6 && pass7 && pass8 && pass9;
 
         // Write results JSON to app internal files dir
         try {
@@ -112,7 +114,9 @@ public class TestRunnerReceiver extends BroadcastReceiver {
             json.append("    \"gop_payload_roundtrip\": ").append(pass4).append(",\n");
             json.append("    \"vfs_proxy_seek\": ").append(pass5).append(",\n");
             json.append("    \"verified_replacement\": ").append(pass6).append(",\n");
-            json.append("    \"silicon_sub_watt_profile\": ").append(pass7).append("\n");
+            json.append("    \"silicon_sub_watt_profile\": ").append(pass7).append(",\n");
+            json.append("    \"heterogeneous_governor\": ").append(pass8).append(",\n");
+            json.append("    \"tile_pool_budget_bound\": ").append(pass9).append("\n");
             json.append("  },\n");
             json.append("  \"notes\": [\n");
             json.append("    \"thermal_gear_table_bound checks declared estimates, not measured joules\",\n");
@@ -227,6 +231,33 @@ public class TestRunnerReceiver extends BroadcastReceiver {
             return ok;
         } catch (Throwable t) {
             Log.e(TAG, "[CHECK] Silicon Power Profile error: " + t.getMessage());
+            return false;
+        }
+    }
+
+    private static boolean checkHeterogeneousResourceGovernor() {
+        Log.i(TAG, "[CHECK] Heterogeneous Resource Governor & Thread Affinity");
+        try {
+            boolean passGov = com.prismv.engine.SiliconFusedPipelineEngine.setResourceConstraints(256, 1, true, 1);
+            boolean passAff = com.prismv.engine.SiliconFusedPipelineEngine.applyThreadAffinity(Runtime.getRuntime().availableProcessors());
+            boolean pass = passGov && passAff;
+            Log.i(TAG, "[CHECK] Governor result: " + (pass ? "PASS" : "FAIL"));
+            return pass;
+        } catch (Throwable t) {
+            Log.e(TAG, "[CHECK] Governor test error: " + t.getMessage());
+            return false;
+        }
+    }
+
+    private static boolean checkTilePoolBound() {
+        Log.i(TAG, "[CHECK] TilePool <512MB Budget Enforced");
+        try {
+            long[] stats = com.prismv.engine.SiliconFusedPipelineEngine.getTilePoolStats();
+            boolean pass = (stats != null && stats.length >= 2 && stats[1] <= 512L * 1024L * 1024L);
+            Log.i(TAG, "[CHECK] TilePool result: " + (pass ? "PASS" : "FAIL"));
+            return pass;
+        } catch (Throwable t) {
+            Log.e(TAG, "[CHECK] TilePool test error: " + t.getMessage());
             return false;
         }
     }

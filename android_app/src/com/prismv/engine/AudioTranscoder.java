@@ -96,6 +96,12 @@ public final class AudioTranscoder {
             ByteBuffer downmixBuffer = ByteBuffer.allocateDirect(128 * 1024);
             downmixBuffer.order(ByteOrder.LITTLE_ENDIAN);
 
+            int pendingDecIndex = -1;
+            boolean pendingIsEos = false;
+            long pendingPtsUs = 0;
+            int pendingSize = 0;
+            ByteBuffer pendingBuf = null;
+
             while (!encoderDone) {
                 // A. Feed extractor samples to decoder
                 if (!extractorDone) {
@@ -116,19 +122,43 @@ public final class AudioTranscoder {
                     }
                 }
 
-                // B. Drain PCM from decoder and feed to encoder
-                if (!decoderDone) {
+                // B1. If we have a pending decoded PCM frame waiting for an encoder buffer, retry feeding it
+                if (pendingDecIndex >= 0) {
+                    int encInIndex = encoder.dequeueInputBuffer(TIMEOUT_US);
+                    if (encInIndex >= 0) {
+                        ByteBuffer encInBuf = encoder.getInputBuffer(encInIndex);
+                        if (encInBuf != null) {
+                            encInBuf.clear();
+                            if (pendingBuf != null && pendingSize > 0) {
+                                encInBuf.put(pendingBuf);
+                                encoder.queueInputBuffer(encInIndex, 0, pendingSize, pendingPtsUs, pendingIsEos ? MediaCodec.BUFFER_FLAG_END_OF_STREAM : 0);
+                            } else {
+                                encoder.queueInputBuffer(encInIndex, 0, 0, pendingPtsUs, pendingIsEos ? MediaCodec.BUFFER_FLAG_END_OF_STREAM : 0);
+                            }
+                        }
+                        decoder.releaseOutputBuffer(pendingDecIndex, false);
+                        if (pendingIsEos) decoderDone = true;
+                        pendingDecIndex = -1;
+                        pendingBuf = null;
+                    }
+                }
+
+                // B2. Drain PCM from decoder and feed to encoder (only if not waiting on pending buffer)
+                if (!decoderDone && pendingDecIndex < 0) {
                     int decOutIndex = decoder.dequeueOutputBuffer(decInfo, TIMEOUT_US);
                     if (decOutIndex >= 0) {
                         boolean isEos = (decInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0;
                         ByteBuffer pcmBuf = decoder.getOutputBuffer(decOutIndex);
 
+                        ByteBuffer processedPcm = null;
+                        int finalSize = 0;
+
                         if (pcmBuf != null && decInfo.size > 0) {
                             pcmBuf.position(decInfo.offset);
                             pcmBuf.limit(decInfo.offset + decInfo.size);
 
-                            ByteBuffer processedPcm = pcmBuf;
-                            int finalSize = decInfo.size;
+                            processedPcm = pcmBuf;
+                            finalSize = decInfo.size;
 
                             // Stereo -> Mono Downmixing if requested
                             if (inChannels == 2 && outChannels == 1) {
@@ -144,15 +174,38 @@ public final class AudioTranscoder {
                                 processedPcm = downmixBuffer;
                                 finalSize = downmixBuffer.limit();
                             }
-
-                            // Feed into encoder
-                            feedPcmToEncoder(encoder, processedPcm, finalSize, decInfo.presentationTimeUs, isEos ? MediaCodec.BUFFER_FLAG_END_OF_STREAM : 0);
-                        } else if (isEos) {
-                            feedPcmToEncoder(encoder, null, 0, decInfo.presentationTimeUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
                         }
 
-                        decoder.releaseOutputBuffer(decOutIndex, false);
-                        if (isEos) decoderDone = true;
+                        // Attempt immediate queuing into encoder
+                        int encInIndex = encoder.dequeueInputBuffer(TIMEOUT_US);
+                        if (encInIndex >= 0) {
+                            ByteBuffer encInBuf = encoder.getInputBuffer(encInIndex);
+                            if (encInBuf != null) {
+                                encInBuf.clear();
+                                if (processedPcm != null && finalSize > 0) {
+                                    encInBuf.put(processedPcm);
+                                    encoder.queueInputBuffer(encInIndex, 0, finalSize, decInfo.presentationTimeUs, isEos ? MediaCodec.BUFFER_FLAG_END_OF_STREAM : 0);
+                                } else {
+                                    encoder.queueInputBuffer(encInIndex, 0, 0, decInfo.presentationTimeUs, isEos ? MediaCodec.BUFFER_FLAG_END_OF_STREAM : 0);
+                                }
+                            }
+                            decoder.releaseOutputBuffer(decOutIndex, false);
+                            if (isEos) decoderDone = true;
+                        } else {
+                            // Encoder input full: store in pending and drain encoder in Step C
+                            pendingDecIndex = decOutIndex;
+                            pendingIsEos = isEos;
+                            pendingPtsUs = decInfo.presentationTimeUs;
+                            pendingSize = finalSize;
+                            if (processedPcm == downmixBuffer) {
+                                pendingBuf = ByteBuffer.allocateDirect(finalSize);
+                                downmixBuffer.rewind();
+                                pendingBuf.put(downmixBuffer);
+                                pendingBuf.flip();
+                            } else {
+                                pendingBuf = processedPcm;
+                            }
+                        }
                     }
                 }
 
@@ -203,22 +256,6 @@ public final class AudioTranscoder {
                 try { muxer.release(); } catch (Exception ignored) {}
             }
             try { extractor.release(); } catch (Exception ignored) {}
-        }
-    }
-
-    private static void feedPcmToEncoder(MediaCodec encoder, ByteBuffer pcmData, int size, long ptsUs, int flags) {
-        int inIndex = encoder.dequeueInputBuffer(TIMEOUT_US);
-        if (inIndex >= 0) {
-            ByteBuffer encInBuf = encoder.getInputBuffer(inIndex);
-            if (encInBuf != null) {
-                if (pcmData != null && size > 0) {
-                    encInBuf.clear();
-                    encInBuf.put(pcmData);
-                    encoder.queueInputBuffer(inIndex, 0, size, ptsUs, flags);
-                } else {
-                    encoder.queueInputBuffer(inIndex, 0, 0, ptsUs, flags);
-                }
-            }
         }
     }
 }

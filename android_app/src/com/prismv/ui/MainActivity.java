@@ -2361,6 +2361,8 @@ public class MainActivity extends Activity {
         }
 
         double srcMB = totalBytes / (1024.0 * 1024.0);
+        int srcBitrateKbps = (int) ((totalBytes * 8.0) / (durSec * 1000.0));
+        if (srcBitrateKbps <= 0) srcBitrateKbps = 3800;
 
         if (isBatchMode && tvPreFlightBatchBadge != null) {
             tvPreFlightBatchBadge.setText(String.format(Locale.US, "BATCH (%d VIDEOS)", batchVideoList.size()));
@@ -2370,8 +2372,10 @@ public class MainActivity extends Activity {
 
         // Method 0: Smart Compression (Keep Res & FPS)
         int br0 = (customTargetBitrateKbps > 0 && selectedPreFlightMethod == 0) ? customTargetBitrateKbps : 3800;
+        // Never-Worse Clamp: strictly ceiling to 70% of source bitrate
+        br0 = Math.min(br0, Math.max(350, (int) (srcBitrateKbps * 0.70)));
         double m0Size = ((br0 + 192) * durSec) / 8192.0;
-        if (m0Size >= srcMB) m0Size = srcMB * 0.25;
+        if (m0Size >= srcMB * 0.70) m0Size = srcMB * 0.70;
         double m0Freed = Math.max(0.1, srcMB - m0Size);
         double m0Pct = Math.min(99.0, (m0Freed / srcMB) * 100.0);
         int m0Eta = Math.max(2, (int) Math.round(durSec / 3.2));
@@ -2382,8 +2386,10 @@ public class MainActivity extends Activity {
 
         // Method 1: Pro Master High Fidelity
         int br1 = (customTargetBitrateKbps > 0 && selectedPreFlightMethod == 1) ? customTargetBitrateKbps : 6000;
+        // Never-Worse Clamp: strictly ceiling to 85% of source bitrate
+        br1 = Math.min(br1, Math.max(350, (int) (srcBitrateKbps * 0.85)));
         double m1Size = ((br1 + 320) * durSec) / 8192.0;
-        if (m1Size >= srcMB) m1Size = srcMB * 0.40;
+        if (m1Size >= srcMB * 0.85) m1Size = srcMB * 0.85;
         double m1Freed = Math.max(0.1, srcMB - m1Size);
         double m1Pct = Math.min(99.0, (m1Freed / srcMB) * 100.0);
         int m1Eta = Math.max(3, (int) Math.round(durSec / 2.2));
@@ -2393,8 +2399,9 @@ public class MainActivity extends Activity {
         tvMethodSpeed[1].setText(String.format(Locale.US, "2.2x (~%ds)", m1Eta));
 
         // Method 2: Quick Share Max Squish
-        double m2Size = ((1800 + 96) * durSec) / 8192.0;
-        if (m2Size >= srcMB) m2Size = srcMB * 0.15;
+        int br2 = Math.max(250, (int) (srcBitrateKbps * 0.45));
+        double m2Size = ((br2 + 96) * durSec) / 8192.0;
+        if (m2Size >= srcMB * 0.45) m2Size = srcMB * 0.45;
         double m2Freed = Math.max(0.1, srcMB - m2Size);
         double m2Pct = Math.min(99.0, (m2Freed / srcMB) * 100.0);
         int m2Eta = Math.max(1, (int) Math.round(durSec / 4.8));
@@ -3344,6 +3351,24 @@ public class MainActivity extends Activity {
         }
         item.sizeBytes = Math.max(0, sizeBytes);
 
+        // Direct Native Container Probe (fixes MKV cue corruption & missing duration)
+        if (item.filePath != null) {
+            try {
+                VideoProcessingPipeline.ParsedVideoMetadata nativeMeta = VideoProcessingPipeline.probeVideoMetadata(item.filePath, null, item.sizeBytes);
+                if (nativeMeta.durationUs > 0) {
+                    item.durationSec = Math.max(1, (int) (nativeMeta.durationUs / 1000000L));
+                    if (nativeMeta.width > 0) item.width = nativeMeta.width;
+                    if (nativeMeta.height > 0) item.height = nativeMeta.height;
+                    if (nativeMeta.fps > 0) item.fps = Math.round(nativeMeta.fps);
+                    if (nativeMeta.bitrateBps > 0) item.bitrateKbps = (int) (nativeMeta.bitrateBps / 1000L);
+                    if (nativeMeta.codec != null) item.codec = nativeMeta.codec;
+                    Log.i("PrismV", "Native Container Parser extracted exact duration: " + item.durationSec + "s for '" + item.name + "'");
+                }
+            } catch (Exception e) {
+                Log.w("PrismV", "Native metadata probe warning: " + e.getMessage());
+            }
+        }
+
         try {
             MediaMetadataRetriever mmr = new MediaMetadataRetriever();
             if ("file".equalsIgnoreCase(uri.getScheme()) && uri.getPath() != null) {
@@ -3363,6 +3388,9 @@ public class MainActivity extends Activity {
             int h = (hStr != null) ? Integer.parseInt(hStr) : 1080;
             int rot = (rotStr != null) ? Integer.parseInt(rotStr) : 0;
             long durMs = (durStr != null) ? Long.parseLong(durStr) : 60000L;
+            if (item.durationSec > 0 && durMs < (long) item.durationSec * 1000L) {
+                durMs = (long) item.durationSec * 1000L;
+            }
             int br = (brStr != null) ? Integer.parseInt(brStr) / 1000 : 3800;
 
             if (rot == 90 || rot == 270) {
@@ -4034,14 +4062,30 @@ public class MainActivity extends Activity {
             else if (maxDim >= 1920) options.targetBitrateKbps = 3800;
             else if (maxDim >= 1280) options.targetBitrateKbps = 2400;
             else options.targetBitrateKbps = 1500;
+            if (item.bitrateKbps > 0) {
+                options.targetBitrateKbps = Math.min(options.targetBitrateKbps, Math.max(350, (int) (item.bitrateKbps * 0.70)));
+            }
         } else if (preserveNative && selectedPreFlightMethod == 1) {
             int maxDim = Math.max(item.width, item.height);
             if (maxDim >= 3840) options.targetBitrateKbps = 14000;
             else if (maxDim >= 1920) options.targetBitrateKbps = 6000;
             else if (maxDim >= 1280) options.targetBitrateKbps = 4000;
             else options.targetBitrateKbps = 2500;
+            if (item.bitrateKbps > 0) {
+                options.targetBitrateKbps = Math.min(options.targetBitrateKbps, Math.max(350, (int) (item.bitrateKbps * 0.85)));
+            }
+        } else if (preserveNative && selectedPreFlightMethod == 2) {
+            int maxDim = Math.max(item.width, item.height);
+            if (maxDim >= 1920) options.targetBitrateKbps = 2400;
+            else options.targetBitrateKbps = 1600;
+            if (item.bitrateKbps > 0) {
+                options.targetBitrateKbps = Math.min(options.targetBitrateKbps, Math.max(250, (int) (item.bitrateKbps * 0.45)));
+            }
         } else {
             options.targetBitrateKbps = customTargetBitrateKbps;
+            if (options.targetBitrateKbps > 0 && item.bitrateKbps > 0) {
+                options.targetBitrateKbps = Math.min(options.targetBitrateKbps, (int) (item.bitrateKbps * 0.85));
+            }
         }
         options.aspectRatio = selectedAspectRatio;
         options.outputFormat = selectedOutputFormat;

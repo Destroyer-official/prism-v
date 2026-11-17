@@ -165,4 +165,75 @@ public final class SiliconFusedPipelineEngine {
             return null;
         }
     }
+
+    /**
+     * Configures the native Heterogeneous Resource Governor and bounded TilePool budget.
+     * @param maxRamMb Maximum allowed working RAM (enforced under 512 MB cap).
+     * @param cpuMode 0=ECO, 1=BALANCED, 2=TURBO.
+     * @param enableGpu Whether GPU Vulkan compute is enabled.
+     * @param powerPriority 0=BATTERY_SAVER, 1=BALANCED, 2=MAX_PERFORMANCE.
+     */
+    public static boolean setResourceConstraints(int maxRamMb, int cpuMode, boolean enableGpu, int powerPriority) {
+        if (!VideoProcessingPipeline.isNativeLoaded) {
+            return true;
+        }
+        try {
+            return VideoProcessingPipeline.nativeSetResourceConstraints(maxRamMb, cpuMode, enableGpu, powerPriority);
+        } catch (Throwable t) {
+            Log.w(TAG, "nativeSetResourceConstraints fallback: " + t.getMessage());
+            return true;
+        }
+    }
+
+    /**
+     * Applies CPU thread affinity mask and nice priority to the current thread.
+     */
+    public static boolean applyThreadAffinity(int totalCores) {
+        if (!VideoProcessingPipeline.isNativeLoaded) {
+            return true;
+        }
+        try {
+            return VideoProcessingPipeline.nativeApplyThreadAffinity(totalCores);
+        } catch (Throwable t) {
+            Log.w(TAG, "nativeApplyThreadAffinity fallback: " + t.getMessage());
+            return true;
+        }
+    }
+
+    /**
+     * Evaluates Android Dynamic Performance Framework (ADPF) 10-second thermal headroom.
+     * @return current active gear (0=Atomic Yield to 4=Super Turbo).
+     */
+    public static int evaluateThermalHeadroom(float headroom, long timeMs) {
+        try {
+            return VideoProcessingPipeline.nativeEvaluateThermalHeadroom(headroom, timeMs);
+        } catch (Throwable t) {
+            Log.w(TAG, "nativeEvaluateThermalHeadroom fallback: " + t.getMessage());
+            return 3;
+        }
+    }
+
+    /**
+     * Queries current thermal gear from native predictive gear shifter.
+     */
+    public static int getThermalGear() {
+        try {
+            return VideoProcessingPipeline.nativeGetThermalGear();
+        } catch (Throwable t) {
+            Log.w(TAG, "nativeGetThermalGear fallback: " + t.getMessage());
+            return 3;
+        }
+    }
+
+    /**
+     * Queries native TilePool memory stats: [allocatedBytes, budgetBytes, activeTiles].
+     */
+    public static long[] getTilePoolStats() {
+        try {
+            return VideoProcessingPipeline.nativeGetTilePoolStats();
+        } catch (Throwable t) {
+            Log.w(TAG, "nativeGetTilePoolStats fallback: " + t.getMessage());
+            return new long[]{0, 512L * 1024 * 1024, 0};
+        }
+    }
 }

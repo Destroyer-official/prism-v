@@ -40,6 +40,13 @@ public:
     ~VerifiedTransaction() = default;
 
     /**
+     * @brief Scan and clean up dangling temporary files left by an abrupt SIGKILL or crash.
+     * @param sandbox_dir Directory containing sandbox temporary files.
+     * @return Number of cleaned dangling temporary files.
+     */
+    static size_t recover_sandbox(const std::string& sandbox_dir);
+
+    /**
      * @brief Execute full 5-stage transaction with rollback on any failure.
      *
      * @param compression_worker Function executing compression to sandbox_temp_path.

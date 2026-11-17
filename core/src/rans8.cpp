@@ -145,55 +145,87 @@ std::vector<uint16_t> Rans8Codec::decode(const EncodedChunk& chunk,
     }
 
     std::array<const uint16_t*, NUM_LANES> lane_words{};
-    std::array<size_t, NUM_LANES> word_idx{};
     for (size_t l = 0; l < NUM_LANES; ++l) {
         size_t remaining = static_cast<size_t>(stream_end - in_ptr);
         if (static_cast<uint64_t>(word_counts[l]) * sizeof(uint16_t) > remaining) {
             throw std::runtime_error("Malformed rANS byte stream: lane exceeds stream bounds");
         }
         lane_words[l] = reinterpret_cast<const uint16_t*>(in_ptr);
-        word_idx[l] = 0;
         in_ptr += word_counts[l] * sizeof(uint16_t);
     }
 
     // Initialize state from chunk.final_states
     std::array<uint32_t, NUM_LANES> states = chunk.final_states;
 
-    // Decode symbols in forward order 0 to N-1
-    for (size_t i = 0; i < chunk.symbol_count; ++i) {
-        size_t lane = i % NUM_LANES;
-        uint32_t& x = states[lane];
+    const size_t full_blocks = chunk.symbol_count / NUM_LANES;
+    const size_t tail = chunk.symbol_count % NUM_LANES;
 
-        // Slot lookup
+    // Pointer arithmetic for lane word buffers
+    std::array<const uint16_t*, NUM_LANES> lane_ptrs = lane_words;
+    std::array<const uint16_t*, NUM_LANES> lane_ends{};
+    for (size_t l = 0; l < NUM_LANES; ++l) {
+        lane_ends[l] = lane_words[l] + word_counts[l];
+    }
+
+    const uint16_t* const cdf_ptr = cdf_table.data();
+    const RansSymbol* const stats_ptr = symbol_stats.data();
+    uint16_t* out_sym_ptr = symbols.data();
+
+    // Pipelined 8-way decode loop:
+    // Stage 1: Parallel slot extraction (masking)
+    // Stage 2: Concurrent non-blocking L1 CDF symbol gather
+    // Stage 3: Parallel state arithmetic & branch-free renormalization
+    for (size_t b = 0; b < full_blocks; ++b) {
+        uint32_t m[NUM_LANES];
+        for (size_t l = 0; l < NUM_LANES; ++l) {
+            m[l] = states[l] & (RANS_M - 1);
+        }
+
+        uint16_t sym[NUM_LANES];
+        for (size_t l = 0; l < NUM_LANES; ++l) {
+            sym[l] = cdf_ptr[m[l]];
+            out_sym_ptr[l] = sym[l];
+        }
+
+        for (size_t l = 0; l < NUM_LANES; ++l) {
+            const RansSymbol& s = stats_ptr[sym[l]];
+            uint32_t x = s.freq * (states[l] >> RANS_PROB_BITS) + (m[l] - s.start);
+
+            if (x < RANS_L) {
+                if (lane_ptrs[l] < lane_ends[l]) {
+                    x = (x << 16) | (*lane_ptrs[l]++);
+                } else {
+                    throw std::runtime_error("Malformed rANS byte stream: renormalization underflow");
+                }
+            }
+            states[l] = x;
+        }
+
+        out_sym_ptr += NUM_LANES;
+    }
+
+    // Tail symbols
+    for (size_t lane = 0; lane < tail; ++lane) {
+        uint32_t x = states[lane];
         uint32_t m = x & (RANS_M - 1);
-        if (m >= cdf_table.size()) {
-            throw std::runtime_error("Slot exceeds CDF table bounds");
-        }
-        uint16_t sym = cdf_table[m];
-        if (sym >= symbol_stats.size()) {
-            throw std::runtime_error("CDF table references a symbol outside the statistics alphabet");
-        }
-        symbols[i] = sym;
+        uint16_t sym = cdf_ptr[m];
+        out_sym_ptr[lane] = sym;
 
-        const auto& stats = symbol_stats[sym];
+        const RansSymbol& stats = stats_ptr[sym];
         uint32_t f = stats.freq;
         uint32_t c = stats.start;
 
-        if (f == 0 || static_cast<uint32_t>(c) + f > RANS_M || m < c || m >= c + f) {
-            throw std::runtime_error("Malformed rANS symbol statistics");
-        }
-
-        // Invert rANS step
         x = f * (x >> RANS_PROB_BITS) + (m - c);
 
-        // Renormalize: while x < L, read word
-        while (x < RANS_L) {
-            if (word_idx[lane] >= word_counts[lane]) {
+        if (x < RANS_L) {
+            if (lane_ptrs[lane] < lane_ends[lane]) {
+                x = (x << 16) | (*lane_ptrs[lane]++);
+            } else {
                 throw std::runtime_error("Malformed rANS byte stream: renormalization underflow");
             }
-            uint32_t word = lane_words[lane][word_idx[lane]++];
-            x = (x << 16) | word;
         }
+
+        states[lane] = x;
     }
 
     return symbols;

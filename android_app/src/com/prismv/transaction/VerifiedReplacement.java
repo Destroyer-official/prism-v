@@ -103,6 +103,86 @@ public final class VerifiedReplacement {
         }
     }
 
+    /**
+     * Executes a 5-stage verified transaction for Frontier 6 Rabin-Mesh Vault (.pvmesh).
+     * Guarantees 100.000% SHA-256 bit-exact file reconstruction before committing.
+     */
+    public static TransactionResult executeMeshTransaction(File sourceFile, File targetDir, File vaultDir, String clusterUuid) {
+        if (!sourceFile.exists()) {
+            return new TransactionResult(false, Stage.STAGE_0_STAGED, null, null, null, "Source file does not exist");
+        }
+
+        File finalManifest = new File(targetDir, sourceFile.getName() + ".pvmesh");
+        File journalFile = new File(targetDir, sourceFile.getName() + ".mesh_journal");
+
+        Stage currentStage = Stage.STAGE_0_STAGED;
+        String origHash = null;
+        String verHash = null;
+
+        try {
+            // STAGE 0: STAGED - Read source bytes and compute cryptographic SHA-256 fixity
+            byte[] sourceBytes = readFile(sourceFile);
+            origHash = DetInt.toHexString(DetInt.computeSha256(sourceBytes));
+
+            // Ingest source into Rabin-Mesh Vault
+            if (!vaultDir.exists()) {
+                vaultDir.mkdirs();
+            }
+            com.prismv.engine.VideoProcessingPipeline.nativeIngestMeshCluster(
+                    sourceFile.getAbsolutePath(),
+                    new String[0],
+                    vaultDir.getAbsolutePath(),
+                    clusterUuid
+            );
+            currentStage = Stage.STAGE_1_VERIFY_BIT_EXACT;
+
+            // STAGE 1: VERIFY BIT-EXACT - Test full inverse reconstruction from vault
+            File tempRestored = new File(targetDir, sourceFile.getName() + ".restored.tmp");
+            boolean restored = com.prismv.engine.VideoProcessingPipeline.nativeRestoreMeshVideo(
+                    sourceFile.getAbsolutePath() + ".pvmesh",
+                    vaultDir.getAbsolutePath(),
+                    tempRestored.getAbsolutePath()
+            );
+
+            if (!restored || !tempRestored.exists()) {
+                if (tempRestored.exists()) tempRestored.delete();
+                return new TransactionResult(false, currentStage, origHash, null, null, "Mesh vault restoration failed");
+            }
+
+            byte[] restoredBytes = readFile(tempRestored);
+            tempRestored.delete();
+            verHash = DetInt.toHexString(DetInt.computeSha256(restoredBytes));
+
+            if (!origHash.equals(verHash)) {
+                return new TransactionResult(false, currentStage, origHash, verHash, null, "Bit-exact SHA-256 verification failed (Corruption detected)");
+            }
+            currentStage = Stage.STAGE_2_ATOMIC_REPLACE;
+
+            // STAGE 2: ATOMIC REPLACE - Publish final manifest
+            File generatedManifest = new File(sourceFile.getAbsolutePath() + ".pvmesh");
+            if (generatedManifest.exists()) {
+                if (finalManifest.exists()) finalManifest.delete();
+                if (!generatedManifest.renameTo(finalManifest)) {
+                    byte[] mBytes = readFile(generatedManifest);
+                    writeFile(finalManifest, mBytes);
+                    generatedManifest.delete();
+                }
+            }
+            currentStage = Stage.STAGE_3_COMMIT;
+
+            // STAGE 3: COMMIT - Write Write-Ahead Log (WAL)
+            String journalEntry = "COMMITTED_MESH: " + finalManifest.getName() + " SHA256=" + verHash + " CLUSTER=" + clusterUuid + "\n";
+            writeFile(journalFile, journalEntry.getBytes());
+            currentStage = Stage.STAGE_4_CLEANUP;
+
+            // STAGE 4: CLEANUP - Verified state reached
+            return new TransactionResult(true, currentStage, origHash, verHash, journalFile.getAbsolutePath(), "Mesh transaction 100% committed and verified");
+
+        } catch (Exception e) {
+            return new TransactionResult(false, currentStage, origHash, verHash, null, "Mesh transaction error: " + e.getMessage());
+        }
+    }
+
     private static byte[] readFile(File file) throws IOException {
         try (FileInputStream fis = new FileInputStream(file)) {
             byte[] data = new byte[(int) file.length()];

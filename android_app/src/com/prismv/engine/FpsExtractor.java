@@ -27,17 +27,66 @@ public class FpsExtractor {
         public final float exactFps;
         public final String source;
         public final boolean isHighFrameRate;
+        public final boolean isVfr;
 
         public FpsResult(int fps, float exactFps, String source) {
+            this(fps, exactFps, source, false);
+        }
+
+        public FpsResult(int fps, float exactFps, String source, boolean isVfr) {
             this.fps = fps;
             this.exactFps = exactFps;
             this.source = source;
             this.isHighFrameRate = fps >= 50;
+            this.isVfr = isVfr;
         }
 
         @Override
         public String toString() {
-            return fps + " fps (exact: " + exactFps + ", tier: " + source + ")";
+            return fps + " fps (exact: " + exactFps + ", tier: " + source + (isVfr ? ", VFR" : ", CFR") + ")";
+        }
+    }
+
+    /**
+     * Precision Monotonic Timestamp Normalizer for Prism-V.
+     * Prevents A/V sync drift and out-of-order PTS crashes on Android hardware encoders.
+     * Normalizes VFR timestamps to strictly monotonic CFR or smoothed timeline.
+     */
+    public static class TimestampNormalizer {
+        private final long expectedIntervalUs;
+        private final boolean enforceCfr;
+        private long lastOutputPtsUs = -1;
+        private long firstInputPtsUs = -1;
+
+        public TimestampNormalizer(int targetFps, boolean enforceCfr) {
+            int fps = (targetFps > 0) ? targetFps : 30;
+            this.expectedIntervalUs = 1000000L / fps;
+            this.enforceCfr = enforceCfr;
+        }
+
+        public long normalize(long rawPtsUs, long frameIndex) {
+            if (firstInputPtsUs < 0) {
+                firstInputPtsUs = Math.max(0, rawPtsUs);
+            }
+            if (enforceCfr) {
+                long pts = frameIndex * expectedIntervalUs;
+                lastOutputPtsUs = pts;
+                return pts;
+            }
+            long relPts = Math.max(0, rawPtsUs - firstInputPtsUs);
+            if (lastOutputPtsUs < 0) {
+                lastOutputPtsUs = relPts;
+                return relPts;
+            }
+            // Enforce strict monotonicity (at least 1,000 us / 1ms gap between frames)
+            long pts = Math.max(lastOutputPtsUs + 1000L, relPts);
+            lastOutputPtsUs = pts;
+            return pts;
+        }
+
+        public void reset() {
+            lastOutputPtsUs = -1;
+            firstInputPtsUs = -1;
         }
     }
 
@@ -46,6 +95,7 @@ public class FpsExtractor {
         float trackFps = 0f;
         float countFps = 0f;
         float sampleFps = 0f;
+        boolean isVfr = false;
 
         // -------------------------------------------------------------
         // TIER 1 & TIER 2: MediaMetadataRetriever Metadata Analysis
@@ -142,13 +192,15 @@ public class FpsExtractor {
                 }
             }
 
-            // TIER 3: Ground-Truth PTS Inter-Frame Interval Sampling
+            // TIER 3: Ground-Truth PTS Inter-Frame Interval Sampling & VFR Detection
             if (videoTrackIndex >= 0) {
                 extractor.selectTrack(videoTrackIndex);
                 long prevPts = -1;
                 int sampleCount = 0;
                 long totalDeltaUs = 0;
                 int deltaCount = 0;
+                long minDeltaUs = Long.MAX_VALUE;
+                long maxDeltaUs = 0;
 
                 while (sampleCount < 40) {
                     long pts = extractor.getSampleTime();
@@ -159,6 +211,8 @@ public class FpsExtractor {
                         if (delta >= 1000 && delta <= 250000) {
                             totalDeltaUs += delta;
                             deltaCount++;
+                            if (delta < minDeltaUs) minDeltaUs = delta;
+                            if (delta > maxDeltaUs) maxDeltaUs = delta;
                         }
                     }
                     prevPts = pts;
@@ -169,7 +223,10 @@ public class FpsExtractor {
                 if (deltaCount >= 3 && totalDeltaUs > 0) {
                     float avgIntervalUs = (float) totalDeltaUs / (float) deltaCount;
                     sampleFps = 1000000.0f / avgIntervalUs;
-                    Log.d(TAG, "Tier 3 Sample PTS Framerate: " + sampleFps + " (avg interval: " + avgIntervalUs + " us, deltas: " + deltaCount + ")");
+                    if (deltaCount >= 5 && maxDeltaUs > minDeltaUs && (maxDeltaUs - minDeltaUs) > (avgIntervalUs * 0.25f)) {
+                        isVfr = true;
+                    }
+                    Log.d(TAG, "Tier 3 Sample PTS Framerate: " + sampleFps + " (avg: " + avgIntervalUs + " us, deltas: " + deltaCount + ", VFR: " + isVfr + ")");
                 }
             }
         } catch (Exception e) {
@@ -186,42 +243,42 @@ public class FpsExtractor {
         // Priority 1: High-Speed Slow-Motion Capture (Samsung / Pixel 120fps, 240fps)
         if (captureFps >= 50.0f) {
             int snapped = snapStandardFps(captureFps);
-            return new FpsResult(snapped, captureFps, "CAPTURE_RATE");
+            return new FpsResult(snapped, captureFps, "CAPTURE_RATE", isVfr);
         }
 
         // Priority 2: Real Encoded Sample PTS Interval (120fps, 60fps, etc.)
         if (sampleFps >= 45.0f) {
             int snapped = snapStandardFps(sampleFps);
-            return new FpsResult(snapped, sampleFps, "SAMPLE_PTS");
+            return new FpsResult(snapped, sampleFps, "SAMPLE_PTS", isVfr);
         }
 
         // Priority 3: Track Format Frame Rate (>= 45 fps)
         if (trackFps >= 45.0f) {
             int snapped = snapStandardFps(trackFps);
-            return new FpsResult(snapped, trackFps, "TRACK_FORMAT");
+            return new FpsResult(snapped, trackFps, "TRACK_FORMAT", isVfr);
         }
 
         // Priority 4: Frame Count / Duration (>= 45 fps)
         if (countFps >= 45.0f) {
             int snapped = snapStandardFps(countFps);
-            return new FpsResult(snapped, countFps, "FRAME_COUNT");
+            return new FpsResult(snapped, countFps, "FRAME_COUNT", isVfr);
         }
 
         // Priority 5: Standard Frame Rates (24, 25, 30, etc.)
         if (sampleFps > 10.0f) {
-            return new FpsResult(snapStandardFps(sampleFps), sampleFps, "SAMPLE_PTS");
+            return new FpsResult(snapStandardFps(sampleFps), sampleFps, "SAMPLE_PTS", isVfr);
         }
         if (trackFps > 10.0f) {
-            return new FpsResult(snapStandardFps(trackFps), trackFps, "TRACK_FORMAT");
+            return new FpsResult(snapStandardFps(trackFps), trackFps, "TRACK_FORMAT", isVfr);
         }
         if (captureFps > 10.0f) {
-            return new FpsResult(snapStandardFps(captureFps), captureFps, "CAPTURE_RATE");
+            return new FpsResult(snapStandardFps(captureFps), captureFps, "CAPTURE_RATE", isVfr);
         }
         if (countFps > 10.0f) {
-            return new FpsResult(snapStandardFps(countFps), countFps, "FRAME_COUNT");
+            return new FpsResult(snapStandardFps(countFps), countFps, "FRAME_COUNT", isVfr);
         }
 
-        return new FpsResult(30, 30.0f, "DEFAULT");
+        return new FpsResult(30, 30.0f, "DEFAULT", isVfr);
     }
 
     public static int snapStandardFps(float raw) {

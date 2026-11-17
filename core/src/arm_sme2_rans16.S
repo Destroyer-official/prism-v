@@ -89,6 +89,21 @@ arm_sme2_rans16_decode_step:
     mov     w4, #0x7FFF
     dup     z4.s, w4
     and     z5.s, z0.s, z4.s
+    and     z6.s, z1.s, z4.s
+    and     z7.s, z2.s, z4.s
+    and     z8.s, z3.s, z4.s
+
+    // SVE2 gather loads: fetch 16-bit symbols from cdf_lut [x1] indexed by slot * 2
+    ld1h    {z16.s}, p0/z, [x1, z5.s, uxtw #1]
+    ld1h    {z17.s}, p0/z, [x1, z6.s, uxtw #1]
+    ld1h    {z18.s}, p0/z, [x1, z7.s, uxtw #1]
+    ld1h    {z19.s}, p0/z, [x1, z8.s, uxtw #1]
+
+    // Store 16-bit halfword symbols to out_symbols [x2]
+    st1h    {z16.s}, p0, [x2, #0, mul vl]
+    st1h    {z17.s}, p0, [x2, #1, mul vl]
+    st1h    {z18.s}, p0, [x2, #2, mul vl]
+    st1h    {z19.s}, p0, [x2, #3, mul vl]
 
     // Store states back
     st1w    {z0.s}, p0, [x0, #0, mul vl]

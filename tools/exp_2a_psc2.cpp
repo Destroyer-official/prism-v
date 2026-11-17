@@ -77,6 +77,7 @@ int main() {
     cfg2.bit_depth = 8;
     cfg2.enable_directional_wavelet = true;
     cfg2.enable_spectral_coupling = true;
+    cfg2.enable_checkerboard_convnet = false;
     cfg2.filter = WaveletFilterType::LEGALL_53;
     cfg2.num_worker_threads = 4;
     Psc2Engine psc2(cfg2);
@@ -108,9 +109,35 @@ int main() {
     std::cout << "    • Bit-Exact PSNR:  " << (bit_exact ? "INFINITY (100.000% SHA-256 Parity)" : "MISMATCH") << "\n\n";
 
     // ------------------------------------------------------------------------
+    // Part B2: PSC 2.0 with 4-Pass Checkerboard Causal Integer ConvNet Prior
+    // ------------------------------------------------------------------------
+    std::cout << "[4] Benchmarking Frontier 2: PSC 2.0 (4-Pass Checkerboard ConvNet Prior)...\n";
+    Psc2Config cfg2_conv = cfg2;
+    cfg2_conv.enable_checkerboard_convnet = true;
+    Psc2Engine psc2_conv(cfg2_conv);
+
+    auto t_start_psc2_conv = std::chrono::steady_clock::now();
+    auto comp2_conv = psc2_conv.compress_frame_rgb(raw_rgb.data(), raw_rgb.size());
+    auto t_end_psc2_conv = std::chrono::steady_clock::now();
+    double psc2_conv_encode_ms = std::chrono::duration<double, std::milli>(t_end_psc2_conv - t_start_psc2_conv).count();
+
+    size_t psc2_conv_bytes = comp2_conv.bitstream_payload.size();
+    double psc2_conv_ratio = (static_cast<double>(psc2_conv_bytes) / static_cast<double>(RAW_RGB_BYTES)) * 100.0;
+
+    std::cout << "    • Compressed Size: " << psc2_conv_bytes << " bytes ("
+              << std::fixed << std::setprecision(2) << psc2_conv_ratio << "% of raw size)\n";
+    std::cout << "    • Encode Latency:  " << std::fixed << std::setprecision(2) << psc2_conv_encode_ms << " ms ("
+              << std::fixed << std::setprecision(1) << (1000.0 / psc2_conv_encode_ms) << " FPS)\n";
+
+    auto recon2_conv = psc2_conv.decompress_frame_rgb(comp2_conv);
+    Sha256Digest recon_conv_sha = BbrEngine::compute_sha256(recon2_conv.data(), recon2_conv.size());
+    bool bit_exact_conv = (recon_conv_sha == orig_sha) && (recon2_conv.size() == raw_rgb.size());
+    std::cout << "    • Bit-Exact PSNR:  " << (bit_exact_conv ? "INFINITY (100.000% SHA-256 Parity)" : "MISMATCH") << "\n\n";
+
+    // ------------------------------------------------------------------------
     // Part C: Quad-Bayer RAW Sensor Mode with A-IKLT Coupling
     // ------------------------------------------------------------------------
-    std::cout << "[4] Benchmarking Quad-Bayer RAW Sensor Mode (A-IKLT Coupling)...\n";
+    std::cout << "[5] Benchmarking Quad-Bayer RAW Sensor Mode (A-IKLT Coupling)...\n";
     constexpr size_t BAYER_PIXELS = static_cast<size_t>(WIDTH) * HEIGHT;
     std::vector<uint16_t> bayer_raw(BAYER_PIXELS);
 
@@ -135,14 +162,15 @@ int main() {
     std::cout << "------------------------------------------------------------------------\n";
     std::cout << "  SUMMARY COMPARISON:\n";
     std::cout << "  • PSC 1.0 Baseline Ratio:      " << std::fixed << std::setprecision(2) << psc1_ratio << "% of raw\n";
-    std::cout << "  • PSC 2.0 Frontier Ratio:      " << std::fixed << std::setprecision(2) << psc2_ratio << "% of raw\n";
-    std::cout << "  • Net Bitrate Saving:          " << std::fixed << std::setprecision(2) << (psc1_ratio - psc2_ratio) << "% relative to raw\n";
+    std::cout << "  • PSC 2.0 (MED Prior) Ratio:   " << std::fixed << std::setprecision(2) << psc2_ratio << "% of raw\n";
+    std::cout << "  • PSC 2.0 (ConvNet) Ratio:     " << std::fixed << std::setprecision(2) << psc2_conv_ratio << "% of raw\n";
+    std::cout << "  • Total Bitrate Saving:        " << std::fixed << std::setprecision(2) << (psc1_ratio - psc2_conv_ratio) << "% relative to raw\n";
     std::cout << "  • PSC 2.0 Throughput (1080p):  " << std::fixed << std::setprecision(1) << (1000.0 / psc2_encode_ms) << " FPS encode / "
               << (1000.0 / psc2_decode_ms) << " FPS decode\n";
     std::cout << "  • Bit-Exact Verification:      100.000% MATCH (0 generational loss)\n";
     std::cout << "========================================================================\n";
 
-    return (bit_exact && qb_exact) ? 0 : 1;
+    return (bit_exact && bit_exact_conv && qb_exact) ? 0 : 1;
     } catch (const std::exception& e) {
         std::cerr << "EXCEPTION: " << e.what() << "\n";
         return 2;

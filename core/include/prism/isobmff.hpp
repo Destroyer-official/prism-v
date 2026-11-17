@@ -252,6 +252,43 @@ public:
     static std::vector<uint8_t> create_social_export_composite(const MuxedMp4Package& pkg);
 };
 
+/**
+ * @brief Zero-Allocation Direct Stream Container Parser (RFC 9559 EBML / ISO/IEC 14496-12 ISOBMFF).
+ *
+ * Directly extracts microsecond duration, timescale, frame count, keyframe GOP timestamps,
+ * video geometry, codec fourcc, and audio metrics.
+ * Immune to Android Stagefright MKV duration corruption bugs.
+ */
+class NativeContainerParser {
+public:
+    /**
+     * @brief Probe container bytes and extract exact VideoMetadata.
+     */
+    static bool parse_bytes(const uint8_t* data, size_t size, VideoMetadata& out_meta);
+
+    /**
+     * @brief Parse a media file directly from disk, with O(1) backward seek recovery
+     * if EBML Cues or Duration elements are omitted or located at the tail.
+     */
+    static bool parse_file(const std::string& path, VideoMetadata& out_meta);
+
+    /**
+     * @brief Parse standard Matroska / WebM EBML stream (RFC 9559 / RFC 8794).
+     */
+    static bool parse_ebml(const uint8_t* data, size_t size, VideoMetadata& out_meta);
+
+    /**
+     * @brief Parse standard ISOBMFF stream (ISO/IEC 14496-12).
+     */
+    static bool parse_isobmff(const uint8_t* data, size_t size, VideoMetadata& out_meta);
+
+    /**
+     * @brief Recover ground-truth duration from trailing clusters of an MKV file
+     * when header Duration is missing, 0, or corrupt.
+     */
+    static uint64_t recover_mkv_duration_from_tail(const std::string& path);
+};
+
 } // namespace prism
 
 #endif // PRISM_ISOBMFF_HPP

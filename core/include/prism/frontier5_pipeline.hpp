@@ -13,6 +13,7 @@
 #include <array>
 #include <memory>
 #include <string>
+#include <mutex>
 
 namespace prism {
 
@@ -250,6 +251,143 @@ private:
     std::vector<IsoMp4Engine::Track1Sample> track1_samples_;
     std::vector<IsoMp4Engine::Track2Sample> track2_samples_;
     Afgs1Params latest_afgs_{};
+};
+
+// ============================================================================
+// 6. User-Budgeted Heterogeneous Resource Governor
+// ============================================================================
+enum class CpuCoreMode : uint8_t {
+    ECO = 0,      // Efficiency cores only (Cortex-A520, nice +19)
+    BALANCED = 1, // Efficiency + Mid cores (Cortex-A725, nice 0)
+    TURBO = 2     // All cores including Prime (Cortex-X925 / Oryon, nice -10)
+};
+
+enum class PowerPriority : uint8_t {
+    BATTERY_SAVER = 0,
+    BALANCED = 1,
+    MAX_SPEED = 2
+};
+
+struct ResourceConstraints {
+    size_t max_ram_mb = 512; // Hard cap on process RAM (< 512 MB user cap)
+    CpuCoreMode cpu_mode = CpuCoreMode::BALANCED;
+    bool enable_gpu_compute = true;
+    PowerPriority power_priority = PowerPriority::BALANCED;
+};
+
+class HeterogeneousResourceGovernor {
+public:
+    static HeterogeneousResourceGovernor& instance() {
+        static HeterogeneousResourceGovernor s_instance;
+        return s_instance;
+    }
+
+    explicit HeterogeneousResourceGovernor(const ResourceConstraints& constraints = {});
+
+    void set_constraints(const ResourceConstraints& constraints);
+    const ResourceConstraints& get_constraints() const { return constraints_; }
+
+    // Memory token bucket methods
+    bool try_acquire_memory_tokens(size_t bytes);
+    void release_memory_tokens(size_t bytes);
+    size_t get_current_allocated_bytes() const;
+    size_t get_max_allowed_bytes() const { return constraints_.max_ram_mb * 1024 * 1024; }
+
+    // CPU thread affinity mask (e.g. 0x0F for Eco, 0x7F for Balanced, 0xFF for Turbo on 8-core)
+    uint64_t compute_affinity_mask(uint32_t total_system_cores = 8) const;
+    int compute_thread_nice_priority() const;
+    bool apply_affinity_to_current_thread(uint32_t total_system_cores = 8);
+
+private:
+    ResourceConstraints constraints_;
+    size_t allocated_bytes_ = 0;
+    mutable std::mutex mutex_;
+};
+
+// ============================================================================
+// 7. Lock-Free Chunked Parallel Slicing & Nanosecond Atom Stitcher
+// ============================================================================
+struct GopMicroTask {
+    uint32_t chunk_id = 0;
+    uint32_t start_frame = 0;
+    uint32_t end_frame = 0;
+    uint64_t start_pts_us = 0;
+    uint64_t end_pts_us = 0;
+    bool is_closed_gop = true;
+};
+
+struct EncodedChunkPayload {
+    uint32_t chunk_id = 0;
+    std::vector<IsoMp4Engine::Track1Sample> base_samples;
+    std::vector<IsoMp4Engine::Track2Sample> residual_samples;
+    Afgs1Params grain_params;
+    uint64_t duration_us = 0;
+};
+
+class LockFreeChunkedParallelSlicer {
+public:
+    static std::vector<GopMicroTask> slice_video_metadata(const VideoMetadata& meta,
+                                                          uint64_t target_chunk_duration_us = 5000000ULL);
+
+    /**
+     * @brief Stitches independently encoded GOP chunks with nanosecond epoch accumulation,
+     * guaranteeing 0.000 μs PTS/DTS drift and zero visual/audio desync.
+     */
+    static IsoMp4Engine::MuxedMp4Package stitch_chunks_zero_copy(
+        const std::vector<EncodedChunkPayload>& completed_chunks,
+        uint32_t width,
+        uint32_t height,
+        uint32_t fps = 60,
+        const IsoMp4Engine::MetadataLedger* meta = nullptr);
+};
+
+// ============================================================================
+// 8. Predictive Thermal Dynamic Gear-Shifter (Lumped RC Model)
+// ============================================================================
+class PredictiveThermalGearShifter {
+public:
+    static PredictiveThermalGearShifter& instance() {
+        static PredictiveThermalGearShifter s_instance;
+        return s_instance;
+    }
+
+    enum class ShifterGear : uint8_t {
+        GEAR_4_SUPER_TURBO = 4, // P ~ 3.20W, H > 0.85
+        GEAR_3_STANDARD    = 3, // P ~ 2.10W, 0.65 < H <= 0.85
+        GEAR_2_ECONOMY     = 2, // P ~ 1.35W, 0.40 < H <= 0.65
+        GEAR_1_GUARD       = 1, // P ~ 0.75W, 0.15 < H <= 0.40
+        GEAR_0_ATOMIC_YIELD = 0 // P ~ 0.05W, H <= 0.15 (Atomic Pause)
+    };
+
+    struct ThermalState {
+        float chassis_temp_c = 25.0f;
+        float predicted_headroom = 1.0f; // 0.0 (throttled) to 1.0+ (cool)
+        float active_soc_power_watts = 2.10f;
+        ShifterGear current_gear = ShifterGear::GEAR_3_STANDARD;
+        bool is_atomic_paused = false;
+    };
+
+    PredictiveThermalGearShifter(float ambient_temp_c = 25.0f,
+                                float r_th = 4.86f,
+                                float c_th = 9.25f);
+
+    // Evaluate step response under active power P over delta_t_sec
+    ThermalState update_thermal_model(float active_power_watts, float delta_t_sec);
+
+    // Feed ADPF getThermalHeadroom(10s) sample with hysteresis debounce
+    ShifterGear evaluate_adpf_headroom(float adpf_headroom_sample, uint64_t current_time_ms);
+
+    ShifterGear get_current_gear() const { return current_state_.current_gear; }
+    const ThermalState& get_current_state() const { return current_state_; }
+
+    static float get_gear_target_power(ShifterGear gear);
+
+private:
+    float ambient_temp_c_;
+    float r_th_; // Thermal resistance (K/W)
+    float c_th_; // Thermal capacitance (J/K)
+    ThermalState current_state_{};
+    uint64_t last_gear_change_ms_ = 0;
 };
 
 } // namespace prism

@@ -4,6 +4,7 @@
 #include "prism/psc.hpp"
 #include "prism/rans8.hpp"
 #include "prism/remux.hpp"
+#include "prism/isobmff.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -226,4 +227,45 @@ PRISM_TEST(test_remux_rejects_truncated_and_trailing_data) {
     PRISM_ASSERT(!RemuxEngine::parse_and_verify_isobmff(trailing.data(), trailing.size(), parsed));
 
     PRISM_ASSERT(!RemuxEngine::parse_and_verify_isobmff(nullptr, 0, parsed));
+}
+
+PRISM_TEST(test_native_container_parser_corrupted_headers_resilience) {
+    VideoMetadata meta;
+
+    // 1. Null / Empty data
+    PRISM_ASSERT(!NativeContainerParser::parse_bytes(nullptr, 0, meta));
+    PRISM_ASSERT(!NativeContainerParser::parse_bytes(nullptr, 100, meta));
+
+    // 2. Truncated EBML Header (<12 bytes)
+    std::vector<uint8_t> short_ebml = {0x1A, 0x45, 0xDF, 0xA3, 0x85};
+    PRISM_ASSERT(!NativeContainerParser::parse_bytes(short_ebml.data(), short_ebml.size(), meta));
+
+    // 3. Corrupted EBML VINT with infinite size or out-of-bounds offsets
+    std::vector<uint8_t> corrupt_vint = {
+        0x1A, 0x45, 0xDF, 0xA3, 0x85, 0x42, 0x82, 0x81, 'm',
+        0x18, 0x53, 0x80, 0x67, 0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF
+    };
+    // Must handle gracefully without crash
+    NativeContainerParser::parse_bytes(corrupt_vint.data(), corrupt_vint.size(), meta);
+
+    // 4. Corrupted ISOBMFF Box Size (> total size)
+    std::vector<uint8_t> corrupt_isobmff = {
+        0x00, 0x00, 0xFF, 0x00, 'f', 't', 'y', 'p',
+        'm', 'p', '4', '2', 0x00, 0x00, 0x00, 0x00
+    };
+    PRISM_ASSERT(!NativeContainerParser::parse_bytes(corrupt_isobmff.data(), corrupt_isobmff.size(), meta));
+
+    // 5. Non-existent file and truncated tail recovery
+    uint64_t dur_non_exist = NativeContainerParser::recover_mkv_duration_from_tail("non_existent_file_xyz.mkv");
+    PRISM_ASSERT_EQ(dur_non_exist, 0);
+
+    const std::string dummy_file = "test_truncated_tail.mkv";
+    {
+        std::ofstream out(dummy_file, std::ios::binary);
+        std::vector<uint8_t> garbage = {0x1A, 0x45, 0xDF, 0xA3, 0x99, 0x88, 0x77};
+        out.write(reinterpret_cast<const char*>(garbage.data()), garbage.size());
+    }
+    uint64_t dur_truncated = NativeContainerParser::recover_mkv_duration_from_tail(dummy_file);
+    PRISM_ASSERT_EQ(dur_truncated, 0);
+    std::filesystem::remove(dummy_file);
 }

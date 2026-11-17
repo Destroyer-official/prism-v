@@ -1,4 +1,5 @@
 #include "prism/router.hpp"
+#include "prism/isobmff.hpp"
 #include <cstring>
 
 namespace prism {
@@ -31,6 +32,13 @@ IngestMediaInfo IngestRouter::probe_media(const uint8_t* header_data, size_t hea
     // Check for standard ISOBMFF 'ftyp'
     if (contains_fourcc(header_data, header_len, "ftyp")) {
         info.is_container_standard = true;
+        VideoMetadata meta;
+        if (NativeContainerParser::parse_bytes(header_data, header_len, meta)) {
+            info.width = meta.width;
+            info.height = meta.height;
+            info.duration_us = meta.duration_us;
+            info.source_bitrate_bps = meta.exact_bitrate_bps;
+        }
         if (contains_fourcc(header_data, header_len, "hvc1") ||
             contains_fourcc(header_data, header_len, "hev1")) {
             info.family = CodecFamily::H265_HEVC;
@@ -45,6 +53,33 @@ IngestMediaInfo IngestRouter::probe_media(const uint8_t* header_data, size_t hea
             info.family = CodecFamily::H264_AVC;
             info.codec_id = SourceCodecId::CODEC_H264;
             info.estimated_bbr_savings_ratio = 0.18; // heuristic default for H.264
+        }
+    } else if (header_len >= 4 && header_data[0] == 0x1A && header_data[1] == 0x45 && header_data[2] == 0xDF && header_data[3] == 0xA3) {
+        // Matroska / WebM EBML container
+        info.is_container_standard = true;
+        VideoMetadata meta;
+        if (NativeContainerParser::parse_bytes(header_data, header_len, meta)) {
+            info.width = meta.width;
+            info.height = meta.height;
+            info.duration_us = meta.duration_us;
+            info.source_bitrate_bps = meta.exact_bitrate_bps;
+            if (meta.video_codec == SourceCodecId::CODEC_HEVC) {
+                info.family = CodecFamily::H265_HEVC;
+                info.codec_id = SourceCodecId::CODEC_HEVC;
+                info.estimated_bbr_savings_ratio = 0.12;
+            } else if (meta.video_codec == SourceCodecId::CODEC_AV1) {
+                info.family = CodecFamily::AV1;
+                info.codec_id = SourceCodecId::CODEC_H264;
+                info.estimated_bbr_savings_ratio = 0.02;
+            } else {
+                info.family = CodecFamily::H264_AVC;
+                info.codec_id = SourceCodecId::CODEC_H264;
+                info.estimated_bbr_savings_ratio = 0.18;
+            }
+        } else {
+            info.family = CodecFamily::H264_AVC;
+            info.codec_id = SourceCodecId::CODEC_H264;
+            info.estimated_bbr_savings_ratio = 0.18;
         }
     } else if (header_len >= 8 && std::memcmp(header_data, "PRISMV01", 8) == 0) {
         // .pvloss container
@@ -70,6 +105,30 @@ RoutingDecision IngestRouter::route_media(const IngestMediaInfo& info, bool user
     RoutingDecision decision;
 
     if (!user_requested_lossless) {
+        // Hyper-Efficient Source Redirection Invariant (2027+ Never-Worse Guarantee):
+        // If source bitrate is already hyper-efficient (<1.5 Mbps for 1080p, <800 kbps for 720p, or <500 kbps),
+        // lossy re-encoding will degrade visual quality and risk file expansion.
+        // The router automatically redirects to Mode L-BBR 2.0 (Lossless Bitstream Recompression).
+        bool is_hyper_efficient = false;
+        if (info.source_bitrate_bps > 0.0) {
+            if (info.width >= 1920 && info.height >= 1080 && info.source_bitrate_bps <= 1500000.0) {
+                is_hyper_efficient = true;
+            } else if (info.width >= 1280 && info.height >= 720 && info.source_bitrate_bps <= 800000.0) {
+                is_hyper_efficient = true;
+            } else if (info.source_bitrate_bps <= 500000.0) {
+                is_hyper_efficient = true;
+            }
+        }
+
+        if (is_hyper_efficient) {
+            decision.contract = LosslessContract::CONTRACT_A_BBR2;
+            decision.is_lossless = true;
+            decision.recommended_codec_id = (info.family == CodecFamily::H265_HEVC) ? SourceCodecId::CODEC_HEVC : SourceCodecId::CODEC_H264;
+            decision.mode_name = "Mode L-BBR 2.0 (Hyper-Efficient Redirection)";
+            decision.rationale = "Source video is already hyper-efficiently compressed (<1.5 Mbps for 1080p). Automatically redirected to Mode L-BBR 2.0 lossless bitstream recompression to eliminate file inflation and preserve master quality.";
+            return decision;
+        }
+
         // Mode Y-Hybrid (Lossy Hardware-Anchored Hybrid Split-Stream)
         decision.contract = LosslessContract::CONTRACT_A_BBR;
         decision.is_lossless = false;

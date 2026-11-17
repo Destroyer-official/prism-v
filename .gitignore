@@ -21,6 +21,9 @@ Testing/
 *.pdb
 *.exe
 
+# Compiled Vulkan SPIR-V shaders
+*.spv
+
 # Android and Gradle build output
 .gradle/
 android/build/

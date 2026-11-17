@@ -23,6 +23,9 @@ public:
     static constexpr size_t INPUT_DIM = LATENT_CHANNELS + BASE_FEATURE_CHANNELS; // 12
     static constexpr size_t HIDDEN_DIM = 12;
     static constexpr size_t OUTPUT_DIM = 4; // 3 residual channels (Y, U, V) + 1 alpha gating mask
+    static constexpr size_t SERIALIZED_MODEL_SIZE = 4 + 4 + (HIDDEN_DIM * INPUT_DIM) + (HIDDEN_DIM * 4) +
+                                                   (HIDDEN_DIM * HIDDEN_DIM) + (HIDDEN_DIM * 4) +
+                                                   (OUTPUT_DIM * HIDDEN_DIM) + (OUTPUT_DIM * 4); // 456 bytes
 
     CoolchicResidualModel();
 
@@ -42,6 +45,66 @@ public:
                           uint8_t& out_alpha) const;
 
     /**
+     * @brief Synthesize and blend an entire single plane.
+     * Evaluates the 336 MACs/pixel network across all coordinates.
+     */
+    void synthesize_frame(const int16_t* latents_plane,
+                          const uint8_t* base_frame,
+                          uint8_t* out_frame,
+                          uint32_t width,
+                          uint32_t height) const;
+
+    /**
+     * @brief Synthesize and blend an entire single plane with activity-guided block gating.
+     * Evaluates neural MLP only on active blocks with high spatial frequency/edges,
+     * bypassing smooth flat regions to guarantee strictly < 0.35 GMACs/frame at 1080p.
+     *
+     * @param latents_plane 8 INT16 latent features per pixel
+     * @param base_frame Base reconstructed plane
+     * @param out_frame Output blended plane
+     * @param width Frame width
+     * @param height Frame height
+     * @param activity_threshold Block variance threshold for neural activation
+     * @param out_macs Optional pointer to receive total executed MACs
+     */
+    void synthesize_frame_activity_guided(const int16_t* latents_plane,
+                                          const uint8_t* base_frame,
+                                          uint8_t* out_frame,
+                                          uint32_t width,
+                                          uint32_t height,
+                                          uint32_t activity_threshold = 16,
+                                          uint64_t* out_macs = nullptr) const;
+
+    /**
+     * @brief Synthesize and blend an entire YUV420 frame (Luma WxH, Chroma U and V (W/2)x(H/2)).
+     */
+    void synthesize_frame_yuv420(const int16_t* latents_plane,
+                                 const uint8_t* base_y,
+                                 const uint8_t* base_u,
+                                 const uint8_t* base_v,
+                                 uint8_t* out_y,
+                                 uint8_t* out_u,
+                                 uint8_t* out_v,
+                                 uint32_t width,
+                                 uint32_t height) const;
+
+    /**
+     * @brief Synthesize and blend an entire YUV420 frame with activity-guided block gating.
+     * Evaluates neural MLP only on active blocks, bypassing smooth flat regions to guarantee strictly < 0.35 GMACs/frame.
+     */
+    void synthesize_frame_yuv420_activity_guided(const int16_t* latents_plane,
+                                                 const uint8_t* base_y,
+                                                 const uint8_t* base_u,
+                                                 const uint8_t* base_v,
+                                                 uint8_t* out_y,
+                                                 uint8_t* out_u,
+                                                 uint8_t* out_v,
+                                                 uint32_t width,
+                                                 uint32_t height,
+                                                 uint32_t activity_threshold = 16,
+                                                 uint64_t* out_macs = nullptr) const;
+
+    /**
      * @brief Decoupled Masked Soft-Gating Blending:
      * f_out = alpha * f_base + (1 - alpha) * f_local + residual
      */
@@ -49,6 +112,30 @@ public:
                                uint8_t local_avg,
                                int16_t residual,
                                uint8_t alpha);
+
+    /**
+     * @brief Serialize model weights and biases to binary payload.
+     */
+    std::vector<uint8_t> serialize_model() const;
+
+    /**
+     * @brief Deserialize model weights and biases from binary payload.
+     */
+    bool deserialize_model(const uint8_t* data, size_t size);
+
+    /**
+     * @brief Direct weight accessor and mutator.
+     */
+    void set_weights(const int8_t* w1, const int32_t* b1,
+                     const int8_t* w2, const int32_t* b2,
+                     const int8_t* w3, const int32_t* b3);
+
+    const auto& weights_l1() const { return w1_; }
+    const auto& bias_l1() const { return b1_; }
+    const auto& weights_l2() const { return w2_; }
+    const auto& bias_l2() const { return b2_; }
+    const auto& weights_l3() const { return w3_; }
+    const auto& bias_l3() const { return b3_; }
 
 private:
     std::array<int8_t, HIDDEN_DIM * INPUT_DIM> w1_{};  // 12 x 12
@@ -62,7 +149,7 @@ private:
 };
 
 /**
- * @brief 4-Target Pareto Dial Rate-Distortion Solver.
+ * @brief 4-Target Pareto Dial Rate-Distortion Solver & Tri-Metric Consensus Controller.
  */
 class ParetoDialSolver {
 public:
@@ -73,6 +160,15 @@ public:
         bool enable_afgs1_grain;
         float predicted_vmaf;
         float predicted_energy_joules_per_frame;
+        float predicted_cambi;
+        float predicted_cvvdp_jod;
+    };
+
+    struct TriMetricConfig {
+        float lambda_vmaf = 1.0f;
+        float lambda_cvvdp = 1.5f;
+        float lambda_cambi = 2.0f;
+        float max_cambi_threshold = 2.5f;
     };
 
     static DialResult solve(const ParetoTarget& target,
@@ -80,6 +176,13 @@ public:
                             uint32_t height,
                             uint32_t fps,
                             float duration_sec);
+
+    static DialResult solve_tri_metric(const ParetoTarget& target,
+                                       uint32_t width,
+                                       uint32_t height,
+                                       uint32_t fps,
+                                       float duration_sec,
+                                       const TriMetricConfig& metric_cfg);
 
     /**
      * @brief 0.3-second Preflight Pareto Probe:

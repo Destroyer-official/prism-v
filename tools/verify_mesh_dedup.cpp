@@ -17,6 +17,8 @@ namespace fs = std::filesystem;
 using namespace prism;
 
 int main(int argc, char* argv[]) {
+    (void)argc;
+    (void)argv;
     std::cout << "===============================================================\n";
     std::cout << "  FRONTIER 6: RABIN-MESH DEDUPLICATION & RECONSTRUCTION BENCHMARK\n";
     std::cout << "  2027+ State-of-the-Art Multi-Resolution Spatio-Temporal Vault  \n";
@@ -213,6 +215,7 @@ int main(int argc, char* argv[]) {
     std::cout << "[STAGE 6] Benchmarking Android VFS Proxy Random-Access Seek Latency...\n";
     MeshDeltaManifest d1_man;
     bool load_ok = engine.load_manifest(delta1_manifest.string(), d1_man);
+    (void)load_ok;
     assert(load_ok);
 
     constexpr size_t NUM_SEEKS = 100;
@@ -223,6 +226,7 @@ int main(int argc, char* argv[]) {
         uint64_t seek_offset = (i * 31337ULL) % (delta1_raw - seek_buf.size());
         bool read_ok = engine.read_virtual_range(d1_man, vault_dir.string(),
                                                 seek_offset, seek_buf.size(), seek_buf.data());
+        (void)read_ok;
         assert(read_ok);
     }
     auto seek_end = std::chrono::high_resolution_clock::now();
@@ -246,6 +250,7 @@ int main(int argc, char* argv[]) {
     // Simulate user deleting master_take_01.mp4: promote delta1 to master
     MeshDeltaManifest promoted_master;
     bool reelect_ok = engine.elect_new_master(cluster_manifests, 0, promoted_master);
+    (void)reelect_ok;
     assert(reelect_ok);
     assert(promoted_master.is_master_node == true);
 

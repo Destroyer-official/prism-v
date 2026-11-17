@@ -70,3 +70,64 @@ PRISM_TEST(test_detint_16kb_page_alignment) {
 
     DetInt::free_page_aligned(ptr);
 }
+
+PRISM_TEST(test_detint_linear_layer_and_relu) {
+    // Test linear_layer with identical test vector to Java DetInt
+    int16_t lin_x[2] = {10, -20};
+    int8_t lin_w[4] = {2, 1, -3, 4}; // row 0: [2, 1], row 1: [-3, 4]
+    int32_t lin_bias[2] = {5, -5};
+    int16_t lin_y[2] = {0, 0};
+
+    DetInt::linear_layer(lin_x, lin_w, lin_bias, lin_y, 2, 2, 16384, 14);
+    PRISM_ASSERT_EQ(lin_y[0], 5);
+    PRISM_ASSERT_EQ(lin_y[1], -115);
+
+    // Test relu
+    int16_t relu_arr[5] = {500, -100, 0, -32767, 32767};
+    DetInt::relu(relu_arr, 5);
+    PRISM_ASSERT_EQ(relu_arr[0], 500);
+    PRISM_ASSERT_EQ(relu_arr[1], 0);
+    PRISM_ASSERT_EQ(relu_arr[2], 0);
+    PRISM_ASSERT_EQ(relu_arr[3], 0);
+    PRISM_ASSERT_EQ(relu_arr[4], 32767);
+}
+
+PRISM_TEST(test_detint_aligned_buffer_raii) {
+    constexpr size_t ELEMENT_COUNT = 4096;
+    AlignedBuffer<int32_t> buf(ELEMENT_COUNT, PAGE_SIZE_16KB);
+
+    PRISM_ASSERT(buf.data() != nullptr);
+    PRISM_ASSERT_EQ(buf.size(), ELEMENT_COUNT);
+
+    uintptr_t addr = reinterpret_cast<uintptr_t>(buf.data());
+    PRISM_ASSERT((addr % PAGE_SIZE_16KB) == 0);
+
+    for (size_t i = 0; i < ELEMENT_COUNT; ++i) {
+        buf[i] = static_cast<int32_t>(i * 17 - 100);
+    }
+
+    for (size_t i = 0; i < ELEMENT_COUNT; ++i) {
+        PRISM_ASSERT_EQ(buf[i], static_cast<int32_t>(i * 17 - 100));
+    }
+
+    // Move semantics check
+    AlignedBuffer<int32_t> moved = std::move(buf);
+    PRISM_ASSERT(buf.data() == nullptr);
+    PRISM_ASSERT(moved.data() != nullptr);
+    PRISM_ASSERT_EQ(moved[10], static_cast<int32_t>(10 * 17 - 100));
+}
+
+PRISM_TEST(test_detint_dyadic_rescale_shift_bounds) {
+    // Test s_shift = 1 (minimum power of two shift)
+    int16_t r1 = DetInt::dyadic_rescale(100, 1, 1); // (100 * 1 + 1) >> 1 = 50
+    PRISM_ASSERT_EQ(r1, 50);
+
+    // Test s_shift = 30 (large shift)
+    int16_t r30 = DetInt::dyadic_rescale(1073741824, 1, 30); // 2^30 / 2^30 = 1
+    PRISM_ASSERT_EQ(r30, 1);
+
+    // Negative rounding symmetry
+    int16_t r_neg = DetInt::dyadic_rescale(-1000, 16384, 15);
+    PRISM_ASSERT_EQ(r_neg, -500);
+}
+

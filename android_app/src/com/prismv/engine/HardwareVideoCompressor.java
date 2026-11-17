@@ -141,12 +141,23 @@ public final class HardwareVideoCompressor {
                 return false;
             }
 
+            long sourceSizeBytes = new File(inputPath).length();
+            VideoProcessingPipeline.ParsedVideoMetadata nativeMeta = VideoProcessingPipeline.probeVideoMetadata(inputPath, null, sourceSizeBytes);
+
             int origWidth = inputVideoFormat.getInteger(MediaFormat.KEY_WIDTH);
             int origHeight = inputVideoFormat.getInteger(MediaFormat.KEY_HEIGHT);
             long durationUs = inputVideoFormat.containsKey(MediaFormat.KEY_DURATION)
                     ? inputVideoFormat.getLong(MediaFormat.KEY_DURATION) : 0;
+            if (nativeMeta.durationUs > 0) {
+                durationUs = nativeMeta.durationUs;
+                if (nativeMeta.width > 0) origWidth = nativeMeta.width;
+                if (nativeMeta.height > 0) origHeight = nativeMeta.height;
+                Log.i(TAG, "Native Container Parser extracted ground-truth duration: " + (durationUs / 1000000.0) + "s, format: " + nativeMeta.container);
+            }
             int origFps = 30;
-            if (inputVideoFormat.containsKey(MediaFormat.KEY_FRAME_RATE)) {
+            if (nativeMeta.fps > 0) {
+                origFps = Math.round(nativeMeta.fps);
+            } else if (inputVideoFormat.containsKey(MediaFormat.KEY_FRAME_RATE)) {
                 try {
                     origFps = Math.round(inputVideoFormat.getFloat(MediaFormat.KEY_FRAME_RATE));
                 } catch (Exception e1) {
@@ -263,6 +274,55 @@ public final class HardwareVideoCompressor {
                 }
             }
 
+            // 2027+ Never-Worse Bitrate Ceiling Guarantee:
+            // Ensure re-encoding target bitrate strictly respects source stream bitrate ceiling
+            long sourceBitrateBps = (durationUs > 0 && sourceSizeBytes > 0)
+                    ? (long) ((sourceSizeBytes * 8.0) / (durationUs / 1000000.0))
+                    : 0;
+            if (sourceBitrateBps > 0) {
+                double ceilingFactor = 0.70;
+                String preset = options.qualityPreset != null ? options.qualityPreset : "Normal Quality";
+                if (preset.contains("High")) ceilingFactor = 0.85;
+                else if (preset.contains("Fast")) ceilingFactor = 0.50;
+                else if ("E-LOW".equals(options.mode)) ceilingFactor = 0.45;
+                else if ("F5-SILICON".equals(options.mode)) ceilingFactor = 0.55;
+
+                int maxAllowedBitrate = (int) (sourceBitrateBps * ceilingFactor);
+                if (maxAllowedBitrate > 0 && targetBitrateBps > maxAllowedBitrate) {
+                    Log.i(TAG, "Never-Worse Bitrate Ceiling Clamp: clamping target from " + (targetBitrateBps / 1000)
+                            + " kbps to " + (maxAllowedBitrate / 1000) + " kbps (Source: " + (sourceBitrateBps / 1000) + " kbps)");
+                    targetBitrateBps = Math.max(150000, maxAllowedBitrate);
+                }
+
+                // Hyper-efficient source detection (e.g. <= 1.5 Mbps for 1080p, <= 800 kbps for 720p, or <= 500 kbps)
+                long pixelCount = (long) origWidth * origHeight;
+                boolean isHyperEfficient = ((pixelCount >= 1920L * 1080L && sourceBitrateBps <= 1500000L) ||
+                        (pixelCount >= 1280L * 720L && sourceBitrateBps <= 800000L) ||
+                        (sourceBitrateBps <= 500000L) ||
+                        (maxAllowedBitrate < 300000));
+
+                if (isHyperEfficient && options.targetWidth == 0 && options.targetHeight == 0
+                        && options.targetBitrateKbps == 0 && options.rotationDegrees == 0
+                        && options.trimStartUs == 0 && options.trimEndUs == 0) {
+                    Log.i(TAG, "⚡ [Never-Worse Invariant] Source video is already hyper-efficient (" + (sourceBitrateBps / 1000)
+                            + " kbps). Redirecting to Mode L-Remux (Zero-Copy 0% Inflation Guarantee)...");
+                    if (listener != null) {
+                        listener.onLog("⚡ [Never-Worse Invariant] Source video is already hyper-efficient (" + (sourceBitrateBps / 1000)
+                                + " kbps). Automatically redirecting to Mode L-Remux to guarantee zero expansion & bit-exact master quality!");
+                    }
+                    boolean remuxOk = VideoProcessingPipeline.nativeRemuxContainer(inputPath, outputPath);
+                    if (remuxOk) {
+                        long finalRemuxSize = new File(outputPath).length();
+                        if (listener != null) {
+                            listener.onProgressDetailed(100, durationUs, durationUs, 1, origFps, 0, "Finished (Zero-Copy Remux)");
+                            listener.onLog(String.format(Locale.US, "Hyper-Efficient Redirection Complete: %.2f MB -> %.2f MB (0.00%% expansion)",
+                                    sourceSizeBytes / (1024.0 * 1024.0), finalRemuxSize / (1024.0 * 1024.0)));
+                        }
+                        return true;
+                    }
+                }
+            }
+
             // Target MIME based on optimization profile
             String targetMime;
             if ("E-LOW".equals(options.mode)) {
@@ -353,7 +413,18 @@ public final class HardwareVideoCompressor {
                 audioExtractor.selectTrack(audioTrackIndex);
 
                 // Dedicated Audio Transcode Loop (AAC-LC / Opus at target bitrate & channel layout)
-                boolean shouldReencodeAudio = (options != null &&
+                boolean isPcmOrBloated = false;
+                if (inputAudioFormat != null) {
+                    String aMime = inputAudioFormat.getString(MediaFormat.KEY_MIME);
+                    if (aMime != null && (aMime.contains("raw") || aMime.contains("pcm") || aMime.contains("wav"))) {
+                        isPcmOrBloated = true;
+                    }
+                    if (inputAudioFormat.containsKey(MediaFormat.KEY_BIT_RATE)) {
+                        int srcAudioBitrate = inputAudioFormat.getInteger(MediaFormat.KEY_BIT_RATE);
+                        if (srcAudioBitrate > 320000) isPcmOrBloated = true;
+                    }
+                }
+                boolean shouldReencodeAudio = isPcmOrBloated || (options != null &&
                         ((options.audioBitrateKbps > 0 && options.audioBitrateKbps < 320) ||
                          "Mono".equalsIgnoreCase(options.audioChannel)));
 
@@ -431,6 +502,11 @@ public final class HardwareVideoCompressor {
             long lastFpsCalcFrame = 0;
             long framesRenderedCount = 0;
             long lastProgressCallbackMs = 0;
+
+            long totalBytesWritten = 0;
+            boolean didStepDownBitrate = false;
+            boolean didStepDownFloor = false;
+            boolean hitNeverWorseAbort = false;
 
             while (!encoderDone) {
                 boolean hadActivity = false;
@@ -547,6 +623,54 @@ public final class HardwareVideoCompressor {
                             muxer.writeSampleData(muxerVideoTrack, encBuf, bufferInfo);
                             currentVideoPtsUs = bufferInfo.presentationTimeUs;
                             framesEncoded++;
+                            totalBytesWritten += bufferInfo.size;
+
+                            // Fail-Safe Never-Worse File Guard & Closed-Loop Rate Governor
+                            if (sourceSizeBytes > 0 && durationUs > 0) {
+                                double progressRatio = (double) currentVideoPtsUs / (double) durationUs;
+                                double budgetExpectedSoFar = (sourceSizeBytes * 0.70) * progressRatio;
+
+                                // Step-Down 1: Progress > 8% and cumulative bytes exceed nominal budget pace by > 15%
+                                if (progressRatio > 0.08 && !didStepDownBitrate) {
+                                    if (totalBytesWritten > budgetExpectedSoFar * 1.15) {
+                                        didStepDownBitrate = true;
+                                        int steppedDown = Math.max(350000, (int) (targetBitrateBps * 0.75));
+                                        try {
+                                            android.os.Bundle p = new android.os.Bundle();
+                                            p.putInt(MediaCodec.PARAMETER_KEY_VIDEO_BITRATE, steppedDown);
+                                            encoder.setParameters(p);
+                                            if (listener != null) {
+                                                listener.onLog("⚡ [Never-Worse Governor] Closed-loop Step-Down 1: reducing bitrate to " + (steppedDown / 1000) + " kbps");
+                                            }
+                                        } catch (Exception ignored) {}
+                                    }
+                                }
+
+                                // Step-Down 2 (Floor): Progress > 20% and cumulative bytes exceed nominal budget pace by > 25%
+                                if (progressRatio > 0.20 && !didStepDownFloor) {
+                                    if (totalBytesWritten > budgetExpectedSoFar * 1.25) {
+                                        didStepDownFloor = true;
+                                        int floorBitrate = Math.max(250000, (int) (targetBitrateBps * 0.40));
+                                        try {
+                                            android.os.Bundle p = new android.os.Bundle();
+                                            p.putInt(MediaCodec.PARAMETER_KEY_VIDEO_BITRATE, floorBitrate);
+                                            encoder.setParameters(p);
+                                            if (listener != null) {
+                                                listener.onLog("⚡ [Never-Worse Governor] Closed-loop Step-Down 2 (Floor): emergency throttle to " + (floorBitrate / 1000) + " kbps");
+                                            }
+                                        } catch (Exception ignored) {}
+                                    }
+                                }
+
+                                // Strict 95% Hard Remux Abort (Never-Worse Invariant Guarantee)
+                                if (totalBytesWritten >= (long) (sourceSizeBytes * 0.95)) {
+                                    if (listener != null) {
+                                        listener.onLog("⚠️ [Never-Worse Guard Alert] Encoded stream reached 95% of source file size. Aborting encode and activating clean stream-copy remux (0.00% expansion guarantee)!");
+                                    }
+                                    hitNeverWorseAbort = true;
+                                    break;
+                                }
+                            }
 
                             long nowMs = SystemClock.elapsedRealtime();
                             long elapsedMs = nowMs - transcodeStartMs;
@@ -635,6 +759,7 @@ public final class HardwareVideoCompressor {
                             audioInfo.flags = audioExtractor.getSampleFlags();
 
                             muxer.writeSampleData(muxerAudioTrack, audioBuf, audioInfo);
+                            totalBytesWritten += aSize;
                             audioExtractor.advance();
                         }
                     }
@@ -642,6 +767,31 @@ public final class HardwareVideoCompressor {
 
                 if (!hadActivity) {
                     LockSupport.parkNanos(500_000); // 0.5ms fallback only when pipeline has no ready buffer
+                }
+            }
+
+            if (hitNeverWorseAbort) {
+                try { if (muxer != null) { muxer.stop(); muxer.release(); muxer = null; } } catch (Exception ignored) {}
+                try { if (encoder != null) { encoder.stop(); encoder.release(); encoder = null; } } catch (Exception ignored) {}
+                try { if (decoder != null) { decoder.stop(); decoder.release(); decoder = null; } } catch (Exception ignored) {}
+                try { if (videoExtractor != null) { videoExtractor.release(); videoExtractor = null; } } catch (Exception ignored) {}
+                try { if (audioExtractor != null) { audioExtractor.release(); audioExtractor = null; } } catch (Exception ignored) {}
+
+                try { new File(outputPath).delete(); } catch (Exception ignored) {}
+
+                if (listener != null) listener.onLog("⚡ Executing Mode L-Remux clean packet stream-copy fallback...");
+                boolean remuxOk = VideoProcessingPipeline.nativeRemuxContainer(inputPath, outputPath);
+                if (remuxOk) {
+                    long finalRemuxSize = new File(outputPath).length();
+                    if (listener != null) {
+                        listener.onProgressDetailed(100, durationUs, durationUs, framesEncoded, smoothedFps, 0, "Finished (Never-Worse Remux)");
+                        listener.onLog(String.format(Locale.US, "Never-Worse Remux Complete: %.2f MB -> %.2f MB (0.00%% expansion)",
+                                sourceSizeBytes / (1024.0 * 1024.0), finalRemuxSize / (1024.0 * 1024.0)));
+                    }
+                    return true;
+                } else {
+                    boolean copyOk = fastLosslessTrim(null, Uri.fromFile(new File(inputPath)), new File(outputPath), 0, durationUs, false, listener);
+                    return copyOk;
                 }
             }
 
@@ -664,6 +814,7 @@ public final class HardwareVideoCompressor {
                     audioInfo.flags = audioExtractor.getSampleFlags();
 
                     muxer.writeSampleData(muxerAudioTrack, audioBuf, audioInfo);
+                    totalBytesWritten += aSize;
                     audioExtractor.advance();
                 }
             }
@@ -788,6 +939,8 @@ public final class HardwareVideoCompressor {
                                          ByteBuffer buf, MediaCodec.BufferInfo info,
                                          long startUs, long endUs, boolean cutOutSelected,
                                          TranscodeListener listener) {
+        long lastPtsUs = -1;
+
         if (!cutOutSelected) {
             // Mode 1: Delete dimmed / keep selected range [startUs, endUs]
             if (startUs > 0) extractor.seekTo(startUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC);
@@ -800,10 +953,14 @@ public final class HardwareVideoCompressor {
 
                 if (sampleTime >= startUs) {
                     if (basePts < 0) basePts = sampleTime;
+                    long targetPts = Math.max(0, sampleTime - basePts);
+                    long pts = (lastPtsUs < 0) ? targetPts : Math.max(lastPtsUs + 1000L, targetPts);
+                    lastPtsUs = pts;
+
                     info.offset = 0;
                     info.size = size;
                     info.flags = extractor.getSampleFlags();
-                    info.presentationTimeUs = Math.max(0, sampleTime - basePts);
+                    info.presentationTimeUs = pts;
                     muxer.writeSampleData(muxTrack, buf, info);
                 }
                 extractor.advance();
@@ -818,10 +975,13 @@ public final class HardwareVideoCompressor {
                 long sampleTime = extractor.getSampleTime();
                 if (sampleTime >= startUs) break;
 
+                long pts = (lastPtsUs < 0) ? Math.max(0, sampleTime) : Math.max(lastPtsUs + 1000L, sampleTime);
+                lastPtsUs = pts;
+
                 info.offset = 0;
                 info.size = size;
                 info.flags = extractor.getSampleFlags();
-                info.presentationTimeUs = sampleTime;
+                info.presentationTimeUs = pts;
                 muxer.writeSampleData(muxTrack, buf, info);
                 extractor.advance();
             }
@@ -834,10 +994,14 @@ public final class HardwareVideoCompressor {
                 if (size < 0) break;
                 long sampleTime = extractor.getSampleTime();
 
+                long targetPts = Math.max(0, sampleTime - cutDelta);
+                long pts = (lastPtsUs < 0) ? targetPts : Math.max(lastPtsUs + 1000L, targetPts);
+                lastPtsUs = pts;
+
                 info.offset = 0;
                 info.size = size;
                 info.flags = extractor.getSampleFlags();
-                info.presentationTimeUs = Math.max(0, sampleTime - cutDelta);
+                info.presentationTimeUs = pts;
                 muxer.writeSampleData(muxTrack, buf, info);
                 extractor.advance();
             }
@@ -865,6 +1029,9 @@ public final class HardwareVideoCompressor {
 
             muxer = new MediaMuxer(outputFile.getAbsolutePath(), MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
             int[] muxTracks = new int[extractor.getTrackCount()];
+            long[] lastTrackPts = new long[extractor.getTrackCount()];
+            java.util.Arrays.fill(lastTrackPts, -1L);
+
             for (int i = 0; i < extractor.getTrackCount(); i++) {
                 MediaFormat f = extractor.getTrackFormat(i);
                 muxTracks[i] = muxer.addTrack(f);
@@ -880,10 +1047,14 @@ public final class HardwareVideoCompressor {
                 int trackIdx = extractor.getSampleTrackIndex();
                 if (trackIdx < 0) break;
 
+                long rawPts = extractor.getSampleTime();
+                long pts = (lastTrackPts[trackIdx] < 0) ? Math.max(0, rawPts) : Math.max(lastTrackPts[trackIdx] + 1000L, rawPts);
+                lastTrackPts[trackIdx] = pts;
+
                 info.offset = 0;
                 info.size = extractor.readSampleData(buf, 0);
                 info.flags = extractor.getSampleFlags();
-                info.presentationTimeUs = extractor.getSampleTime();
+                info.presentationTimeUs = pts;
 
                 muxer.writeSampleData(muxTracks[trackIdx], buf, info);
                 extractor.advance();
@@ -947,6 +1118,8 @@ public final class HardwareVideoCompressor {
             MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
             long cumulativeVideoPtsUs = 0;
             long cumulativeAudioPtsUs = 0;
+            long lastOutVidPts = -1;
+            long lastOutAudPts = -1;
 
             for (int clipIdx = 0; clipIdx < clipUris.size(); clipIdx++) {
                 Uri u = clipUris.get(clipIdx);
@@ -966,19 +1139,26 @@ public final class HardwareVideoCompressor {
                 }
 
                 // Copy video
-                long lastVidPts = 0;
+                long lastVidRelPts = 0;
+                long firstVidPts = -1;
                 if (vid >= 0 && masterVidTrack >= 0) {
                     ex.selectTrack(vid);
                     while (true) {
                         int size = ex.readSampleData(buf, 0);
                         if (size < 0) break;
-                        long pts = ex.getSampleTime();
-                        lastVidPts = pts;
+                        long rawPts = ex.getSampleTime();
+                        if (firstVidPts < 0) firstVidPts = rawPts;
+                        long relPts = Math.max(0, rawPts - firstVidPts);
+                        lastVidRelPts = relPts;
+
+                        long targetPts = cumulativeVideoPtsUs + relPts;
+                        long outPts = (lastOutVidPts < 0) ? targetPts : Math.max(lastOutVidPts + 1000L, targetPts);
+                        lastOutVidPts = outPts;
 
                         info.offset = 0;
                         info.size = size;
                         info.flags = ex.getSampleFlags();
-                        info.presentationTimeUs = cumulativeVideoPtsUs + pts;
+                        info.presentationTimeUs = outPts;
                         muxer.writeSampleData(masterVidTrack, buf, info);
                         ex.advance();
                     }
@@ -986,27 +1166,34 @@ public final class HardwareVideoCompressor {
                 }
 
                 // Copy audio
-                long lastAudPts = 0;
+                long lastAudRelPts = 0;
+                long firstAudPts = -1;
                 if (aud >= 0 && masterAudTrack >= 0) {
                     ex.selectTrack(aud);
                     while (true) {
                         int size = ex.readSampleData(buf, 0);
                         if (size < 0) break;
-                        long pts = ex.getSampleTime();
-                        lastAudPts = pts;
+                        long rawPts = ex.getSampleTime();
+                        if (firstAudPts < 0) firstAudPts = rawPts;
+                        long relPts = Math.max(0, rawPts - firstAudPts);
+                        lastAudRelPts = relPts;
+
+                        long targetPts = cumulativeAudioPtsUs + relPts;
+                        long outPts = (lastOutAudPts < 0) ? targetPts : Math.max(lastOutAudPts + 1000L, targetPts);
+                        lastOutAudPts = outPts;
 
                         info.offset = 0;
                         info.size = size;
                         info.flags = ex.getSampleFlags();
-                        info.presentationTimeUs = cumulativeAudioPtsUs + pts;
+                        info.presentationTimeUs = outPts;
                         muxer.writeSampleData(masterAudTrack, buf, info);
                         ex.advance();
                     }
                     ex.unselectTrack(aud);
                 }
 
-                cumulativeVideoPtsUs += (lastVidPts + 33333L);
-                cumulativeAudioPtsUs += (lastAudPts + 33333L);
+                cumulativeVideoPtsUs += (lastVidRelPts + 33333L);
+                cumulativeAudioPtsUs += (lastAudRelPts + 33333L);
                 ex.release();
             }
 

@@ -37,7 +37,7 @@ import java.util.TreeSet;
  */
 public class DeveloperMatrixView extends LinearLayout {
 
-    private static final int SELF_TEST_COUNT = 7;
+    private static final int SELF_TEST_COUNT = 9;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private TextView tvInvariantSummary;
@@ -374,6 +374,17 @@ public class DeveloperMatrixView extends LinearLayout {
                     bbr2Pass = BbrCodec.testBitExactRoundTrip(bitstream).bitExactMatch;
                 }
                 postResult("BBR 2.0 (SSG-CR4 + C-MAVQ + SIMD-16 rANS) Bit-Exact", bbr2Pass, 7);
+
+                // Check 8: Frontier 5 Heterogeneous Resource Governor & TilePool
+                boolean govPass = com.prismv.engine.SiliconFusedPipelineEngine.setResourceConstraints(256, 1, true, 1);
+                long[] tileStats = com.prismv.engine.SiliconFusedPipelineEngine.getTilePoolStats();
+                boolean tilePass = (tileStats != null && tileStats.length >= 2 && tileStats[1] <= 512L * 1024L * 1024L);
+                postResult("Heterogeneous Resource Governor & TilePool <512MB", govPass && tilePass, 8);
+
+                // Check 9: Frontier 5 Predictive Thermal Gear Shifter & ADPF Headroom
+                int gear = com.prismv.engine.SiliconFusedPipelineEngine.evaluateThermalHeadroom(0.95f, System.currentTimeMillis());
+                boolean thermalPass = (gear >= 1 && gear <= 4);
+                postResult("Predictive Thermal Gear Shifter (ADPF Headroom)", thermalPass, 9);
 
                 handler.post(this::finishRun);
             } catch (Throwable e) {

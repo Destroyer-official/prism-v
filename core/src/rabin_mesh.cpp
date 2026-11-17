@@ -1,5 +1,6 @@
 #include "prism/rabin_mesh.hpp"
 #include "prism/bbr.hpp"
+#include "prism/tile_pool.hpp"
 #include <fstream>
 #include <filesystem>
 #include <iomanip>
@@ -84,9 +85,12 @@ PerceptualKeyframe RabinMeshEngine::fingerprint_frame(const uint8_t* luma_plane,
     kf.timestamp_ms = timestamp_ms;
     if (!luma_plane || width < 16 || height < 16) return kf;
 
-    // Downsample luma plane to 64x64 thumbnail
+    // Downsample luma plane to 64x64 thumbnail using bounded TilePool memory
     constexpr uint32_t THUMB_SZ = 64;
     std::array<uint8_t, THUMB_SZ * THUMB_SZ> thumb{};
+
+    // Contract: consume tile from TilePool within user RAM budget
+    SpatialTile* mem_tile = TilePool::instance().acquire_tile();
 
     uint64_t sum = 0;
     uint64_t sq_sum = 0;
@@ -97,9 +101,16 @@ PerceptualKeyframe RabinMeshEngine::fingerprint_frame(const uint8_t* luma_plane,
             uint32_t src_x = (x * width) / THUMB_SZ;
             uint8_t val = luma_plane[src_y * width + src_x];
             thumb[y * THUMB_SZ + x] = val;
+            if (mem_tile && (y * THUMB_SZ + x) < SpatialTile::PIXEL_COUNT) {
+                mem_tile->samples.data()[y * THUMB_SZ + x] = static_cast<int16_t>(val);
+            }
             sum += val;
             sq_sum += static_cast<uint64_t>(val) * val;
         }
+    }
+
+    if (mem_tile) {
+        TilePool::instance().release_tile(mem_tile);
     }
 
     // Compute contrast/variance score (0-100)

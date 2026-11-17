@@ -155,8 +155,26 @@ public:
                       const uint8_t* base_frame,
                       uint8_t* out_frame);
 
+    /**
+     * @brief Speed 2 Charging-Time Overfitting:
+     * Executes AdamW / integer-scaled gradient descent optimization over a continuous GOP.
+     * Iteratively updates tri-plane feature lattice entries and synthesis MLP weights
+     * to minimize MSE against target frames: L = (1/N) * sum || Base + NeRV(t, x, y) - Target ||^2.
+     *
+     * @param target_frames Array of pointers to uncompressed ground truth Y-planes (length: config_.gop_frames)
+     * @param base_frames Array of pointers to hardware ASIC base-layer decoded Y-planes (length: config_.gop_frames)
+     * @param steps Number of optimization iterations (e.g. 50 - 300)
+     * @param lr Learning rate (default: 0.005f)
+     * @return Final average MSE loss across the GOP
+     */
+    float optimize_gop_step(const uint8_t* const* target_frames,
+                            const uint8_t* const* base_frames,
+                            size_t steps,
+                            float lr = 0.005f);
+
     TriPlaneLattice& lattice() { return lattice_; }
     NeRVSynthesisMLP& mlp() { return mlp_; }
+    const NeRVSConfig& config() const { return config_; }
 
 private:
     NeRVSConfig config_;

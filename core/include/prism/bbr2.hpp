@@ -56,6 +56,11 @@ public:
      */
     std::array<int16_t, OUTPUT_CTX_DIM> get_context() const;
 
+    /**
+     * @brief Map codec-specific intra prediction mode to canonical 0..180 degree angle.
+     */
+    static uint8_t map_intra_angle(SourceCodecId codec, uint8_t mode);
+
     const State& state() const { return state_; }
 
 private:
@@ -87,6 +92,15 @@ public:
      * @brief Invert Vector Context Tokens back into exact original byte stream.
      */
     static std::vector<uint8_t> detokenize(const std::vector<Token>& tokens, size_t original_size);
+
+    /**
+     * @brief Direct zero-allocation stream detokenizer from raw symbols and extra payload.
+     */
+    static std::vector<uint8_t> detokenize_stream(const uint16_t* symbols,
+                                                  size_t symbol_count,
+                                                  const uint8_t* extra_payload,
+                                                  size_t extra_size,
+                                                  size_t original_size);
 
     /**
      * @brief Compute optimal probability statistics (summing to 32,768) for the 64-symbol alphabet.

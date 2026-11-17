@@ -14,6 +14,7 @@
 #include "prism/prism_gen.hpp"
 #include "prism/nerv_engine.hpp"
 #include "prism/frontier5_pipeline.hpp"
+#include "prism/tile_pool.hpp"
 #include "prism/spatial.hpp"
 #include "prism/rabin_mesh.hpp"
 #include "prism/psc2.hpp"
@@ -211,6 +212,53 @@ Java_com_prismv_interceptor_SocialShareInterceptor_nativeCompositeSocialExport(
 }
 
 JNIEXPORT jstring JNICALL
+Java_com_prismv_engine_VideoProcessingPipeline_nativeProbeVideoMetadata(
+    JNIEnv* env,
+    jobject /* thiz */,
+    jstring filePath,
+    jbyteArray headerData,
+    jlong fileSize
+) {
+    prism::VideoMetadata meta;
+    bool parsed = false;
+
+    if (filePath != nullptr) {
+        const char* path_chars = env->GetStringUTFChars(filePath, nullptr);
+        if (path_chars) {
+            parsed = prism::NativeContainerParser::parse_file(path_chars, meta);
+            env->ReleaseStringUTFChars(filePath, path_chars);
+        }
+    }
+
+    if (!parsed && headerData != nullptr) {
+        jsize len = env->GetArrayLength(headerData);
+        if (len > 0) {
+            std::vector<uint8_t> buf(static_cast<size_t>(len));
+            env->GetByteArrayRegion(headerData, 0, len, reinterpret_cast<jbyte*>(buf.data()));
+            meta.file_size_bytes = static_cast<uint64_t>(fileSize);
+            parsed = prism::NativeContainerParser::parse_bytes(buf.data(), buf.size(), meta);
+        }
+    }
+
+    std::string codec_str = "H264";
+    if (meta.video_codec == prism::SourceCodecId::CODEC_HEVC) codec_str = "HEVC";
+    else if (meta.video_codec == prism::SourceCodecId::CODEC_AV1) codec_str = "AV1";
+
+    char buffer[256];
+    std::snprintf(buffer, sizeof(buffer), "%llu;%u;%u;%.2f;%llu;%s;%s;%d",
+                  static_cast<unsigned long long>(meta.duration_us),
+                  meta.width,
+                  meta.height,
+                  meta.fps,
+                  static_cast<unsigned long long>(meta.exact_bitrate_bps),
+                  codec_str.c_str(),
+                  meta.container_format.c_str(),
+                  meta.is_vfr ? 1 : 0);
+
+    return env->NewStringUTF(buffer);
+}
+
+JNIEXPORT jstring JNICALL
 Java_com_prismv_engine_VideoProcessingPipeline_nativeProbeAndRoute(
     JNIEnv* env,
     jobject /* thiz */,
@@ -315,8 +363,8 @@ Java_com_prismv_engine_VideoProcessingPipeline_nativeEncodeSemanticFrame(
     jobject /* thiz */,
     jbyteArray frameYuv,
     jlong frameIndex,
-    jshortArray keypoints3d,
-    jshortArray pose6dof
+    jshortArray /* keypoints3d */,
+    jshortArray /* pose6dof */
 ) {
     if (!frameYuv) return nullptr;
 
@@ -566,8 +614,8 @@ Java_com_prismv_engine_VideoProcessingPipeline_nativeMuxFrontier5Container(
     jbyteArray baseNalu,
     jbyteArray residualPayload,
     jbyteArray afgsParams,
-    jint width,
-    jint height,
+    jint /* width */,
+    jint /* height */,
     jlong ptsMs
 ) {
     if (!baseNalu || !residualPayload) return nullptr;
@@ -613,6 +661,77 @@ Java_com_prismv_engine_VideoProcessingPipeline_nativeMuxFrontier5Container(
     return result;
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_prismv_engine_VideoProcessingPipeline_nativeSetResourceConstraints(
+    JNIEnv* /* env */,
+    jobject /* thiz */,
+    jint maxRamMb,
+    jint cpuMode,
+    jboolean enableGpu,
+    jint powerPriority
+) {
+    prism::ResourceConstraints constraints;
+    constraints.max_ram_mb = (maxRamMb > 0) ? static_cast<size_t>(maxRamMb) : 512;
+    constraints.cpu_mode = static_cast<prism::CpuCoreMode>(cpuMode);
+    constraints.enable_gpu_compute = (enableGpu != JNI_FALSE);
+    constraints.power_priority = static_cast<prism::PowerPriority>(powerPriority);
+
+    prism::HeterogeneousResourceGovernor::instance().set_constraints(constraints);
+    prism::TilePool::instance().configure_budget(constraints.max_ram_mb * 1024 * 1024);
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_prismv_engine_VideoProcessingPipeline_nativeApplyThreadAffinity(
+    JNIEnv* /* env */,
+    jobject /* thiz */,
+    jint totalCores
+) {
+    return prism::HeterogeneousResourceGovernor::instance().apply_affinity_to_current_thread(
+        (totalCores > 0) ? static_cast<uint32_t>(totalCores) : 8
+    ) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_prismv_engine_VideoProcessingPipeline_nativeEvaluateThermalHeadroom(
+    JNIEnv* /* env */,
+    jobject /* thiz */,
+    jfloat headroom,
+    jlong timeMs
+) {
+    auto gear = prism::PredictiveThermalGearShifter::instance().evaluate_adpf_headroom(
+        headroom,
+        static_cast<uint64_t>(timeMs)
+    );
+    return static_cast<jint>(gear);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_prismv_engine_VideoProcessingPipeline_nativeGetThermalGear(
+    JNIEnv* /* env */,
+    jobject /* thiz */
+) {
+    return static_cast<jint>(prism::PredictiveThermalGearShifter::instance().get_current_gear());
+}
+
+JNIEXPORT jlongArray JNICALL
+Java_com_prismv_engine_VideoProcessingPipeline_nativeGetTilePoolStats(
+    JNIEnv* env,
+    jobject /* thiz */
+) {
+    auto& pool = prism::TilePool::instance();
+    jlongArray arr = env->NewLongArray(3);
+    if (!arr) return nullptr;
+
+    jlong data[3] = {
+        static_cast<jlong>(pool.get_total_allocated_bytes()),
+        static_cast<jlong>(pool.get_capacity()),
+        static_cast<jlong>(pool.get_in_use_count())
+    };
+    env->SetLongArrayRegion(arr, 0, 3, data);
+    return arr;
+}
+
 // Test harness mirrors
 JNIEXPORT jbyteArray JNICALL
 Java_com_prismv_test_JniVerificationTest_nativeProcessFrontier5Frame(
@@ -636,6 +755,36 @@ JNIEXPORT jbyteArray JNICALL
 Java_com_prismv_test_JniVerificationTest_nativeMuxFrontier5Container(
     JNIEnv* env, jobject thiz, jbyteArray baseNalu, jbyteArray residualPayload, jbyteArray afgsParams, jint width, jint height, jlong ptsMs) {
     return Java_com_prismv_engine_VideoProcessingPipeline_nativeMuxFrontier5Container(env, thiz, baseNalu, residualPayload, afgsParams, width, height, ptsMs);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_prismv_test_JniVerificationTest_nativeSetResourceConstraints(
+    JNIEnv* env, jobject thiz, jint maxRamMb, jint cpuMode, jboolean enableGpu, jint powerPriority) {
+    return Java_com_prismv_engine_VideoProcessingPipeline_nativeSetResourceConstraints(env, thiz, maxRamMb, cpuMode, enableGpu, powerPriority);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_prismv_test_JniVerificationTest_nativeApplyThreadAffinity(
+    JNIEnv* env, jobject thiz, jint totalCores) {
+    return Java_com_prismv_engine_VideoProcessingPipeline_nativeApplyThreadAffinity(env, thiz, totalCores);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_prismv_test_JniVerificationTest_nativeEvaluateThermalHeadroom(
+    JNIEnv* env, jobject thiz, jfloat headroom, jlong timeMs) {
+    return Java_com_prismv_engine_VideoProcessingPipeline_nativeEvaluateThermalHeadroom(env, thiz, headroom, timeMs);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_prismv_test_JniVerificationTest_nativeGetThermalGear(
+    JNIEnv* env, jobject thiz) {
+    return Java_com_prismv_engine_VideoProcessingPipeline_nativeGetThermalGear(env, thiz);
+}
+
+JNIEXPORT jlongArray JNICALL
+Java_com_prismv_test_JniVerificationTest_nativeGetTilePoolStats(
+    JNIEnv* env, jobject thiz) {
+    return Java_com_prismv_engine_VideoProcessingPipeline_nativeGetTilePoolStats(env, thiz);
 }
 
 // Test harness mirrors

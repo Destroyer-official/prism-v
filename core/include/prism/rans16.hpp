@@ -9,6 +9,18 @@
 #include <vector>
 #include <array>
 
+#if defined(__aarch64__) && !defined(_MSC_VER)
+extern "C" {
+void arm_sme2_smopa_forward(const int8_t* lhs_activations,
+                            const int8_t* rhs_weights,
+                            int32_t* dst_tile,
+                            const uint8_t* zt0_lut_table);
+void arm_sme2_rans16_decode_step(uint32_t* states,
+                                 const uint16_t* cdf_lut,
+                                 uint16_t* out_symbols);
+}
+#endif
+
 namespace prism {
 
 /**
@@ -33,6 +45,11 @@ public:
         std::vector<uint8_t> byte_stream;
         size_t symbol_count = 0;
     };
+
+    /**
+     * @brief Runtime query for ARMv9 SME2 hardware support.
+     */
+    static bool has_sme2_support() noexcept;
 
     /**
      * @brief Encode an array of symbols using 16 interleaved lanes.

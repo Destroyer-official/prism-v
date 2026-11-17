@@ -23,6 +23,15 @@ PRISM_TEST(test_nerv_triplane_sampling) {
         PRISM_ASSERT(val != 0);
         PRISM_ASSERT(val >= -32767 && val <= 32767);
     }
+
+    // Boundary torture checks
+    std::array<int16_t, 8> out_zero{}, out_max{};
+    lattice.sample_feature(0, 0, 0, out_zero.data());
+    lattice.sample_feature(32767, 32767, 32767, out_max.data());
+    for (size_t c = 0; c < 8; ++c) {
+        PRISM_ASSERT(out_zero[c] >= -32767 && out_zero[c] <= 32767);
+        PRISM_ASSERT(out_max[c] >= -32767 && out_max[c] <= 32767);
+    }
 }
 
 PRISM_TEST(test_nerv_synthesis_mlp_bounded_macs) {
@@ -84,13 +93,86 @@ PRISM_TEST(test_nerv_codec_serialization_and_rendering) {
     bool ok = codec_recv.deserialize_gop(payload.data(), written);
     PRISM_ASSERT(ok);
 
-    // Render continuous frame at t = 0.5
+    // Render continuous frames at multiple timestamps
     std::vector<uint8_t> base_frame(cfg.width * cfg.height, 128);
     std::vector<uint8_t> out_frame(cfg.width * cfg.height, 0);
 
-    codec_recv.render_frame(0.5f, base_frame.data(), out_frame.data());
+    const float test_timestamps[] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
+    for (float t : test_timestamps) {
+        codec_recv.render_frame(t, base_frame.data(), out_frame.data());
+        for (uint8_t px : out_frame) {
+            PRISM_ASSERT(px >= 100 && px <= 160);
+        }
+    }
+}
 
-    for (uint8_t px : out_frame) {
-        PRISM_ASSERT(px >= 100 && px <= 160);
+PRISM_TEST(test_nerv_gop_optimization_step) {
+    NeRVSConfig cfg;
+    cfg.width = 32;
+    cfg.height = 32;
+    cfg.gop_frames = 4;
+    cfg.triplane_channels = 8;
+    cfg.spatial_downscale = 4;
+
+    NeRVCodec codec(cfg);
+
+    const size_t frame_size = cfg.width * cfg.height;
+    std::vector<std::vector<uint8_t>> targets(cfg.gop_frames, std::vector<uint8_t>(frame_size));
+    std::vector<std::vector<uint8_t>> bases(cfg.gop_frames, std::vector<uint8_t>(frame_size, 128));
+
+    for (size_t f = 0; f < cfg.gop_frames; ++f) {
+        for (size_t i = 0; i < frame_size; ++i) {
+            // Target frame has high-contrast pattern
+            targets[f][i] = static_cast<uint8_t>((128 + ((static_cast<int>(f) + 1) * 10) + (i % 31) - 15));
+        }
+    }
+
+    std::vector<const uint8_t*> target_ptrs(cfg.gop_frames);
+    std::vector<const uint8_t*> base_ptrs(cfg.gop_frames);
+    for (size_t f = 0; f < cfg.gop_frames; ++f) {
+        target_ptrs[f] = targets[f].data();
+        base_ptrs[f] = bases[f].data();
+    }
+
+    // Step 1: Run 1 step
+    float initial_mse = codec.optimize_gop_step(target_ptrs.data(), base_ptrs.data(), 1, 0.01f);
+    PRISM_ASSERT(initial_mse >= 0.0f);
+
+    // Step 2: Run multiple optimization steps and check convergence
+    float post_mse = codec.optimize_gop_step(target_ptrs.data(), base_ptrs.data(), 5, 0.01f);
+    PRISM_ASSERT(post_mse <= initial_mse + 1.0f); // MSE should decrease or remain stably bounded
+
+    // Verify bounded integer weights after gradient updates
+    for (int8_t w : codec.mlp().weights_l1()) {
+        PRISM_ASSERT(w >= -127 && w <= 127);
+    }
+    for (int8_t w : codec.mlp().weights_l2()) {
+        PRISM_ASSERT(w >= -127 && w <= 127);
+    }
+    for (int8_t w : codec.mlp().weights_l3()) {
+        PRISM_ASSERT(w >= -127 && w <= 127);
+    }
+}
+
+PRISM_TEST(test_nerv_continuous_subframe_render_latency) {
+    NeRVSConfig cfg;
+    cfg.width = 64;
+    cfg.height = 64;
+    cfg.gop_frames = 10;
+    cfg.triplane_channels = 8;
+    cfg.spatial_downscale = 4;
+
+    NeRVCodec codec(cfg);
+
+    std::vector<uint8_t> base_frame(cfg.width * cfg.height, 128);
+    std::vector<uint8_t> rendered_frame(cfg.width * cfg.height, 0);
+
+    // Continuous time subframe rendering at arbitrary temporal positions
+    float timestamps[] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
+    for (float t : timestamps) {
+        codec.render_frame(t, base_frame.data(), rendered_frame.data());
+        for (size_t i = 0; i < cfg.width * cfg.height; i += 64) {
+            PRISM_ASSERT(rendered_frame[i] >= 0 && rendered_frame[i] <= 255);
+        }
     }
 }

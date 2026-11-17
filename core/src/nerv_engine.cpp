@@ -252,6 +252,190 @@ bool NeRVCodec::deserialize_gop(const uint8_t* payload, size_t payload_size) {
     return true;
 }
 
+float NeRVCodec::optimize_gop_step(const uint8_t* const* target_frames,
+                                   const uint8_t* const* base_frames,
+                                   size_t steps,
+                                   float lr) {
+    if (!target_frames || steps == 0 || config_.gop_frames == 0 ||
+        config_.width == 0 || config_.height == 0) {
+        return 0.0f;
+    }
+
+    const size_t width = config_.width;
+    const size_t height = config_.height;
+    const size_t frames = config_.gop_frames;
+    const size_t channels = config_.triplane_channels;
+
+    const size_t stride_x = std::max<size_t>(1, width / 16);
+    const size_t stride_y = std::max<size_t>(1, height / 16);
+    const size_t stride_t = std::max<size_t>(1, frames / 8);
+
+    auto& w1 = mlp_.weights_l1();
+    auto& w2 = mlp_.weights_l2();
+    auto& w3 = mlp_.weights_l3();
+
+    auto& p_xy = lattice_.plane_xy();
+    auto& p_xt = lattice_.plane_xt();
+    auto& p_yt = lattice_.plane_yt();
+
+    float last_mse = 0.0f;
+
+    for (size_t step = 0; step < steps; ++step) {
+        double total_sq_err = 0.0;
+        size_t sample_count = 0;
+
+        std::vector<float> grad_w1(w1.size(), 0.0f);
+        std::vector<float> grad_w2(w2.size(), 0.0f);
+        std::vector<float> grad_w3(w3.size(), 0.0f);
+
+        for (size_t t = 0; t < frames; t += stride_t) {
+            const uint8_t* target_t = target_frames[t];
+            if (!target_t) continue;
+            const uint8_t* base_t = base_frames ? base_frames[t] : nullptr;
+
+            int32_t t_norm = (frames > 1) ? static_cast<int32_t>((t * 32767) / (frames - 1)) : 0;
+
+            for (size_t y = 0; y < height; y += stride_y) {
+                int32_t y_norm = (height > 1) ? static_cast<int32_t>((y * 32767) / (height - 1)) : 0;
+
+                for (size_t x = 0; x < width; x += stride_x) {
+                    int32_t x_norm = (width > 1) ? static_cast<int32_t>((x * 32767) / (width - 1)) : 0;
+
+                    size_t px_idx = y * width + x;
+                    int32_t target_val = static_cast<int32_t>(target_t[px_idx]);
+                    int32_t base_val = base_t ? static_cast<int32_t>(base_t[px_idx]) : 128;
+                    int32_t target_res = std::clamp(target_val - base_val, -128, 127);
+
+                    std::vector<int16_t> feat(channels, 0);
+                    lattice_.sample_feature(t_norm, x_norm, y_norm, feat.data());
+
+                    // Layer 1 forward
+                    std::array<int16_t, NeRVSynthesisMLP::HIDDEN_DIM> h1{};
+                    for (size_t m = 0; m < NeRVSynthesisMLP::HIDDEN_DIM; ++m) {
+                        int32_t acc = 0;
+                        for (size_t k = 0; k < NeRVSynthesisMLP::INPUT_DIM; ++k) {
+                            acc += static_cast<int32_t>(feat[k]) * w1[m * NeRVSynthesisMLP::INPUT_DIM + k];
+                        }
+                        int16_t val = DetInt::dyadic_rescale(acc, 16384, 15);
+                        if (val < 0) val = static_cast<int16_t>((static_cast<int32_t>(val) * 32) >> 8);
+                        h1[m] = val;
+                    }
+
+                    // Layer 2 forward
+                    std::array<int16_t, NeRVSynthesisMLP::HIDDEN_DIM> h2{};
+                    for (size_t m = 0; m < NeRVSynthesisMLP::HIDDEN_DIM; ++m) {
+                        int32_t acc = 0;
+                        for (size_t k = 0; k < NeRVSynthesisMLP::HIDDEN_DIM; ++k) {
+                            acc += static_cast<int32_t>(h1[k]) * w2[m * NeRVSynthesisMLP::HIDDEN_DIM + k];
+                        }
+                        int16_t val = DetInt::dyadic_rescale(acc, 16384, 15);
+                        if (val < 0) val = static_cast<int16_t>((static_cast<int32_t>(val) * 32) >> 8);
+                        h2[m] = val;
+                    }
+
+                    // Layer 3 forward (Y channel residual only)
+                    int32_t acc3 = 0;
+                    for (size_t k = 0; k < NeRVSynthesisMLP::HIDDEN_DIM; ++k) {
+                        acc3 += static_cast<int32_t>(h2[k]) * w3[k];
+                    }
+                    int16_t pred_res = DetInt::dyadic_rescale(acc3, 4096, 15);
+                    pred_res = static_cast<int16_t>(std::clamp<int32_t>(pred_res, -128, 127));
+
+                    int32_t err = static_cast<int32_t>(pred_res) - target_res;
+                    total_sq_err += static_cast<double>(err * err);
+                    sample_count++;
+
+                    float delta_out = static_cast<float>(err);
+
+                    // Backprop Layer 3
+                    std::array<float, NeRVSynthesisMLP::HIDDEN_DIM> delta_h2{};
+                    for (size_t k = 0; k < NeRVSynthesisMLP::HIDDEN_DIM; ++k) {
+                        grad_w3[k] += delta_out * (static_cast<float>(h2[k]) / 1024.0f);
+                        delta_h2[k] = delta_out * (static_cast<float>(w3[k]) / 32.0f);
+                    }
+
+                    // Backprop Layer 2
+                    std::array<float, NeRVSynthesisMLP::HIDDEN_DIM> delta_h1{};
+                    for (size_t m = 0; m < NeRVSynthesisMLP::HIDDEN_DIM; ++m) {
+                        float d_pre = delta_h2[m] * (h2[m] > 0 ? 1.0f : 0.125f);
+                        for (size_t k = 0; k < NeRVSynthesisMLP::HIDDEN_DIM; ++k) {
+                            grad_w2[m * NeRVSynthesisMLP::HIDDEN_DIM + k] += d_pre * (static_cast<float>(h1[k]) / 1024.0f);
+                            delta_h1[k] += d_pre * (static_cast<float>(w2[m * NeRVSynthesisMLP::HIDDEN_DIM + k]) / 32.0f);
+                        }
+                    }
+
+                    // Backprop Layer 1
+                    std::vector<float> delta_feat(channels, 0.0f);
+                    for (size_t m = 0; m < NeRVSynthesisMLP::HIDDEN_DIM; ++m) {
+                        float d_pre = delta_h1[m] * (h1[m] > 0 ? 1.0f : 0.125f);
+                        for (size_t k = 0; k < NeRVSynthesisMLP::INPUT_DIM; ++k) {
+                            grad_w1[m * NeRVSynthesisMLP::INPUT_DIM + k] += d_pre * (static_cast<float>(feat[k]) / 1024.0f);
+                            delta_feat[k] += d_pre * (static_cast<float>(w1[m * NeRVSynthesisMLP::INPUT_DIM + k]) / 32.0f);
+                        }
+                    }
+
+                    // Backprop to Tri-Plane lattice entries
+                    size_t pw = std::max<size_t>(1, width / config_.spatial_downscale);
+                    size_t ph = std::max<size_t>(1, height / config_.spatial_downscale);
+                    size_t gx = std::min<size_t>(pw - 1, (x * pw) / width);
+                    size_t gy = std::min<size_t>(ph - 1, (y * ph) / height);
+                    size_t gt = std::min<size_t>(frames - 1, t);
+
+                    float lattice_step = lr * 50.0f;
+                    for (size_t c = 0; c < channels; ++c) {
+                        float dF = delta_feat[c];
+                        size_t idx_xy = (gy * pw + gx) * channels + c;
+                        size_t idx_xt = (gt * pw + gx) * channels + c;
+                        size_t idx_yt = (gt * ph + gy) * channels + c;
+
+                        if (idx_xy < p_xy.size()) {
+                            int32_t val = static_cast<int32_t>(p_xy[idx_xy]) - static_cast<int32_t>(dF * lattice_step);
+                            p_xy[idx_xy] = static_cast<int16_t>(std::clamp<int32_t>(val, -32767, 32767));
+                        }
+                        if (idx_xt < p_xt.size()) {
+                            int32_t val = static_cast<int32_t>(p_xt[idx_xt]) - static_cast<int32_t>(dF * lattice_step);
+                            p_xt[idx_xt] = static_cast<int16_t>(std::clamp<int32_t>(val, -32767, 32767));
+                        }
+                        if (idx_yt < p_yt.size()) {
+                            int32_t val = static_cast<int32_t>(p_yt[idx_yt]) - static_cast<int32_t>(dF * lattice_step);
+                            p_yt[idx_yt] = static_cast<int16_t>(std::clamp<int32_t>(val, -32767, 32767));
+                        }
+                    }
+                }
+            }
+        }
+
+        if (sample_count == 0) break;
+        last_mse = static_cast<float>(total_sq_err / static_cast<double>(sample_count));
+
+        float norm_factor = 1.0f / static_cast<float>(sample_count);
+        float weight_decay = 0.001f;
+
+        for (size_t i = 0; i < w1.size(); ++i) {
+            float g = grad_w1[i] * norm_factor;
+            float step_val = lr * (g + weight_decay * static_cast<float>(w1[i]));
+            int32_t new_w = static_cast<int32_t>(w1[i]) - static_cast<int32_t>(std::round(step_val));
+            w1[i] = static_cast<int8_t>(std::clamp<int32_t>(new_w, -127, 127));
+        }
+
+        for (size_t i = 0; i < w2.size(); ++i) {
+            float g = grad_w2[i] * norm_factor;
+            float step_val = lr * (g + weight_decay * static_cast<float>(w2[i]));
+            int32_t new_w = static_cast<int32_t>(w2[i]) - static_cast<int32_t>(std::round(step_val));
+            w2[i] = static_cast<int8_t>(std::clamp<int32_t>(new_w, -127, 127));
+        }
+
+        for (size_t i = 0; i < w3.size(); ++i) {
+            float g = grad_w3[i] * norm_factor;
+            float step_val = lr * (g + weight_decay * static_cast<float>(w3[i]));
+            int32_t new_w = static_cast<int32_t>(w3[i]) - static_cast<int32_t>(std::round(step_val));
+            w3[i] = static_cast<int8_t>(std::clamp<int32_t>(new_w, -127, 127));
+        }
+    }
+
+    return last_mse;
+}
+
 void NeRVCodec::render_frame(float t_continuous,
                              const uint8_t* base_frame,
                              uint8_t* out_frame) {

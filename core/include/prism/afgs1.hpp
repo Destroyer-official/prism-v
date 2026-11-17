@@ -56,6 +56,22 @@ public:
                                 const Afgs1Params& params);
 
     /**
+     * @brief Synthesize deterministic grain on full YUV420 planes (Y: WxH, Cb: W/2xH/2, Cr: W/2xH/2).
+     */
+    static void synthesize_grain_yuv420(const uint8_t* in_y, const uint8_t* in_u, const uint8_t* in_v,
+                                        uint8_t* out_y, uint8_t* out_u, uint8_t* out_v,
+                                        uint32_t width, uint32_t height,
+                                        const Afgs1Params& params);
+
+    /**
+     * @brief Smooth AFGS1 parameters across adjacent temporal frames to eliminate temporal grain flickering.
+     * Locks LFSR random seed for continuous shot sequences and applies IIR low-pass smoothing to grain scale.
+     */
+    static void smooth_temporal_grain(Afgs1Params& current_params,
+                                      const Afgs1Params& prev_params,
+                                      bool is_scene_cut = false);
+
+    /**
      * @brief Serialize AFGS1 parameters to binary box payload ('afgs').
      */
     static std::vector<uint8_t> serialize_params(const Afgs1Params& params);

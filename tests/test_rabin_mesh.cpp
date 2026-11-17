@@ -137,3 +137,83 @@ PRISM_TEST(test_rabin_mesh_vector_cdc_and_virtual_reconstruction) {
     // Clean up
     fs::remove_all(vault_dir);
 }
+
+PRISM_TEST(test_rabin_mesh_zero_drift_multirange_seek) {
+    std::string vault_dir = "test_mesh_vault_seek";
+    if (fs::exists(vault_dir)) fs::remove_all(vault_dir);
+
+    RabinMeshEngine engine;
+    constexpr size_t STREAM_SZ = 1024 * 1024; // 1 MB
+    std::vector<uint8_t> stream(STREAM_SZ);
+    for (size_t i = 0; i < STREAM_SZ; ++i) {
+        stream[i] = static_cast<uint8_t>((i * 37) % 256);
+    }
+
+    MeshDeltaManifest manifest;
+    uint64_t written = engine.ingest_video(stream.data(), stream.size(), vault_dir, "cluster-seek", true, manifest);
+    PRISM_ASSERT(written > 0);
+
+    // Perform 50 arbitrary, unaligned random seeks across chunk boundaries
+    for (size_t i = 0; i < 50; ++i) {
+        size_t read_len = 1024 + (i * 257) % 32768; // 1 KB to ~33 KB
+        uint64_t offset = (i * 17921ULL) % (STREAM_SZ - read_len);
+
+        std::vector<uint8_t> dest(read_len, 0);
+        bool read_ok = engine.read_virtual_range(manifest, vault_dir, offset, read_len, dest.data());
+        PRISM_ASSERT(read_ok);
+
+        for (size_t b = 0; b < read_len; ++b) {
+            PRISM_ASSERT_EQ(dest[b], stream[offset + b]);
+        }
+    }
+
+    // Clean up
+    fs::remove_all(vault_dir);
+}
+
+PRISM_TEST(test_rabin_mesh_manifest_serialization_persistence) {
+    std::string manifest_path = "test_serialization.pvmesh";
+    if (fs::exists(manifest_path)) fs::remove(manifest_path);
+
+    RabinMeshEngine engine;
+
+    MeshDeltaManifest src_m;
+    src_m.original_file_size = 987654321ULL;
+    src_m.master_cluster_uuid = "cluster_uuid_prod_2027";
+    src_m.is_master_node = true;
+    src_m.original_sha256.fill(0x7A);
+
+    for (uint32_t i = 0; i < 10; ++i) {
+        MeshChunk c;
+        c.virtual_offset = i * 65536ULL;
+        c.length = 65536;
+        c.blake3_hash.fill(static_cast<uint8_t>(i));
+        c.is_residual = (i % 2 == 0);
+        src_m.chunk_references.push_back(c);
+    }
+    src_m.residual_stream = {0x01, 0x02, 0x03, 0x04, 0x05};
+
+    bool save_ok = engine.save_manifest(src_m, manifest_path);
+    PRISM_ASSERT(save_ok);
+    PRISM_ASSERT(fs::exists(manifest_path));
+
+    MeshDeltaManifest loaded_m;
+    bool load_ok = engine.load_manifest(manifest_path, loaded_m);
+    PRISM_ASSERT(load_ok);
+
+    PRISM_ASSERT_EQ(loaded_m.original_file_size, src_m.original_file_size);
+    PRISM_ASSERT(loaded_m.is_master_node == src_m.is_master_node);
+    PRISM_ASSERT_EQ(loaded_m.master_cluster_uuid, src_m.master_cluster_uuid);
+    PRISM_ASSERT(loaded_m.original_sha256 == src_m.original_sha256);
+    PRISM_ASSERT_EQ(loaded_m.chunk_references.size(), src_m.chunk_references.size());
+
+    for (size_t i = 0; i < loaded_m.chunk_references.size(); ++i) {
+        PRISM_ASSERT_EQ(loaded_m.chunk_references[i].virtual_offset, src_m.chunk_references[i].virtual_offset);
+        PRISM_ASSERT_EQ(loaded_m.chunk_references[i].length, src_m.chunk_references[i].length);
+        PRISM_ASSERT(loaded_m.chunk_references[i].blake3_hash == src_m.chunk_references[i].blake3_hash);
+        PRISM_ASSERT_EQ(loaded_m.chunk_references[i].is_residual, src_m.chunk_references[i].is_residual);
+    }
+    PRISM_ASSERT(loaded_m.residual_stream == src_m.residual_stream);
+
+    fs::remove(manifest_path);
+}

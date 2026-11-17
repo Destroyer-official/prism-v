@@ -64,6 +64,30 @@ public:
                               int32_t levels_stage1,
                               int32_t levels_stage2,
                               int16_t* out_latents);
+
+    /**
+     * @brief Batch encode an entire 2D grid of latent vectors.
+     */
+    static void encode_grid(const int16_t* latents,
+                            size_t width,
+                            size_t height,
+                            size_t channels,
+                            int32_t levels_stage1,
+                            int32_t levels_stage2,
+                            int8_t* out_codes_stage1,
+                            int8_t* out_codes_stage2);
+
+    /**
+     * @brief Batch decode an entire 2D grid of latent vectors.
+     */
+    static void decode_grid(const int8_t* codes_stage1,
+                            const int8_t* codes_stage2,
+                            size_t width,
+                            size_t height,
+                            size_t channels,
+                            int32_t levels_stage1,
+                            int32_t levels_stage2,
+                            int16_t* out_latents);
 };
 
 /**
@@ -113,6 +137,21 @@ public:
                              size_t payload_size,
                              const SemanticFrameVector& reference,
                              SemanticFrameVector& out_current);
+
+    /**
+     * @brief Encode an entire GOP sequence of semantic frame vectors into a single binary payload.
+     * Starts with an anchor keyframe, followed by predictive delta frames.
+     */
+    static size_t encode_sequence(const std::vector<SemanticFrameVector>& sequence,
+                                  uint8_t* out_payload,
+                                  size_t max_payload_size);
+
+    /**
+     * @brief Decode a binary sequence payload back into a sequence of semantic frame vectors.
+     */
+    static bool decode_sequence(const uint8_t* payload,
+                                size_t payload_size,
+                                std::vector<SemanticFrameVector>& out_sequence);
 };
 
 } // namespace prism

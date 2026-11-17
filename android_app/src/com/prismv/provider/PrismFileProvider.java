@@ -35,6 +35,10 @@ public class PrismFileProvider extends ContentProvider {
     private File resolveFile(String fileName) {
         if (fileName == null || getContext() == null) return null;
 
+        // 0. Direct file path
+        File direct = new File(fileName);
+        if (direct.isAbsolute() && direct.exists()) return direct;
+
         // 1. Check public Movies/Prism-V/
         File pubFile = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "Prism-V/" + fileName);
         if (pubFile.exists()) return pubFile;
@@ -47,7 +51,11 @@ public class PrismFileProvider extends ContentProvider {
         File extFile = new File(getContext().getExternalFilesDir(null), fileName);
         if (extFile.exists()) return extFile;
 
-        // 4. Check cache dir
+        // 4. Check internal files dir
+        File intFile = new File(getContext().getFilesDir(), fileName);
+        if (intFile.exists()) return intFile;
+
+        // 5. Check cache dir
         File cacheFile = new File(getContext().getCacheDir(), fileName);
         if (cacheFile.exists()) return cacheFile;
 
@@ -72,9 +80,14 @@ public class PrismFileProvider extends ContentProvider {
     public String getType(Uri uri) {
         String path = uri.getPath();
         if (path != null) {
-            if (path.endsWith(".mp4")) return "video/mp4";
-            if (path.endsWith(".mkv")) return "video/x-matroska";
-            if (path.endsWith(".mov")) return "video/quicktime";
+            String lower = path.toLowerCase();
+            if (lower.endsWith(".mp4")) return "video/mp4";
+            if (lower.endsWith(".mkv")) return "video/x-matroska";
+            if (lower.endsWith(".webm")) return "video/webm";
+            if (lower.endsWith(".mov")) return "video/quicktime";
+            if (lower.endsWith(".m4a")) return "audio/mp4";
+            if (lower.endsWith(".opus")) return "audio/opus";
+            if (lower.endsWith(".pvloss")) return "application/octet-stream";
         }
         return "application/octet-stream";
     }

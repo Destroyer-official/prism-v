@@ -8,6 +8,23 @@ namespace fs = std::filesystem;
 
 namespace prism {
 
+size_t VerifiedTransaction::recover_sandbox(const std::string& sandbox_dir) {
+    if (!fs::exists(sandbox_dir)) return 0;
+    size_t cleaned = 0;
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(sandbox_dir, ec)) {
+        if (ec) break;
+        if (entry.is_regular_file()) {
+            std::string ext = entry.path().extension().string();
+            if (ext == ".tmp" || entry.path().filename().string().find(".tmp") != std::string::npos) {
+                fs::remove(entry.path(), ec);
+                if (!ec) cleaned++;
+            }
+        }
+    }
+    return cleaned;
+}
+
 VerifiedTransaction::VerifiedTransaction(TransactionConfig config)
     : config_(std::move(config)), state_(TransactionState::CANDIDATE) {}
 

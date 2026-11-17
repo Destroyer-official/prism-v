@@ -67,4 +67,33 @@ PRISM_TEST(test_router_lossless_tri_contract_and_hybrid_dispatch) {
     auto dec_lossy = IngestRouter::route_media(info_h264, false); // user_requested_lossless = false
     PRISM_ASSERT(!dec_lossy.is_lossless);
     PRISM_ASSERT_EQ(dec_lossy.mode_name, "Mode Y-Hybrid");
+
+    // 7. Test Ingest Probe: Matroska / WebM EBML Header -> Mode L-BBR 2.0 (Lossless) / Mode Y-Hybrid (Lossy)
+    std::vector<uint8_t> mkv_header = {
+        0x1A, 0x45, 0xDF, 0xA3, 0x85, 0x42, 0x82, 0x81, 'm',
+        0x18, 0x53, 0x80, 0x67, 0x01, 0x00, 0x00
+    };
+    auto info_mkv = IngestRouter::probe_media(mkv_header.data(), mkv_header.size(), 234ULL * 1024ULL * 1024ULL);
+    PRISM_ASSERT(info_mkv.is_container_standard);
+    PRISM_ASSERT_EQ(info_mkv.family, CodecFamily::H264_AVC);
+
+    auto dec_mkv_lossy = IngestRouter::route_media(info_mkv, false);
+    PRISM_ASSERT(!dec_mkv_lossy.is_lossless);
+    PRISM_ASSERT_EQ(dec_mkv_lossy.mode_name, "Mode Y-Hybrid");
+
+    // 8. Test Hyper-Efficient Ingest Redirection (2027+ Never-Worse Invariant)
+    // When a video has native bitrate < 1.5 Mbps for 1080p, lossy mode automatically
+    // redirects to Mode L-BBR 2.0 to eliminate file inflation and preserve master quality.
+    IngestMediaInfo info_hyper;
+    info_hyper.width = 1920;
+    info_hyper.height = 1080;
+    info_hyper.duration_us = 1200000000ULL; // 20m 00s
+    info_hyper.source_bitrate_bps = 1250000.0; // 1.25 Mbps (hyper-efficient for 1080p)
+    info_hyper.family = CodecFamily::H264_AVC;
+    info_hyper.is_container_standard = true;
+
+    auto dec_hyper = IngestRouter::route_media(info_hyper, false); // user requested lossy
+    PRISM_ASSERT(dec_hyper.is_lossless); // Must be redirected to lossless!
+    PRISM_ASSERT_EQ(dec_hyper.contract, LosslessContract::CONTRACT_A_BBR2);
+    PRISM_ASSERT_EQ(dec_hyper.mode_name, "Mode L-BBR 2.0 (Hyper-Efficient Redirection)");
 }

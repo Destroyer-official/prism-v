@@ -24,6 +24,30 @@ void ChebyshevTrajectory::evaluate_position(float tau, float out_p[3]) const {
     }
 }
 
+void ChebyshevTrajectory::evaluate_velocity(float tau, float dt_sec, float out_v[3]) const {
+    if (is_static || dt_sec <= 1e-4f) {
+        out_v[0] = 0.0f;
+        out_v[1] = 0.0f;
+        out_v[2] = 0.0f;
+        return;
+    }
+
+    const float t = std::clamp(tau, -1.0f, 1.0f);
+    const float dt_inv = 2.0f / dt_sec;
+
+    // First derivatives of Chebyshev polynomials of the first kind:
+    // T1'(tau) = 1
+    // T2'(tau) = 4 * tau
+    // T3'(tau) = 12 * tau^2 - 3
+    const float dt1 = 1.0f;
+    const float dt2 = 4.0f * t;
+    const float dt3 = 12.0f * t * t - 3.0f;
+
+    for (int i = 0; i < 3; ++i) {
+        out_v[i] = ((c[0][i] * dt1) + (c[1][i] * dt2) + (c[2][i] * dt3)) * dt_inv;
+    }
+}
+
 void ChebyshevTrajectory::evaluate_rotation(float tau, float out_q[4]) const {
     const float t = std::clamp(tau, -1.0f, 1.0f);
     if (is_static) {
@@ -582,6 +606,113 @@ LowRankSubspaceFactorizer::SubspaceModel LowRankSubspaceFactorizer::fit_subspace
     }
 
     return model;
+}
+
+MobileTileBinningEngine::TileBinnedOutput MobileTileBinningEngine::bin_and_sort(
+    const std::vector<Gaussian3D>& primitives,
+    const float view_proj[16],
+    uint32_t screen_width,
+    uint32_t screen_height,
+    float near_z
+) {
+    TileBinnedOutput output;
+    if (screen_width == 0 || screen_height == 0 || !view_proj) return output;
+
+    output.tiles_x = (screen_width + TILE_SIZE - 1) / TILE_SIZE;
+    output.tiles_y = (screen_height + TILE_SIZE - 1) / TILE_SIZE;
+    output.total_tiles = output.tiles_x * output.tiles_y;
+
+    output.tile_splat_indices.assign(output.total_tiles * MAX_SPLATS_PER_TILE, 0);
+    output.tile_splat_counts.assign(output.total_tiles, 0);
+
+    output.gpu_gaussians.resize(primitives.size());
+
+    // Temporary storage for sorting splats by depth per tile: (depth, splat_idx)
+    std::vector<std::vector<std::pair<float, uint32_t>>> tile_entries(output.total_tiles);
+
+    const float focal = 0.5f * static_cast<float>(screen_height);
+
+    for (uint32_t i = 0; i < primitives.size(); ++i) {
+        const auto& prim = primitives[i];
+        auto& gpu = output.gpu_gaussians[i];
+
+        // Pack GpuGaussian
+        gpu.pos_alpha[0] = prim.p[0];
+        gpu.pos_alpha[1] = prim.p[1];
+        gpu.pos_alpha[2] = prim.p[2];
+        gpu.pos_alpha[3] = prim.alpha;
+
+        gpu.rot_quat[0] = prim.q[0];
+        gpu.rot_quat[1] = prim.q[1];
+        gpu.rot_quat[2] = prim.q[2];
+        gpu.rot_quat[3] = prim.q[3];
+
+        gpu.scale_flags[0] = prim.s[0];
+        gpu.scale_flags[1] = prim.s[1];
+        gpu.scale_flags[2] = prim.s[2];
+        gpu.scale_flags[3] = static_cast<float>(prim.flags);
+
+        gpu.color_dc_sh[0] = static_cast<float>(prim.dc_yuv[0]);
+        gpu.color_dc_sh[1] = static_cast<float>(prim.dc_yuv[1]);
+        gpu.color_dc_sh[2] = static_cast<float>(prim.dc_yuv[2]);
+        gpu.color_dc_sh[3] = static_cast<float>(prim.sh_codebook_idx);
+
+        // Project centroid to clip space: p_clip = view_proj * [x, y, z, 1]^T (column-major)
+        float x = prim.p[0], y = prim.p[1], z = prim.p[2];
+        float clip_w = view_proj[3] * x + view_proj[7] * y + view_proj[11] * z + view_proj[15];
+        if (clip_w < near_z) {
+            continue; // Behind near plane
+        }
+
+        float clip_x = view_proj[0] * x + view_proj[4] * y + view_proj[8] * z + view_proj[12];
+        float clip_y = view_proj[1] * x + view_proj[5] * y + view_proj[9] * z + view_proj[13];
+        float clip_z = view_proj[2] * x + view_proj[6] * y + view_proj[10] * z + view_proj[14];
+
+        float inv_w = 1.0f / clip_w;
+        float ndc_x = clip_x * inv_w;
+        float ndc_y = clip_y * inv_w;
+        float screen_x = (ndc_x * 0.5f + 0.5f) * static_cast<float>(screen_width);
+        float screen_y = (ndc_y * 0.5f + 0.5f) * static_cast<float>(screen_height);
+
+        // Approximate bounding radius on screen in pixels
+        float max_s = std::max({prim.s[0], prim.s[1], prim.s[2]});
+        float radius = std::max(1.0f, std::exp(max_s) * focal * inv_w * 3.0f);
+
+        // Compute tile bounds
+        int min_tx = std::max(0, static_cast<int>((screen_x - radius) / static_cast<float>(TILE_SIZE)));
+        int max_tx = std::min(static_cast<int>(output.tiles_x - 1), static_cast<int>((screen_x + radius) / static_cast<float>(TILE_SIZE)));
+        int min_ty = std::max(0, static_cast<int>((screen_y - radius) / static_cast<float>(TILE_SIZE)));
+        int max_ty = std::min(static_cast<int>(output.tiles_y - 1), static_cast<int>((screen_y + radius) / static_cast<float>(TILE_SIZE)));
+
+        if (min_tx > max_tx || min_ty > max_ty) continue;
+
+        float depth = clip_z * inv_w;
+
+        for (int ty = min_ty; ty <= max_ty; ++ty) {
+            for (int tx = min_tx; tx <= max_tx; ++tx) {
+                uint32_t tile_idx = static_cast<uint32_t>(ty) * output.tiles_x + static_cast<uint32_t>(tx);
+                if (tile_entries[tile_idx].size() < MAX_SPLATS_PER_TILE) {
+                    tile_entries[tile_idx].emplace_back(depth, i);
+                }
+            }
+        }
+    }
+
+    // Sort splats front-to-back within each tile
+    for (uint32_t t = 0; t < output.total_tiles; ++t) {
+        auto& entries = tile_entries[t];
+        std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) {
+            return a.first < b.first; // Increasing depth: front-to-back
+        });
+
+        output.tile_splat_counts[t] = static_cast<uint32_t>(entries.size());
+        uint32_t base_offset = t * MAX_SPLATS_PER_TILE;
+        for (size_t s = 0; s < entries.size(); ++s) {
+            output.tile_splat_indices[base_offset + s] = entries[s].second;
+        }
+    }
+
+    return output;
 }
 
 } // namespace prism::spatial

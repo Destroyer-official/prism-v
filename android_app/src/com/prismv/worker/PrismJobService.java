@@ -84,8 +84,16 @@ public class PrismJobService extends JobService {
                     PrismScheduler.ScheduleStatus status = PrismScheduler.evaluateStatus(getApplicationContext());
                     if (status.canRunNow) {
                         Log.i(TAG, "[JobScheduler] Environment ready (" + status.statusMessage + "). Resuming foreground service.");
+                        java.util.ArrayList<String> resumePaths = new java.util.ArrayList<>();
+                        for (PrismWorkJournal.JournalEntry entry : interrupted) {
+                            if (entry.inputPath != null && !resumePaths.contains(entry.inputPath)) {
+                                resumePaths.add(entry.inputPath);
+                            }
+                        }
+
                         Intent serviceIntent = new Intent(getApplicationContext(), PrismMediaProcessingService.class);
                         serviceIntent.setAction(PrismMediaProcessingService.ACTION_START);
+                        serviceIntent.putStringArrayListExtra(PrismMediaProcessingService.EXTRA_BATCH_PATHS, resumePaths);
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                             try {
                                 getApplicationContext().startForegroundService(serviceIntent);

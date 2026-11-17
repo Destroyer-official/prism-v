@@ -99,6 +99,29 @@ using Sha256Digest = std::array<uint8_t, 32>;
 // Cryptographic Checksum (BLAKE3: 32 bytes)
 using Blake3Digest = std::array<uint8_t, 32>;
 
+/**
+ * @brief Exact Video & Container Metadata supplied by Agent 2 (Rate Control & Container Specialist)
+ * to Agent 1 (High-Throughput Compute) and Agent 5 (Hybrid Lossy Engine).
+ */
+struct VideoMetadata {
+    uint64_t file_size_bytes = 0;
+    uint64_t duration_us = 0;              // Microsecond precision from native container parser
+    double   exact_bitrate_bps = 0.0;       // (file_size_bytes * 8) / (duration_us / 1e6)
+    uint32_t width = 0;
+    uint32_t height = 0;
+    double   fps = 30.0;
+    bool     is_vfr = false;                // Variable Frame Rate detected
+    uint32_t timescale = 1000;
+    uint32_t frame_count = 0;
+    std::vector<uint64_t> keyframe_pts_us; // Exact GOP boundary timestamps in microseconds
+    SourceCodecId video_codec = SourceCodecId::CODEC_H264;
+    std::string   container_format = "mp4"; // "mp4", "mkv", "webm", "pvloss"
+    std::string   audio_mime = "audio/mp4a-latm";
+    uint32_t      audio_sample_rate = 44100;
+    uint32_t      audio_channels = 2;
+    uint32_t      audio_bitrate_bps = 128000;
+};
+
 } // namespace prism
 
 #endif // PRISM_TYPES_HPP

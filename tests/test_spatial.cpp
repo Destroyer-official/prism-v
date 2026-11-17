@@ -4,6 +4,8 @@
 #include <vector>
 #include <cmath>
 #include <random>
+#include <fstream>
+#include <filesystem>
 
 #ifndef PRISM_ASSERT_NEAR
 #define PRISM_ASSERT_NEAR(a, b, eps) \
@@ -47,6 +49,56 @@ PRISM_TEST(test_chebyshev_polynomial_trajectory_evaluation) {
     PRISM_ASSERT_NEAR(p_start[0], 0.5f, 1e-4f);
     PRISM_ASSERT_NEAR(p_start[1], 2.2f, 1e-4f);
     PRISM_ASSERT_NEAR(p_start[2], 2.9f, 1e-4f);
+}
+
+PRISM_TEST(test_chebyshev_analytical_velocity_derivatives) {
+    ChebyshevTrajectory traj;
+    traj.p0[0] = 1.0f; traj.p0[1] = 2.0f; traj.p0[2] = 3.0f;
+    traj.c[0][0] = 0.5f; // T1 = tau
+    traj.c[1][1] = 0.2f; // T2 = 2*tau^2 - 1
+    traj.c[2][2] = 0.1f; // T3 = 4*tau^3 - 3*tau
+    traj.is_static = false;
+
+    constexpr float dt_sec = 1.0f;
+
+    // At tau = 0:
+    // T1'(0) = 1, T2'(0) = 0, T3'(0) = -3
+    // v_x = (0.5 * 1) * (2/1) = 1.0
+    // v_y = (0.2 * 0) * (2/1) = 0.0
+    // v_z = (0.1 * -3) * (2/1) = -0.6
+    float v_mid[3];
+    traj.evaluate_velocity(0.0f, dt_sec, v_mid);
+    PRISM_ASSERT_NEAR(v_mid[0], 1.0f, 1e-4f);
+    PRISM_ASSERT_NEAR(v_mid[1], 0.0f, 1e-4f);
+    PRISM_ASSERT_NEAR(v_mid[2], -0.6f, 1e-4f);
+
+    // Compare analytical derivative against central finite difference
+    constexpr float delta = 1e-4f;
+    float p_plus[3], p_minus[3];
+    traj.evaluate_position(delta, p_plus);
+    traj.evaluate_position(-delta, p_minus);
+
+    float num_v[3];
+    for (int i = 0; i < 3; ++i) {
+        num_v[i] = ((p_plus[i] - p_minus[i]) / (2.0f * delta)) * (2.0f / dt_sec);
+        PRISM_ASSERT_NEAR(v_mid[i], num_v[i], 1e-3f);
+    }
+}
+
+PRISM_TEST(test_chebyshev_unit_quaternion_normalization) {
+    ChebyshevTrajectory traj;
+    traj.q0[0] = 1.0f; traj.q0[1] = 0.0f; traj.q0[2] = 0.0f; traj.q0[3] = 0.0f;
+    traj.delta_q[0] = 0.1f; traj.delta_q[1] = 0.2f; traj.delta_q[2] = -0.1f; traj.delta_q[3] = 0.3f;
+    traj.is_static = false;
+
+    // Test across 21 time slices in [-1, +1]
+    for (int step = -10; step <= 10; ++step) {
+        float tau = static_cast<float>(step) / 10.0f;
+        float q[4];
+        traj.evaluate_rotation(tau, q);
+        float norm_sq = q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3];
+        PRISM_ASSERT_NEAR(std::sqrt(norm_sq), 1.0f, 1e-5f);
+    }
 }
 
 PRISM_TEST(test_chebyshev_static_anchor_classification) {
@@ -368,4 +420,184 @@ PRISM_TEST(test_isobmff_spatial_track_mux_and_demux) {
         PRISM_ASSERT_NEAR(dst_trajs[i].p0[1], src_trajs[i].p0[1], 1e-4f);
         PRISM_ASSERT_NEAR(dst_trajs[i].p0[2], src_trajs[i].p0[2], 1e-4f);
     }
+}
+
+PRISM_TEST(test_vulkan_compute_rasterizer_spirv_validity) {
+    // Check candidate locations for compiled shader binary
+    std::vector<std::string> candidate_paths = {
+        "core/shaders/spatial_rasterize.spv",
+        "../core/shaders/spatial_rasterize.spv",
+        "../../core/shaders/spatial_rasterize.spv"
+    };
+
+    std::string spv_path;
+    for (const auto& path : candidate_paths) {
+        if (std::filesystem::exists(path)) {
+            spv_path = path;
+            break;
+        }
+    }
+
+    PRISM_ASSERT(!spv_path.empty());
+
+    std::ifstream spv_file(spv_path, std::ios::binary | std::ios::ate);
+    PRISM_ASSERT(spv_file.is_open());
+
+    std::streamsize file_size = spv_file.tellg();
+    PRISM_ASSERT(file_size > 0);
+    PRISM_ASSERT_EQ(file_size % 4, 0); // SPIR-V is a sequence of 32-bit words
+
+    spv_file.seekg(0, std::ios::beg);
+    std::vector<uint32_t> words(file_size / 4);
+    spv_file.read(reinterpret_cast<char*>(words.data()), file_size);
+    PRISM_ASSERT(words.size() >= 5);
+
+    // SPIR-V Header Invariants:
+    // Word 0: Magic Number 0x07230203
+    PRISM_ASSERT_EQ(words[0], 0x07230203u);
+
+    // Word 1: Version >= 0x00010300 (Vulkan 1.3 / SPIR-V 1.3)
+    PRISM_ASSERT(words[1] >= 0x00010300u);
+
+    // Word 2: Generator Magic (non-zero)
+    PRISM_ASSERT(words[2] != 0u);
+
+    // Word 3: Bound ID (upper limit on IDs used in module)
+    PRISM_ASSERT(words[3] > 0u);
+
+    // Word 4: Schema (must be 0 in standard SPIR-V)
+    PRISM_ASSERT_EQ(words[4], 0u);
+
+    // Verify linear instruction stream parsing without truncation
+    size_t idx = 5;
+    size_t instruction_count = 0;
+    while (idx < words.size()) {
+        uint32_t word = words[idx];
+        uint16_t word_count = static_cast<uint16_t>(word >> 16);
+        PRISM_ASSERT(word_count > 0);
+        PRISM_ASSERT(idx + word_count <= words.size());
+        idx += word_count;
+        instruction_count++;
+    }
+    PRISM_ASSERT(instruction_count > 50); // Comprehensive rasterizer shader
+}
+
+PRISM_TEST(test_spatial_extreme_edge_cases_and_robustness) {
+    // 1. Degenerate zero quaternion recovery
+    ChebyshevTrajectory traj;
+    traj.q0[0] = 0.0f; traj.q0[1] = 0.0f; traj.q0[2] = 0.0f; traj.q0[3] = 0.0f;
+    traj.delta_q[0] = 0.0f; traj.delta_q[1] = 0.0f; traj.delta_q[2] = 0.0f; traj.delta_q[3] = 0.0f;
+    traj.is_static = false;
+
+    float q_rec[4];
+    traj.evaluate_rotation(0.5f, q_rec);
+    // Degenerate zero quaternion must fall back to valid unit identity [1, 0, 0, 0]
+    PRISM_ASSERT_EQ(q_rec[0], 1.0f);
+    PRISM_ASSERT_EQ(q_rec[1], 0.0f);
+    PRISM_ASSERT_EQ(q_rec[2], 0.0f);
+    PRISM_ASSERT_EQ(q_rec[3], 0.0f);
+
+    // 2. Extreme out-of-bounds tau values [-999.0f, +999.0f] clamped safely without NaN or Inf
+    traj.p0[0] = 10.0f;
+    traj.c[0][0] = 1.0f;
+    float p_out[3];
+    traj.evaluate_position(999.0f, p_out);
+    PRISM_ASSERT(!std::isnan(p_out[0]) && !std::isinf(p_out[0]));
+    traj.evaluate_position(-999.0f, p_out);
+    PRISM_ASSERT(!std::isnan(p_out[0]) && !std::isinf(p_out[0]));
+
+    // 3. Negative or near-zero dt_sec in velocity evaluation
+    float v_out[3];
+    traj.evaluate_velocity(0.0f, 0.0f, v_out);
+    PRISM_ASSERT_EQ(v_out[0], 0.0f);
+    PRISM_ASSERT_EQ(v_out[1], 0.0f);
+    PRISM_ASSERT_EQ(v_out[2], 0.0f);
+
+    traj.evaluate_velocity(0.0f, -1.0f, v_out);
+    PRISM_ASSERT_EQ(v_out[0], 0.0f);
+
+    // 4. Corrupted / truncated bitstream rejection
+    DeadZoneVectorQuantizer dz;
+    const uint8_t garbage_data[] = {0x12, 0x34, 0x56, 0x78};
+    bool threw_exception = false;
+    try {
+        DynamicGaussianField::decompress_from_bitstream(garbage_data, sizeof(garbage_data), dz);
+    } catch (const std::exception&) {
+        threw_exception = true;
+    }
+    PRISM_ASSERT(threw_exception);
+}
+
+PRISM_TEST(test_mobile_tile_binning_and_depth_sorting) {
+    // 1. Synthesize 50 Gaussians at different positions and depths
+    std::vector<Gaussian3D> prims(50);
+    for (size_t i = 0; i < prims.size(); ++i) {
+        auto& g = prims[i];
+        g.p[0] = static_cast<float>(static_cast<int>(i % 5) - 2) * 0.2f;
+        g.p[1] = static_cast<float>(static_cast<int>((i / 5) % 5) - 2) * 0.2f;
+        // Standard right-handed camera looks down -Z:
+        // i=0 is behind camera (+5.0f) -> must be culled
+        // i >= 1 is in front of camera (-1.0f - i * 0.1f)
+        g.p[2] = (i == 0) ? 5.0f : (-1.0f - static_cast<float>(i) * 0.1f);
+        g.q[0] = 1.0f; g.q[1] = 0.0f; g.q[2] = 0.0f; g.q[3] = 0.0f;
+        g.s[0] = -3.0f; g.s[1] = -3.0f; g.s[2] = -3.0f; // Small radius
+        g.alpha = 0.8f;
+        g.dc_yuv[0] = 180; g.dc_yuv[1] = 128; g.dc_yuv[2] = 128;
+        g.sh_codebook_idx = 0;
+        g.flags = 0x04;
+    }
+
+    // 2. Set up standard camera view-projection matrix
+    SpatialCameraPose cam;
+    cam.tx = 0.0f; cam.ty = 0.0f; cam.tz = 0.0f;
+    float view_mat[16], proj_mat[16], vp[16];
+    cam.compute_view_matrix(view_mat, 0);
+    cam.compute_proj_matrix(16.0f / 9.0f, 0.1f, 100.0f, proj_mat);
+
+    // Compute vp = proj * view (column-major)
+    for (int col = 0; col < 4; ++col) {
+        for (int row = 0; row < 4; ++row) {
+            float sum = 0.0f;
+            for (int k = 0; k < 4; ++k) {
+                sum += proj_mat[k * 4 + row] * view_mat[col * 4 + k];
+            }
+            vp[col * 4 + row] = sum;
+        }
+    }
+
+    // 3. Bin and sort for 1920x1080 resolution
+    constexpr uint32_t W = 1920;
+    constexpr uint32_t H = 1080;
+    auto binned = MobileTileBinningEngine::bin_and_sort(prims, vp, W, H, 0.1f);
+
+    PRISM_ASSERT_EQ(binned.tiles_x, 120u); // (1920 + 15) / 16
+    PRISM_ASSERT_EQ(binned.tiles_y, 68u);  // (1080 + 15) / 16
+    PRISM_ASSERT_EQ(binned.total_tiles, 120u * 68u);
+    PRISM_ASSERT_EQ(binned.gpu_gaussians.size(), prims.size());
+
+    // 4. Verify behind-camera primitive i=0 was never binned into any tile
+    for (uint32_t t = 0; t < binned.total_tiles; ++t) {
+        uint32_t count = binned.tile_splat_counts[t];
+        uint32_t base_idx = t * MobileTileBinningEngine::MAX_SPLATS_PER_TILE;
+        for (uint32_t s = 0; s < count; ++s) {
+            PRISM_ASSERT(binned.tile_splat_indices[base_idx + s] != 0u);
+        }
+    }
+
+    // 5. Verify that in all tiles with >= 2 splats, splat depths are non-decreasing (front-to-back)
+    size_t multi_splat_tiles = 0;
+    for (uint32_t t = 0; t < binned.total_tiles; ++t) {
+        uint32_t count = binned.tile_splat_counts[t];
+        if (count >= 2) {
+            multi_splat_tiles++;
+            uint32_t base_idx = t * MobileTileBinningEngine::MAX_SPLATS_PER_TILE;
+            for (uint32_t s = 0; s < count - 1; ++s) {
+                uint32_t idx_curr = binned.tile_splat_indices[base_idx + s];
+                uint32_t idx_next = binned.tile_splat_indices[base_idx + s + 1];
+                // Distance from camera is strictly non-decreasing (front-to-back ordering)
+                PRISM_ASSERT(std::abs(prims[idx_curr].p[2]) <= std::abs(prims[idx_next].p[2]));
+            }
+        }
+    }
+    PRISM_ASSERT(multi_splat_tiles > 0);
 }

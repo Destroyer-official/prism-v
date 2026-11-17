@@ -54,6 +54,12 @@ struct ChebyshevTrajectory {
     void evaluate_position(float tau, float out_p[3]) const;
 
     /**
+     * @brief Evaluate continuous metric centroid velocity at normalized time tau in [-1, +1]
+     * given GOP duration dt_sec.
+     */
+    void evaluate_velocity(float tau, float dt_sec, float out_v[3]) const;
+
+    /**
      * @brief Evaluate continuous unit quaternion orientation at normalized time tau in [-1, +1].
      */
     void evaluate_rotation(float tau, float out_q[4]) const;
@@ -302,6 +308,51 @@ public:
      * @brief Fit an orthonormal subspace basis from a batch of dynamic trajectories.
      */
     static SubspaceModel fit_subspace(const std::vector<std::array<float, FULL_DIM>>& trajectories);
+};
+
+/**
+ * @brief 32-byte GPU-aligned Gaussian primitive representation matching Vulkan SSBO layout.
+ */
+struct alignas(32) GpuGaussian {
+    float pos_alpha[4];    ///< [0..15] Centroid X, Y, Z in meters, alpha opacity in [0, 1]
+    float rot_quat[4];     ///< [16..31] Unit quaternion rotation (w, x, y, z)
+    float scale_flags[4];  ///< [32..47] Log-scale semi-axes (s_x, s_y, s_z), flags (0x01=static, 0x02=specular)
+    float color_dc_sh[4];  ///< [48..63] Y, U, V in [0..255], specular codebook index
+};
+
+/**
+ * @brief Mobile-native tile binning and depth sorting engine.
+ *
+ * Prepares the Vulkan compute pipeline inputs on the host:
+ * 1. Projects 3D Gaussians into 2D screen space and computes bounding tiles.
+ * 2. Culls primitives behind near plane or outside camera frustum.
+ * 3. Bins primitives into 16x16 pixel screen tiles.
+ * 4. Sorts splats front-to-back within each tile for front-to-back alpha compositing.
+ */
+class MobileTileBinningEngine {
+public:
+    static constexpr uint32_t TILE_SIZE = 16;
+    static constexpr uint32_t MAX_SPLATS_PER_TILE = 1024;
+
+    struct TileBinnedOutput {
+        std::vector<GpuGaussian> gpu_gaussians;
+        std::vector<uint32_t> tile_splat_indices; // size = num_tiles * MAX_SPLATS_PER_TILE
+        std::vector<uint32_t> tile_splat_counts;  // size = num_tiles
+        uint32_t tiles_x = 0;
+        uint32_t tiles_y = 0;
+        uint32_t total_tiles = 0;
+    };
+
+    /**
+     * @brief Bin and sort primitives across 16x16 pixel tiles for mobile Vulkan compute rasterization.
+     */
+    static TileBinnedOutput bin_and_sort(
+        const std::vector<Gaussian3D>& primitives,
+        const float view_proj[16],
+        uint32_t screen_width,
+        uint32_t screen_height,
+        float near_z = 0.1f
+    );
 };
 
 } // namespace prism::spatial

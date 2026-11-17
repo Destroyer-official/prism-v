@@ -297,4 +297,22 @@ public final class Rans8Codec {
             throw new RuntimeException(e);
         }
     }
+
+    public static void main(String[] args) {
+        byte[] input = new byte[8192];
+        for (int i = 0; i < input.length; i++) {
+            input[i] = (byte) ((i * 73 + 19) & 0x1F);
+        }
+        byte[] compressed = compress(input);
+        byte[] restored = decompress(compressed);
+        if (restored.length != input.length) {
+            throw new AssertionError("Length mismatch: " + restored.length + " vs " + input.length);
+        }
+        for (int i = 0; i < input.length; i++) {
+            if (input[i] != restored[i]) {
+                throw new AssertionError("Byte mismatch at " + i);
+            }
+        }
+        System.out.println("[RANS8 JAVA] 100.000% Bit-exact roundtrip verified! (" + input.length + " -> " + compressed.length + " bytes)");
+    }
 }

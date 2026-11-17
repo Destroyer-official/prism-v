@@ -1,8 +1,13 @@
 #include "test_harness.hpp"
 #include "prism/frontier5_pipeline.hpp"
+#include "prism/tile_pool.hpp"
 #include <vector>
 #include <numeric>
 #include <cmath>
+#include <thread>
+#include <atomic>
+#include <filesystem>
+#include <fstream>
 
 PRISM_TEST(test_cat_ring_buffer_pool_allocation_and_alignment) {
     uint32_t width = 3840;
@@ -205,4 +210,395 @@ PRISM_TEST(test_frontier5_dual_track_container_mux_and_demux) {
     PRISM_ASSERT_TRUE(demux_ok);
     PRISM_ASSERT_EQ(stream_t1.size(), 5ULL);
     PRISM_ASSERT_EQ(stream_t2.size(), 5ULL);
+}
+
+PRISM_TEST(test_tile_pool_acquire_tile_bounded_and_threads) {
+    // 1. Initial pool with default capacity
+    prism::TilePool pool(12);
+    PRISM_ASSERT_EQ(pool.get_capacity(), 12ULL);
+    PRISM_ASSERT_TRUE(pool.get_total_allocated_bytes() <= 64 * 1024 * 1024);
+
+    // Test acquire_tile interface contract for Agents 3, 4, 5, 6
+    prism::SpatialTile* t0 = pool.acquire_tile(0, 0);
+    PRISM_ASSERT_TRUE(t0 != nullptr);
+    PRISM_ASSERT_TRUE(t0->in_use);
+    PRISM_ASSERT_EQ(pool.get_in_use_count(), 1ULL);
+
+    // Verify 16 KiB page alignment on sample buffer
+    uintptr_t addr = reinterpret_cast<uintptr_t>(t0->samples.data());
+    PRISM_ASSERT_EQ(addr % prism::PAGE_SIZE_16KB, 0ULL);
+
+    // Test dynamic budget expansion (up to 512 MB cap)
+    pool.configure_budget(32 * 1024 * 1024); // 32 MB budget
+    PRISM_ASSERT_TRUE(pool.get_capacity() >= 12ULL);
+    PRISM_ASSERT_TRUE(pool.get_total_allocated_bytes() <= prism::TilePool::HARD_MAX_BUDGET_BYTES);
+
+    // Test release_tile
+    pool.release_tile(t0);
+    PRISM_ASSERT_FALSE(t0->in_use);
+    PRISM_ASSERT_EQ(pool.get_in_use_count(), 0ULL);
+
+    // Ring backpressure: acquire all slots and verify no crash / no unbounded heap allocation
+    size_t cap = pool.get_capacity();
+    std::vector<prism::SpatialTile*> acquired;
+    for (size_t i = 0; i < cap * 2; ++i) {
+        prism::SpatialTile* t = pool.acquire_tile(static_cast<uint32_t>(i), 0);
+        PRISM_ASSERT_TRUE(t != nullptr);
+        acquired.push_back(t);
+    }
+    PRISM_ASSERT_EQ(pool.get_total_allocated_bytes(), cap * prism::TilePool::TILE_BYTES);
+    pool.reset();
+    PRISM_ASSERT_EQ(pool.get_in_use_count(), 0ULL);
+}
+
+PRISM_TEST(test_heterogeneous_resource_governor) {
+    prism::ResourceConstraints constraints;
+    constraints.max_ram_mb = 256;
+    constraints.cpu_mode = prism::CpuCoreMode::ECO;
+    constraints.enable_gpu_compute = true;
+    constraints.power_priority = prism::PowerPriority::BATTERY_SAVER;
+
+    prism::HeterogeneousResourceGovernor governor(constraints);
+    PRISM_ASSERT_EQ(governor.get_max_allowed_bytes(), 256ULL * 1024 * 1024);
+
+    // Test CPU affinity mask for Eco (little cores only: 0x0F for 8 cores)
+    uint64_t eco_mask = governor.compute_affinity_mask(8);
+    PRISM_ASSERT_EQ(eco_mask, 0x0FULL);
+    PRISM_ASSERT_EQ(governor.compute_thread_nice_priority(), 19);
+
+    // Test CPU affinity mask for Balanced (cores 0..6: 0x7F)
+    constraints.cpu_mode = prism::CpuCoreMode::BALANCED;
+    governor.set_constraints(constraints);
+    uint64_t balanced_mask = governor.compute_affinity_mask(8);
+    PRISM_ASSERT_EQ(balanced_mask, 0x7FULL);
+    PRISM_ASSERT_EQ(governor.compute_thread_nice_priority(), 0);
+
+    // Test CPU affinity mask for Turbo (all cores: 0xFF)
+    constraints.cpu_mode = prism::CpuCoreMode::TURBO;
+    governor.set_constraints(constraints);
+    uint64_t turbo_mask = governor.compute_affinity_mask(8);
+    PRISM_ASSERT_EQ(turbo_mask, 0xFFULL);
+    PRISM_ASSERT_EQ(governor.compute_thread_nice_priority(), -10);
+
+    // Test memory token bucket
+    size_t chunk_100mb = 100ULL * 1024 * 1024;
+    PRISM_ASSERT_TRUE(governor.try_acquire_memory_tokens(chunk_100mb));
+    PRISM_ASSERT_TRUE(governor.try_acquire_memory_tokens(chunk_100mb));
+    // 200 MB acquired out of 256 MB. Another 100 MB must be rejected!
+    PRISM_ASSERT_FALSE(governor.try_acquire_memory_tokens(chunk_100mb));
+    PRISM_ASSERT_EQ(governor.get_current_allocated_bytes(), 200ULL * 1024 * 1024);
+
+    governor.release_memory_tokens(chunk_100mb);
+    PRISM_ASSERT_EQ(governor.get_current_allocated_bytes(), 100ULL * 1024 * 1024);
+    PRISM_ASSERT_TRUE(governor.try_acquire_memory_tokens(chunk_100mb));
+}
+
+PRISM_TEST(test_lock_free_chunked_parallel_slicing_and_nanosecond_stitcher) {
+    // 1. Simulate 1-hour 4K 120fps metadata (432,000 frames = 3,600,000,000 us)
+    prism::VideoMetadata meta;
+    meta.width = 3840;
+    meta.height = 2160;
+    meta.fps = 120.0;
+    meta.duration_us = 3600000000ULL; // 1 hour
+    meta.frame_count = 432000;
+    meta.timescale = 120000;
+
+    // Simulate closed GOP boundaries every 5 seconds (every 600 frames at 120 fps)
+    for (uint64_t t = 0; t < meta.duration_us; t += 5000000ULL) {
+        meta.keyframe_pts_us.push_back(t);
+    }
+
+    // Slice metadata into 5s micro-tasks without touching raw pixels
+    std::vector<prism::GopMicroTask> tasks =
+        prism::LockFreeChunkedParallelSlicer::slice_video_metadata(meta, 5000000ULL);
+
+    PRISM_ASSERT_TRUE(tasks.size() > 0);
+    PRISM_ASSERT_EQ(tasks.size(), meta.keyframe_pts_us.size());
+    PRISM_ASSERT_EQ(tasks[0].chunk_id, 0ULL);
+    PRISM_ASSERT_EQ(tasks[0].start_pts_us, 0ULL);
+    PRISM_ASSERT_TRUE(tasks[0].is_closed_gop);
+
+    // 2. Simulate 3 independently encoded chunks and stitch them zero-copy
+    std::vector<prism::EncodedChunkPayload> completed_chunks;
+    for (uint32_t c = 0; c < 3; ++c) {
+        prism::EncodedChunkPayload cp;
+        cp.chunk_id = c;
+        cp.duration_us = 1000000ULL; // 1 second each
+        for (uint64_t f = 0; f < 60; ++f) {
+            uint64_t pts = (f * 1000) / 60;
+            prism::IsoMp4Engine::Track1Sample s1;
+            s1.pts_ms = pts;
+            s1.dts_ms = pts;
+            s1.is_keyframe = (f == 0);
+            s1.nal_data = { 0x00, 0x00, 0x00, 0x01, 0x67, static_cast<uint8_t>(c) };
+            cp.base_samples.push_back(s1);
+
+            prism::IsoMp4Engine::Track2Sample s2;
+            s2.pts_ms = pts;
+            s2.residual_latents = { 0x01, 0x02, 0x03 };
+            cp.residual_samples.push_back(s2);
+        }
+        completed_chunks.push_back(cp);
+    }
+
+    auto pkg = prism::LockFreeChunkedParallelSlicer::stitch_chunks_zero_copy(
+        completed_chunks, 1920, 1080, 60
+    );
+    PRISM_ASSERT_TRUE(!pkg.raw_mp4_bytes.empty());
+    PRISM_ASSERT_EQ(pkg.track1_sample_count, 180ULL);
+    PRISM_ASSERT_EQ(pkg.track2_sample_count, 180ULL);
+
+    // Verify demux and verify strict 0.000 μs PTS monotonic continuity across chunk seams
+    std::vector<prism::IsoMp4Engine::Track1Sample> out_t1;
+    std::vector<prism::IsoMp4Engine::Track2Sample> out_t2;
+    prism::PrismMicroResidualBox prmr;
+    prism::Afgs1Params afgs;
+    bool demux_ok = prism::IsoMp4Engine::demux_dual_track(
+        pkg.raw_mp4_bytes.data(), pkg.raw_mp4_bytes.size(),
+        out_t1, out_t2, prmr, afgs
+    );
+    PRISM_ASSERT_TRUE(demux_ok);
+    PRISM_ASSERT_EQ(out_t1.size(), 180ULL);
+
+    // Check monotonic timestamps across entire timeline and across seam boundaries
+    for (size_t i = 1; i < out_t1.size(); ++i) {
+        PRISM_ASSERT_TRUE(out_t1[i].pts_ms >= out_t1[i-1].pts_ms);
+        PRISM_ASSERT_TRUE(out_t1[i].dts_ms >= out_t1[i-1].dts_ms);
+    }
+}
+
+PRISM_TEST(test_predictive_thermal_gear_shifter_lumped_rc_model) {
+    // Room temperature 25C, typical mobile chassis R_th = 4.86 K/W, C_th = 9.25 J/K
+    prism::PredictiveThermalGearShifter shifter(25.0f, 4.86f, 9.25f);
+
+    auto state = shifter.get_current_state();
+    PRISM_ASSERT_EQ(state.chassis_temp_c, 25.0f);
+    PRISM_ASSERT_EQ(state.predicted_headroom, 1.0f);
+
+    // 1. Step response test under high power (P = 4.0W for 10 seconds)
+    state = shifter.update_thermal_model(4.0f, 10.0f);
+    PRISM_ASSERT_TRUE(state.chassis_temp_c > 25.0f);
+    PRISM_ASSERT_TRUE(state.predicted_headroom < 1.0f);
+
+    // 2. Test ADPF Headroom Evaluation and Hysteresis Debounce
+    // Cold device (headroom = 0.95) -> Super Turbo
+    auto gear = shifter.evaluate_adpf_headroom(0.95f, 1000);
+    PRISM_ASSERT_EQ(static_cast<int>(gear), static_cast<int>(prism::PredictiveThermalGearShifter::ShifterGear::GEAR_4_SUPER_TURBO));
+
+    // Sudden heat spike (headroom drops to 0.10) -> Immediate Downshift to Atomic Yield
+    gear = shifter.evaluate_adpf_headroom(0.10f, 1100);
+    PRISM_ASSERT_EQ(static_cast<int>(gear), static_cast<int>(prism::PredictiveThermalGearShifter::ShifterGear::GEAR_0_ATOMIC_YIELD));
+    PRISM_ASSERT_TRUE(shifter.get_current_state().is_atomic_paused);
+
+    // Cooling starts (headroom recovers to 0.70 at t = 2000ms):
+    // Upshift should be blocked by 5000ms hysteresis window!
+    gear = shifter.evaluate_adpf_headroom(0.70f, 2000);
+    PRISM_ASSERT_EQ(static_cast<int>(gear), static_cast<int>(prism::PredictiveThermalGearShifter::ShifterGear::GEAR_0_ATOMIC_YIELD));
+
+    // Once 5000ms has elapsed (t = 6200ms), upshift is granted!
+    gear = shifter.evaluate_adpf_headroom(0.70f, 6200);
+    PRISM_ASSERT_EQ(static_cast<int>(gear), static_cast<int>(prism::PredictiveThermalGearShifter::ShifterGear::GEAR_3_STANDARD));
+    PRISM_ASSERT_FALSE(shifter.get_current_state().is_atomic_paused);
+}
+
+PRISM_TEST(test_tile_pool_multithreaded_stress_and_budget_enforcement) {
+    // 1. Strict memory budget clamping test
+    prism::TilePool pool(16);
+    PRISM_ASSERT_EQ(pool.get_capacity(), 16ULL);
+
+    // Hard ceiling clamp: requesting 1024 MB must clamp to HARD_MAX_BUDGET_BYTES (512 MB)
+    pool.configure_budget(1024ULL * 1024ULL * 1024ULL);
+    PRISM_ASSERT_TRUE(pool.get_total_allocated_bytes() <= prism::TilePool::HARD_MAX_BUDGET_BYTES);
+
+    // Configure to safe 32 MB budget
+    pool.configure_budget(32ULL * 1024ULL * 1024ULL);
+    size_t cap = pool.get_capacity();
+    PRISM_ASSERT_TRUE(cap >= 16ULL);
+    PRISM_ASSERT_TRUE(pool.get_total_allocated_bytes() <= 32ULL * 1024ULL * 1024ULL);
+
+    // Verify 16 KiB alignment on all allocated slots
+    for (size_t i = 0; i < cap; ++i) {
+        prism::SpatialTile* tile = pool.acquire_tile(static_cast<uint32_t>(i), 0);
+        PRISM_ASSERT_TRUE(tile != nullptr);
+        uintptr_t addr = reinterpret_cast<uintptr_t>(tile->samples.data());
+        PRISM_ASSERT_EQ(addr % prism::PAGE_SIZE_16KB, 0ULL);
+        pool.release_tile(tile);
+    }
+
+    // 2. High-concurrency multithreaded torture test (16 threads, 1000 cycles each = 16,000 acquires)
+    const size_t NUM_THREADS = 16;
+    const size_t OPS_PER_THREAD = 1000;
+    std::atomic<size_t> total_completed{0};
+    std::vector<std::thread> workers;
+    workers.reserve(NUM_THREADS);
+
+    for (size_t t = 0; t < NUM_THREADS; ++t) {
+        workers.emplace_back([&pool, &total_completed, OPS_PER_THREAD, t]() {
+            for (size_t op = 0; op < OPS_PER_THREAD; ++op) {
+                prism::SpatialTile* leased = pool.acquire_tile(static_cast<uint32_t>(t), static_cast<uint32_t>(op));
+                if (leased) {
+                    // Touch first and last sample to ensure memory validity
+                    leased->samples[0] = static_cast<int16_t>(t);
+                    leased->samples[prism::SpatialTile::PIXEL_COUNT - 1] = static_cast<int16_t>(op);
+                    pool.release_tile(leased);
+                    total_completed.fetch_add(1, std::memory_order_relaxed);
+                }
+            }
+        });
+    }
+
+    for (auto& w : workers) {
+        w.join();
+    }
+
+    PRISM_ASSERT_EQ(total_completed.load(), NUM_THREADS * OPS_PER_THREAD);
+    PRISM_ASSERT_EQ(pool.get_in_use_count(), 0ULL);
+}
+
+PRISM_TEST(test_lock_free_slicer_1000_gops_zero_drift) {
+    // Simulate 1,000 consecutive GOP chunks (each 30 frames at 60 fps = 500 ms)
+    const uint32_t NUM_GOPS = 1000;
+    const uint64_t FRAMES_PER_GOP = 30;
+    const uint32_t FPS = 60;
+    const uint64_t GOP_DURATION_US = (FRAMES_PER_GOP * 1000000ULL) / FPS; // 500,000 us
+
+    std::vector<prism::EncodedChunkPayload> completed_chunks;
+    completed_chunks.reserve(NUM_GOPS);
+
+    for (uint32_t g = 0; g < NUM_GOPS; ++g) {
+        prism::EncodedChunkPayload cp;
+        cp.chunk_id = g;
+        cp.duration_us = GOP_DURATION_US;
+        for (uint64_t f = 0; f < FRAMES_PER_GOP; ++f) {
+            uint64_t pts = (f * 1000) / FPS;
+            prism::IsoMp4Engine::Track1Sample s1;
+            s1.pts_ms = pts;
+            s1.dts_ms = pts;
+            s1.is_keyframe = (f == 0);
+            s1.nal_data = { 0x00, 0x00, 0x00, 0x01, 0x65, static_cast<uint8_t>(g & 0xFF) };
+            cp.base_samples.push_back(std::move(s1));
+
+            prism::IsoMp4Engine::Track2Sample s2;
+            s2.pts_ms = pts;
+            s2.residual_latents = { 0xAA, 0x55 };
+            cp.residual_samples.push_back(std::move(s2));
+        }
+        completed_chunks.push_back(std::move(cp));
+    }
+
+    // Zero-copy atom stitching across all 1,000 GOPs
+    auto pkg = prism::LockFreeChunkedParallelSlicer::stitch_chunks_zero_copy(
+        completed_chunks, 1920, 1080, FPS
+    );
+
+    PRISM_ASSERT_TRUE(!pkg.raw_mp4_bytes.empty());
+    PRISM_ASSERT_EQ(pkg.track1_sample_count, static_cast<uint64_t>(NUM_GOPS * FRAMES_PER_GOP));
+    PRISM_ASSERT_EQ(pkg.track2_sample_count, static_cast<uint64_t>(NUM_GOPS * FRAMES_PER_GOP));
+
+    // Demux and assert 0.000 μs timestamp monotonicity across all 30,000 frames
+    std::vector<prism::IsoMp4Engine::Track1Sample> out_t1;
+    std::vector<prism::IsoMp4Engine::Track2Sample> out_t2;
+    prism::PrismMicroResidualBox prmr;
+    prism::Afgs1Params afgs;
+    bool demux_ok = prism::IsoMp4Engine::demux_dual_track(
+        pkg.raw_mp4_bytes.data(), pkg.raw_mp4_bytes.size(),
+        out_t1, out_t2, prmr, afgs
+    );
+    PRISM_ASSERT_TRUE(demux_ok);
+    PRISM_ASSERT_EQ(out_t1.size(), static_cast<size_t>(NUM_GOPS * FRAMES_PER_GOP));
+
+    for (size_t i = 1; i < out_t1.size(); ++i) {
+        // Assert monotonic non-decreasing timestamps
+        PRISM_ASSERT_TRUE(out_t1[i].pts_ms >= out_t1[i-1].pts_ms);
+        PRISM_ASSERT_TRUE(out_t1[i].dts_ms >= out_t1[i-1].dts_ms);
+    }
+}
+
+PRISM_TEST(test_governor_clamp_and_multicore_affinity) {
+    prism::ResourceConstraints constraints;
+    constraints.max_ram_mb = 512;
+    constraints.cpu_mode = prism::CpuCoreMode::BALANCED;
+    constraints.enable_gpu_compute = true;
+    constraints.power_priority = prism::PowerPriority::BALANCED;
+
+    prism::HeterogeneousResourceGovernor gov(constraints);
+
+    // Verify affinity masks across diverse SoC core topologies
+    // 4-core SoC
+    constraints.cpu_mode = prism::CpuCoreMode::ECO;
+    gov.set_constraints(constraints);
+    PRISM_ASSERT_EQ(gov.compute_affinity_mask(4), 0x03ULL); // Cores 0-1 (first half)
+
+    // 8-core SoC (Snapdragon 8 Elite / Dimensity 9400)
+    PRISM_ASSERT_EQ(gov.compute_affinity_mask(8), 0x0FULL); // Cores 0-3
+    constraints.cpu_mode = prism::CpuCoreMode::BALANCED;
+    gov.set_constraints(constraints);
+    PRISM_ASSERT_EQ(gov.compute_affinity_mask(8), 0x7FULL); // Cores 0-6 (all except prime)
+    constraints.cpu_mode = prism::CpuCoreMode::TURBO;
+    gov.set_constraints(constraints);
+    PRISM_ASSERT_EQ(gov.compute_affinity_mask(8), 0xFFULL); // Cores 0-7 (all cores)
+
+    // 12-core SoC
+    constraints.cpu_mode = prism::CpuCoreMode::BALANCED;
+    gov.set_constraints(constraints);
+    PRISM_ASSERT_EQ(gov.compute_affinity_mask(12), 0x7FFULL); // Cores 0-10
+
+    // 16-core SoC
+    PRISM_ASSERT_EQ(gov.compute_affinity_mask(16), 0x7FFFULL); // Cores 0-14
+
+    // Memory token bucket rejection test
+    size_t half_budget = 256ULL * 1024ULL * 1024ULL;
+    PRISM_ASSERT_TRUE(gov.try_acquire_memory_tokens(half_budget));
+    PRISM_ASSERT_TRUE(gov.try_acquire_memory_tokens(half_budget));
+    // 512 MB exhausted: next byte MUST be rejected!
+    PRISM_ASSERT_FALSE(gov.try_acquire_memory_tokens(1));
+    gov.release_memory_tokens(half_budget);
+    PRISM_ASSERT_TRUE(gov.try_acquire_memory_tokens(half_budget));
+}
+
+PRISM_TEST(test_vulkan_frontier5_pipeline_spirv_validity) {
+    // Check candidate locations for compiled Frontier 5 shader binary
+    std::vector<std::string> candidate_paths = {
+        "core/shaders/frontier5_pipeline.spv",
+        "../core/shaders/frontier5_pipeline.spv",
+        "../../core/shaders/frontier5_pipeline.spv"
+    };
+
+    std::string spv_path;
+    for (const auto& path : candidate_paths) {
+        if (std::filesystem::exists(path)) {
+            spv_path = path;
+            break;
+        }
+    }
+
+    PRISM_ASSERT(!spv_path.empty());
+
+    std::ifstream spv_file(spv_path, std::ios::binary | std::ios::ate);
+    PRISM_ASSERT(spv_file.is_open());
+
+    std::streamsize file_size = spv_file.tellg();
+    PRISM_ASSERT(file_size > 0);
+    PRISM_ASSERT_EQ(file_size % 4, 0); // SPIR-V is a sequence of 32-bit words
+
+    spv_file.seekg(0, std::ios::beg);
+    std::vector<uint32_t> words(file_size / 4);
+    spv_file.read(reinterpret_cast<char*>(words.data()), file_size);
+    PRISM_ASSERT(words.size() >= 5);
+
+    // SPIR-V Header Invariants:
+    // Word 0: Magic Number 0x07230203
+    PRISM_ASSERT_EQ(words[0], 0x07230203u);
+
+    // Word 1: Version >= 0x00010300 (Vulkan 1.3+ / SPIR-V 1.3+)
+    PRISM_ASSERT(words[1] >= 0x00010300u);
+
+    // Word 2: Generator Magic (non-zero)
+    PRISM_ASSERT(words[2] != 0u);
+
+    // Word 3: Bound ID (upper limit on IDs used in module)
+    PRISM_ASSERT(words[3] > 0u);
+
+    // Word 4: Schema (must be 0 in standard SPIR-V)
+    PRISM_ASSERT_EQ(words[4], 0u);
 }

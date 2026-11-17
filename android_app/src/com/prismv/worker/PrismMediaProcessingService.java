@@ -76,9 +76,13 @@ public class PrismMediaProcessingService extends Service {
     private static final String CHANNEL_PROGRESS = PrismNotificationManager.CHANNEL_PROGRESS;
     private static final int NOTIF_PROGRESS_ID = PrismNotificationManager.NOTIF_PROGRESS_ID;
 
+    public static final int FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING = 1024; // 0x00000400 (API 34+)
+
     private NotificationManager notificationManager;
     private PowerManager.WakeLock wakeLock;
+    private final com.prismv.thermal.ThermalGearShifter thermalShifter = new com.prismv.thermal.ThermalGearShifter();
     private volatile boolean isCancelled = false;
+    private volatile String activeJobId = null;
     private boolean isWorking = false;
     private long lastNotifUpdateTime = 0;
 
@@ -142,6 +146,7 @@ public class PrismMediaProcessingService extends Service {
             wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "PrismV:TranscodeWakeLock");
             wakeLock.setReferenceCounted(false);
         }
+        thermalShifter.registerThermalListener(this);
         Log.i(TAG, "[FGS] PrismMediaProcessingService created.");
     }
 
@@ -165,14 +170,18 @@ public class PrismMediaProcessingService extends Service {
         // Start Foreground immediately with initial prominent notification
         Notification initialNotif = buildProgressNotification(1, 1, "Initializing hardware transcode...", 0, 0.0, 36.5, 34.0);
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (Build.VERSION.SDK_INT >= 34) { // Android 14+ (API 34+)
+                startForeground(NOTIF_PROGRESS_ID, initialNotif, FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING);
+                Log.i(TAG, "[FGS] Service running in foreground with mediaProcessing type (API 34+).");
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(NOTIF_PROGRESS_ID, initialNotif, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+                Log.i(TAG, "[FGS] Service running in foreground with dataSync type (API 29-33).");
             } else {
                 startForeground(NOTIF_PROGRESS_ID, initialNotif);
+                Log.i(TAG, "[FGS] Service running in foreground (legacy API).");
             }
-            Log.i(TAG, "[FGS] Service running in foreground with dataSync type.");
         } catch (Exception e) {
-            Log.e(TAG, "[FGS] Failed to startForeground with dataSync, fallback: " + e.getMessage(), e);
+            Log.e(TAG, "[FGS] Failed to startForeground with specific type, fallback: " + e.getMessage(), e);
             try {
                 startForeground(NOTIF_PROGRESS_ID, initialNotif);
             } catch (Exception ex) {
@@ -242,6 +251,20 @@ public class PrismMediaProcessingService extends Service {
             options.audioBitrateKbps = 0; // Bit-exact passthrough
             options.ramBudgetMb = PrismPreferences.getAllocatedRamBudgetMb(this);
 
+            PrismPreferences userPrefs = PrismPreferences.get(this);
+            int ramBudgetMb = userPrefs.getAllocatedRamBudgetMb(this);
+            String powerProfile = userPrefs.getPowerProfile();
+            int cpuPercent = userPrefs.getCpuPercent();
+            boolean gpuTurbo = userPrefs.isGpuTurboEnabled();
+
+            int cpuMode = (cpuPercent <= 33) ? 0 : (cpuPercent <= 75) ? 1 : 2;
+            int powerPriority = "Cool".equalsIgnoreCase(powerProfile) || "Eco".equalsIgnoreCase(powerProfile) ? 0 :
+                                "Turbo".equalsIgnoreCase(powerProfile) ? 2 : 1;
+
+            com.prismv.engine.SiliconFusedPipelineEngine.setResourceConstraints(ramBudgetMb, cpuMode, gpuTurbo, powerPriority);
+            int totalCores = Runtime.getRuntime().availableProcessors();
+            com.prismv.engine.SiliconFusedPipelineEngine.applyThreadAffinity(totalCores);
+
             int totalVideos = inputPaths.size();
             long totalOriginalBytes = 0;
             long totalCompressedBytes = 0;
@@ -292,6 +315,7 @@ public class PrismMediaProcessingService extends Service {
                 String outPath = outFile.getAbsolutePath();
 
                 Log.i(TAG, String.format(Locale.US, "[FGS] Transcoding [%d/%d]: %s -> %s", itemIdx, totalVideos, itemName, outPath));
+                activeJobId = inPath;
                 PrismWorkJournal.get(this).recordJobStart(inPath, inPath, outPath);
 
                 final long itemStart = SystemClock.elapsedRealtime();
@@ -308,6 +332,11 @@ public class PrismMediaProcessingService extends Service {
                                                    long framesDone, float fps, int etaSeconds, String etaString) {
                         if (isCancelled) return;
                         PrismWorkJournal.get(PrismMediaProcessingService.this).updateCheckpoint(inPath, currentPtsUs, (int) framesDone, percent);
+
+                        thermalShifter.queryThermalHeadroom(PrismMediaProcessingService.this, 10);
+                        if (thermalShifter.isAtomicPaused()) {
+                            SystemClock.sleep(60); // 60ms atomic yield to protect chassis from overheating
+                        }
 
                         long now = SystemClock.elapsedRealtime();
                         if (now - lastNotifUpdateTime > 280) {
@@ -360,11 +389,13 @@ public class PrismMediaProcessingService extends Service {
 
                     // Record Completed in SQLite WorkJournal
                     PrismWorkJournal.get(this).recordJobCompleted(inPath);
+                    activeJobId = null;
 
                     Log.i(TAG, String.format(Locale.US, "[FGS] Completed item %d/%d: Saved %.1f MB (-%.1f%%) to Movies/Prism-V/",
                             itemIdx, totalVideos, savedBytes / (1024.0 * 1024.0), pct));
                 } else {
                     PrismWorkJournal.get(this).recordJobFailed(inPath, "Compression pipeline aborted or incomplete");
+                    activeJobId = null;
                 }
             }
 
@@ -521,15 +552,25 @@ public class PrismMediaProcessingService extends Service {
      * and releases wake locks to comply with Android 15 background execution quotas.
      */
     public void onTimeout(int startId) {
-        Log.w(TAG, "[FGS] Foreground service timeout reached (Android 15+ API 35). Scheduling JobScheduler handoff and stopping gracefully.");
-        isCancelled = true;
-        PrismJobService.scheduleResumeJob(getApplicationContext());
-        stopForegroundServiceSafely();
+        handleServiceTimeout(startId, 0);
     }
 
     public void onTimeout(int startId, int fgsType) {
-        Log.w(TAG, "[FGS] Foreground service timeout reached for fgsType=" + fgsType + ". Scheduling JobScheduler handoff and stopping gracefully.");
+        handleServiceTimeout(startId, fgsType);
+    }
+
+    private void handleServiceTimeout(int startId, int fgsType) {
+        Log.w(TAG, "[FGS] Foreground service timeout reached (startId=" + startId + ", fgsType=" + fgsType +
+                "). Checkpointing to SQLite WorkJournal, scheduling JobScheduler handoff, and stopping gracefully.");
         isCancelled = true;
+        try {
+            String currentJob = activeJobId;
+            if (currentJob != null) {
+                PrismWorkJournal.get(this).recordJobTimeout(currentJob);
+            }
+        } catch (Throwable t) {
+            Log.e(TAG, "[FGS] Failed to record job timeout in journal: " + t.getMessage());
+        }
         PrismJobService.scheduleResumeJob(getApplicationContext());
         stopForegroundServiceSafely();
     }
@@ -561,6 +602,7 @@ public class PrismMediaProcessingService extends Service {
     @Override
     public void onDestroy() {
         super.onDestroy();
+        thermalShifter.unregisterThermalListener(this);
         if (wakeLock != null && wakeLock.isHeld()) {
             wakeLock.release();
         }

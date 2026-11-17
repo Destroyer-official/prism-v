@@ -32,6 +32,8 @@ struct IngestMediaInfo {
     uint32_t height = 0;
     uint8_t bit_depth = 8;
     uint64_t file_size = 0;
+    uint64_t duration_us = 0;              // Microsecond duration from container parser
+    double   source_bitrate_bps = 0.0;     // Ground-truth source bitrate in bits/sec
     double estimated_bbr_savings_ratio = 0.18; // Default ~18% for H.264
     bool is_raw_sensor = false;
     bool is_container_standard = true;

@@ -30,6 +30,7 @@
 #include <limits>
 #include <string>
 #include <vector>
+#include <bit>
 
 namespace fs = std::filesystem;
 using namespace prism;
@@ -66,6 +67,8 @@ void print_usage() {
       << "  spatial-info   <input.4dgs>\n"
       << "  spatial-benchmark [--count N] [--frames F]\n"
       << "  frontier5    <input_camera_raw.yuv|synthetic> <output.mp4> [--width W] [--height H] [--frames N]\n"
+      << "  governor     [--ram-mb N] [--cores N] [--cpu eco|balanced|turbo] [--power saver|balanced|max] [--no-gpu]\n"
+      << "  thermal      [--power-watts W] [--duration-sec S] [--ambient C]\n"
       << "  audit      Check integer bounds, page size, tile budget, CDF LUT, "
          "and BBR 2.0\n"
       << "  help       Show this help message\n";
@@ -699,7 +702,7 @@ int cmd_mesh_scan(int argc, char* argv[]) {
     for (const auto& entry : fs::directory_iterator(dir_path)) {
         if (entry.is_regular_file()) {
             std::string ext = entry.path().extension().string();
-            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+            std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
             if (ext == ".mp4" || ext == ".mov" || ext == ".mkv" || ext == ".m4v") {
                 video_files.push_back(entry.path());
                 total_gallery_bytes += entry.file_size();
@@ -1458,6 +1461,101 @@ int cmd_frontier5(int argc, char* argv[]) {
   return 0;
 }
 
+int cmd_governor(int argc, char* argv[]) {
+  size_t ram_mb = 512;
+  CpuCoreMode cpu_mode = CpuCoreMode::BALANCED;
+  uint32_t total_cores = 8;
+  bool enable_gpu = true;
+  PowerPriority power_prio = PowerPriority::BALANCED;
+
+  for (int i = 2; i < argc; ++i) {
+    std::string arg = argv[i];
+    if (arg == "--ram-mb" && i + 1 < argc) ram_mb = std::stoull(argv[++i]);
+    if (arg == "--cores" && i + 1 < argc) total_cores = std::stoul(argv[++i]);
+    if (arg == "--cpu" && i + 1 < argc) {
+      std::string mode_str = argv[++i];
+      if (mode_str == "eco") cpu_mode = CpuCoreMode::ECO;
+      else if (mode_str == "turbo") cpu_mode = CpuCoreMode::TURBO;
+      else cpu_mode = CpuCoreMode::BALANCED;
+    }
+    if (arg == "--no-gpu") enable_gpu = false;
+    if (arg == "--power" && i + 1 < argc) {
+      std::string p_str = argv[++i];
+      if (p_str == "saver" || p_str == "eco") power_prio = PowerPriority::BATTERY_SAVER;
+      else if (p_str == "max" || p_str == "turbo") power_prio = PowerPriority::MAX_SPEED;
+      else power_prio = PowerPriority::BALANCED;
+    }
+  }
+
+  ResourceConstraints c;
+  c.max_ram_mb = ram_mb;
+  c.cpu_mode = cpu_mode;
+  c.enable_gpu_compute = enable_gpu;
+  c.power_priority = power_prio;
+
+  HeterogeneousResourceGovernor gov(c);
+  uint64_t mask = gov.compute_affinity_mask(total_cores);
+  int nice = gov.compute_thread_nice_priority();
+
+  std::cout << "[GOVERNOR] Heterogeneous Resource Governor Diagnostics:\n"
+            << "  Configured RAM Budget: " << ram_mb << " MB (" << (ram_mb * 1024 * 1024) << " bytes)\n"
+            << "  CPU Core Mode:         " << (cpu_mode == CpuCoreMode::ECO ? "ECO (Little Cores)" :
+                                            cpu_mode == CpuCoreMode::TURBO ? "TURBO (All Cores + Prime)" :
+                                            "BALANCED (Little + Mid Cores)") << "\n"
+            << "  Detected/Target Cores: " << total_cores << "\n"
+            << "  Computed CPU Affinity: 0x" << std::hex << mask << std::dec << " (Mask bits set: "
+            << std::popcount(mask) << " cores)\n"
+            << "  Thread Nice Priority:  " << nice << "\n"
+            << "  GPU Compute Enabled:   " << (enable_gpu ? "YES" : "NO") << "\n"
+            << "  Power Priority:        " << (power_prio == PowerPriority::BATTERY_SAVER ? "BATTERY_SAVER" :
+                                            power_prio == PowerPriority::MAX_SPEED ? "MAX_SPEED" : "BALANCED") << "\n"
+            << "  Memory Token Test:     Acquiring " << ram_mb << " MB -> "
+            << (gov.try_acquire_memory_tokens(ram_mb * 1024 * 1024) ? "GRANTED" : "DENIED") << "\n"
+            << "                         Acquiring 1 additional byte -> "
+            << (gov.try_acquire_memory_tokens(1) ? "GRANTED (BUG!)" : "DENIED (STRICT CEILING ENFORCED)") << "\n";
+  return 0;
+}
+
+int cmd_thermal(int argc, char* argv[]) {
+  float power_watts = 3.50f;
+  float duration_sec = 60.0f;
+  float ambient_temp_c = 25.0f;
+
+  for (int i = 2; i < argc; ++i) {
+    std::string arg = argv[i];
+    if (arg == "--power-watts" && i + 1 < argc) power_watts = std::stof(argv[++i]);
+    if (arg == "--duration-sec" && i + 1 < argc) duration_sec = std::stof(argv[++i]);
+    if (arg == "--ambient" && i + 1 < argc) ambient_temp_c = std::stof(argv[++i]);
+  }
+
+  PredictiveThermalGearShifter shifter(ambient_temp_c);
+  std::cout << "[THERMAL] Closed-Loop Thermodynamic Lumped RC Simulation:\n"
+            << "  Ambient Temperature:    " << ambient_temp_c << " °C\n"
+            << "  Active Sustained Power: " << power_watts << " W\n"
+            << "  Simulation Duration:    " << duration_sec << " s\n"
+            << "  Chassis Tau (R_th*C_th): 45.0 s (R_th=4.86 K/W, C_th=9.25 J/K)\n\n"
+            << "  Time (s) | Temp (°C) | Headroom | Active Gear       | Target Power (W)\n"
+            << "  ---------+-----------+----------+-------------------+-----------------\n";
+
+  float step_s = 5.0f;
+  for (float t = 0.0f; t <= duration_sec; t += step_s) {
+    auto state = shifter.update_thermal_model(power_watts, step_s);
+    auto gear = shifter.evaluate_adpf_headroom(state.predicted_headroom, static_cast<uint64_t>(t * 1000));
+    const char* gear_name = (gear == PredictiveThermalGearShifter::ShifterGear::GEAR_4_SUPER_TURBO) ? "4: SUPER_TURBO" :
+                            (gear == PredictiveThermalGearShifter::ShifterGear::GEAR_3_STANDARD)    ? "3: STANDARD" :
+                            (gear == PredictiveThermalGearShifter::ShifterGear::GEAR_2_ECONOMY)     ? "2: ECONOMY" :
+                            (gear == PredictiveThermalGearShifter::ShifterGear::GEAR_1_GUARD)       ? "1: GUARD" :
+                            "0: ATOMIC_YIELD";
+
+    std::cout << "  " << std::setw(8) << std::fixed << std::setprecision(1) << t << " | "
+              << std::setw(9) << std::setprecision(2) << state.chassis_temp_c << " | "
+              << std::setw(8) << std::setprecision(2) << state.predicted_headroom << " | "
+              << std::setw(17) << gear_name << " | "
+              << std::setw(16) << std::setprecision(2) << PredictiveThermalGearShifter::get_gear_target_power(gear) << "\n";
+  }
+  return 0;
+}
+
 int main(int argc, char *argv[]) {
   if (!std::cout)
     return 1;
@@ -1527,6 +1625,12 @@ int main(int argc, char *argv[]) {
     } else if (cmd == "frontier5") {
       print_banner();
       return cmd_frontier5(argc, argv);
+    } else if (cmd == "governor") {
+      print_banner();
+      return cmd_governor(argc, argv);
+    } else if (cmd == "thermal") {
+      print_banner();
+      return cmd_thermal(argc, argv);
     }
   } catch (const std::exception &ex) {
     std::cerr << "Error: " << ex.what() << "\n";

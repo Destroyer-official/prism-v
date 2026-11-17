@@ -40,6 +40,45 @@ public final class VideoProcessingPipeline {
         }
     }
 
+    public static class ParsedVideoMetadata {
+        public long durationUs = 0;
+        public int width = 1920;
+        public int height = 1080;
+        public float fps = 30.0f;
+        public long bitrateBps = 0;
+        public String codec = "H264";
+        public String container = "mp4";
+        public boolean isVfr = false;
+    }
+
+    public static native String nativeProbeVideoMetadata(String filePath, byte[] headerData, long fileSize);
+
+    public static ParsedVideoMetadata probeVideoMetadata(String filePath, byte[] headerData, long fileSize) {
+        ParsedVideoMetadata meta = new ParsedVideoMetadata();
+        if (isNativeLoaded) {
+            try {
+                String raw = nativeProbeVideoMetadata(filePath, headerData, fileSize);
+                if (raw != null && !raw.trim().isEmpty()) {
+                    String[] parts = raw.split(";");
+                    if (parts.length >= 8) {
+                        meta.durationUs = Long.parseLong(parts[0]);
+                        meta.width = Integer.parseInt(parts[1]);
+                        meta.height = Integer.parseInt(parts[2]);
+                        meta.fps = Float.parseFloat(parts[3]);
+                        meta.bitrateBps = Long.parseLong(parts[4]);
+                        meta.codec = parts[5];
+                        meta.container = parts[6];
+                        meta.isVfr = "1".equals(parts[7]);
+                        return meta;
+                    }
+                }
+            } catch (Throwable e) {
+                Log.w(TAG, "Native metadata probe exception: " + e.getMessage());
+            }
+        }
+        return meta;
+    }
+
     public static native String nativeProbeAndRoute(byte[] headerData, long fileSize, boolean userLossless);
     public static native boolean nativeRemuxContainer(String inputPath, String outputPath);
     public static native byte[] nativeEncodeSemanticFrame(byte[] frameYuv, long frameIndex, short[] keypoints3d, short[] pose6dof);
@@ -50,6 +89,11 @@ public final class VideoProcessingPipeline {
     public static native float[] nativeGetFrontier5Metrics(int width, int height);
     public static native byte[] nativeExecuteVulkanLanczos5(byte[] srcPlane, int srcW, int srcH, int dstW, int dstH);
     public static native byte[] nativeMuxFrontier5Container(byte[] baseNalu, byte[] residualPayload, byte[] afgsParams, int width, int height, long ptsMs);
+    public static native boolean nativeSetResourceConstraints(int maxRamMb, int cpuMode, boolean enableGpu, int powerPriority);
+    public static native boolean nativeApplyThreadAffinity(int totalCores);
+    public static native int nativeEvaluateThermalHeadroom(float headroom, long timeMs);
+    public static native int nativeGetThermalGear();
+    public static native long[] nativeGetTilePoolStats();
 
     // Frontier 6: Global Graph Deduplication & Semantic Video Vault (Rabin-Mesh)
     public static native long[] nativeScanMeshBurstCandidates(String[] videoPaths, float similarityThreshold);

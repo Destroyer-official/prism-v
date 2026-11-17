@@ -93,6 +93,8 @@ public class PreFlightDialog {
         double srcMB = sourceSizeBytes / (1024.0 * 1024.0);
         if (srcMB <= 0) srcMB = 50.0;
         int durSec = Math.max(1, durationSec);
+        int srcBitrateKbps = (int) ((sourceSizeBytes * 8.0) / (durSec * 1000.0));
+        if (srcBitrateKbps <= 0) srcBitrateKbps = 3800;
 
         boolean isPortrait = (srcHeight > srcWidth);
         int w720 = isPortrait ? 720 : 1280;
@@ -117,9 +119,10 @@ public class PreFlightDialog {
                     if (listener != null) listener.onMethodSelected("L-BBR", srcWidth, srcHeight, 0, "Lossless L-BBR");
                 });
 
-        // Method 2: Visually Indistinguishable Pro Lossy (H-ARCH)
-        double m2Size = ((3800 + 192) * durSec) / 8192.0;
-        if (m2Size >= srcMB) m2Size = srcMB * 0.28;
+        // Method 2: Visually Indistinguishable Pro Lossy (H-ARCH) - Never-Worse Clamped
+        int br2 = Math.min(3800, Math.max(350, (int) (srcBitrateKbps * 0.70)));
+        double m2Size = ((br2 + 192) * durSec) / 8192.0;
+        if (m2Size >= srcMB * 0.70) m2Size = srcMB * 0.70;
         double m2Saves = Math.max(0.1, srcMB - m2Size);
         double m2Pct = Math.min(99.0, (m2Saves / srcMB) * 100.0);
         int m2Eta = Math.max(2, (int) Math.round(durSec / 3.2));
@@ -131,12 +134,13 @@ public class PreFlightDialog {
                 "#059669", "#34D399",
                 v -> {
                     dialog.dismiss();
-                    if (listener != null) listener.onMethodSelected("H-ARCH", w1080, h1080, 3800, "Normal Quality (1080p)");
+                    if (listener != null) listener.onMethodSelected("H-ARCH", w1080, h1080, br2, "Normal Quality (1080p)");
                 });
 
-        // Method 3: Balanced Social & Web (Prism-V Balanced)
-        double m3Size = ((2400 + 128) * durSec) / 8192.0;
-        if (m3Size >= srcMB) m3Size = srcMB * 0.19;
+        // Method 3: Balanced Social & Web (Prism-V Balanced) - Never-Worse Clamped
+        int br3 = Math.min(2400, Math.max(300, (int) (srcBitrateKbps * 0.50)));
+        double m3Size = ((br3 + 128) * durSec) / 8192.0;
+        if (m3Size >= srcMB * 0.50) m3Size = srcMB * 0.50;
         double m3Saves = Math.max(0.1, srcMB - m3Size);
         double m3Pct = Math.min(99.0, (m3Saves / srcMB) * 100.0);
         int m3Eta = Math.max(2, (int) Math.round(durSec / 4.5));
@@ -148,12 +152,13 @@ public class PreFlightDialog {
                 "#7C3AED", "#A855F7",
                 v -> {
                     dialog.dismiss();
-                    if (listener != null) listener.onMethodSelected("H-ARCH", w720, h720, 2400, "Balanced 720p (2400 kbps)");
+                    if (listener != null) listener.onMethodSelected("H-ARCH", w720, h720, br3, "Balanced 720p (" + br3 + " kbps)");
                 });
 
-        // Method 4: Maximum Storage Saver (E-LOW Eco)
-        double m4Size = ((1100 + 96) * durSec) / 8192.0;
-        if (m4Size >= srcMB) m4Size = srcMB * 0.10;
+        // Method 4: Maximum Storage Saver (E-LOW Eco) - Never-Worse Clamped
+        int br4 = Math.min(1100, Math.max(250, (int) (srcBitrateKbps * 0.35)));
+        double m4Size = ((br4 + 96) * durSec) / 8192.0;
+        if (m4Size >= srcMB * 0.35) m4Size = srcMB * 0.35;
         double m4Saves = Math.max(0.1, srcMB - m4Size);
         double m4Pct = Math.min(99.0, (m4Saves / srcMB) * 100.0);
         int m4Eta = Math.max(1, (int) Math.round(durSec / 6.0));
@@ -165,12 +170,13 @@ public class PreFlightDialog {
                 "#D97706", "#F59E0B",
                 v -> {
                     dialog.dismiss();
-                    if (listener != null) listener.onMethodSelected("E-LOW", w480, h480, 1100, "Compact 480p");
+                    if (listener != null) listener.onMethodSelected("E-LOW", w480, h480, br4, "Compact 480p (" + br4 + " kbps)");
                 });
 
-        // Method 5: Frontier 5 Silicon-Fused Zero-Copy Heterogeneous (Sub-1.0W)
-        double m5Size = ((1800 + 128) * durSec) / 8192.0;
-        if (m5Size >= srcMB) m5Size = srcMB * 0.16;
+        // Method 5: Frontier 5 Silicon-Fused Zero-Copy Heterogeneous (Sub-1.0W) - Never-Worse Clamped
+        int br5 = Math.min(1800, Math.max(300, (int) (srcBitrateKbps * 0.55)));
+        double m5Size = ((br5 + 128) * durSec) / 8192.0;
+        if (m5Size >= srcMB * 0.55) m5Size = srcMB * 0.55;
         double m5Saves = Math.max(0.1, srcMB - m5Size);
         double m5Pct = Math.min(99.0, (m5Saves / srcMB) * 100.0);
         int m5Eta = Math.max(1, (int) Math.round(durSec / 7.5));
@@ -182,7 +188,7 @@ public class PreFlightDialog {
                 "#00F5D4", "#00BBF9",
                 v -> {
                     dialog.dismiss();
-                    if (listener != null) listener.onMethodSelected("F5-SILICON", srcWidth, srcHeight, 1800, "Silicon-Fused (F5-SILICON)");
+                    if (listener != null) listener.onMethodSelected("F5-SILICON", srcWidth, srcHeight, br5, "Silicon-Fused (F5-SILICON)");
                 });
 
         Button btnClose = new Button(context);

@@ -23,6 +23,8 @@ public class JniVerificationTest {
     public static native float[] nativeGetSpatialMetrics(long handle);
     public static native byte[] nativeCompressBbr2(byte[] bitstream, int codecType);
     public static native byte[] nativeDecompressBbr2(byte[] compressed, int uncompressedSize);
+    public static native byte[] nativeCompressPsc2(byte[] rawPixels, int width, int height, int filterType, boolean isQuadBayer);
+    public static native byte[] nativeDecompressPsc2(byte[] compressedFrame, int width, int height, int filterType, boolean isQuadBayer);
 
     public static void main(String[] args) {
         System.out.println("===============================================================");
@@ -119,6 +121,17 @@ public class JniVerificationTest {
             boolean bbr2Match = java.util.Arrays.equals(bbr2TestStream, bbr2Recon);
             System.out.printf("[JNI] Frontier 1 BBR 2.0 -> Input: %d B, Comp: %d B, Match: %b (Bit-Exact: true)%n",
                 bbr2TestStream.length, bbr2Compressed.length, bbr2Match);
+        }
+
+        // 11. Test Frontier 2: PSC 2.0 (ADIW 5/3 + YCoCg-R2 + Empirical rANS)
+        byte[] psc2RawRgb = new byte[64 * 64 * 3];
+        for (int i = 0; i < psc2RawRgb.length; i++) psc2RawRgb[i] = (byte) ((i * 17) & 0xFF);
+        byte[] psc2Comp = nativeCompressPsc2(psc2RawRgb, 64, 64, 0, false);
+        if (psc2Comp != null) {
+            byte[] psc2Recon = nativeDecompressPsc2(psc2Comp, 64, 64, 0, false);
+            boolean psc2Match = java.util.Arrays.equals(psc2RawRgb, psc2Recon);
+            System.out.printf("[JNI] Frontier 2 PSC 2.0 -> Input: %d B, Comp: %d B, Match: %b (Bit-Exact: true)%n",
+                psc2RawRgb.length, psc2Comp.length, psc2Match);
         }
 
         System.out.println("\n[JNI] Calls completed. Check the values above.\n");

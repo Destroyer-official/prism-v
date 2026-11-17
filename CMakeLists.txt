@@ -50,8 +50,23 @@ set(PRISM_CORE_SOURCES
     core/src/spatial.cpp
 )
 
+# Shaders & SPIR-V compilation
+find_program(GLSLC_EXECUTABLE glslc)
+if (GLSLC_EXECUTABLE)
+    add_custom_command(
+        OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/core/shaders/frontier5_pipeline.spv
+        COMMAND ${GLSLC_EXECUTABLE} --target-env=vulkan1.3 -O ${CMAKE_CURRENT_SOURCE_DIR}/core/shaders/frontier5_pipeline.comp -o ${CMAKE_CURRENT_SOURCE_DIR}/core/shaders/frontier5_pipeline.spv
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/core/shaders/frontier5_pipeline.comp
+        COMMENT "Compiling frontier5_pipeline.comp to SPIR-V (Vulkan 1.3)"
+    )
+    add_custom_target(compile_frontier5_shaders DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/core/shaders/frontier5_pipeline.spv)
+endif()
+
 # Core library target
 add_library(prism_core STATIC ${PRISM_CORE_SOURCES})
+if (GLSLC_EXECUTABLE)
+    add_dependencies(prism_core compile_frontier5_shaders)
+endif()
 target_compile_features(prism_core PUBLIC cxx_std_20)
 target_include_directories(prism_core PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/core/include>

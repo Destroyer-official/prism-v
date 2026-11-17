@@ -103,6 +103,20 @@ private:
         } \
     } while (0)
 
+#define PRISM_ASSERT_THROWS(expr, ExceptionType) \
+    do { \
+        bool caught = false; \
+        try { \
+            (expr); \
+        } catch (const ExceptionType&) { \
+            caught = true; \
+        } catch (...) {} \
+        if (!caught) { \
+            throw std::runtime_error(std::string("Expected exception " #ExceptionType " not thrown: ") + #expr + \
+                                     " at " + __FILE__ + ":" + std::to_string(__LINE__)); \
+        } \
+    } while (0)
+
 } // namespace prism::test
 
 #endif // PRISM_TEST_HARNESS_HPP

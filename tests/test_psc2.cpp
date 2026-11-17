@@ -296,3 +296,220 @@ PRISM_TEST(test_psc2_chunk_payload_roundtrip) {
     PRISM_ASSERT_EQ(decomp_bayer.size(), bayer_size);
     PRISM_ASSERT(std::memcmp(bayer_bytes, decomp_bayer.data(), bayer_size) == 0);
 }
+
+PRISM_TEST(test_psc2_checkerboard_convnet_determinism_and_bounds) {
+    const auto& convnet = Psc2Engine::get_convnet();
+
+    // Verify parameter bounds across synthetic causal test patterns
+    for (int p = 0; p < 4; ++p) {
+        for (int16_t v = -1000; v <= 1000; v += 137) {
+            auto params = convnet.predict(v, v + 10, v - 10, v + 20, v, static_cast<uint8_t>(p));
+            PRISM_ASSERT(params.sigma >= 4 && params.sigma <= 127);
+            PRISM_ASSERT(params.mu >= -32768 && params.mu <= 32767);
+        }
+    }
+
+    // Assert determinism across repeated calls
+    auto p1 = convnet.predict(150, 160, 145, 170, 155, 1);
+    auto p2 = convnet.predict(150, 160, 145, 170, 155, 1);
+    PRISM_ASSERT_EQ(p1.mu, p2.mu);
+    PRISM_ASSERT_EQ(p1.sigma, p2.sigma);
+}
+
+PRISM_TEST(test_psc2_adiw_i32_high_bit_depth_reversibility) {
+    constexpr uint32_t W = 32;
+    constexpr uint32_t H = 32;
+    std::vector<int32_t> orig_tile(W * H);
+
+    // 16-bit sensor input dynamic range: samples up to 65535
+    for (size_t i = 0; i < orig_tile.size(); ++i) {
+        orig_tile[i] = static_cast<int32_t>((i * 1031 + 47) % 65536);
+    }
+
+    const AdiwOrientation orientations[] = {
+        AdiwOrientation::HORIZONTAL,
+        AdiwOrientation::VERTICAL,
+        AdiwOrientation::DIAGONAL,
+        AdiwOrientation::ANTI_DIAG
+    };
+
+    for (auto ori : orientations) {
+        // Test 32-bit LeGall 5/3
+        std::vector<int32_t> tile53 = orig_tile;
+        Psc2Engine::forward_adiw_2d_i32(tile53.data(), W, W, H, ori, WaveletFilterType::LEGALL_53);
+        Psc2Engine::inverse_adiw_2d_i32(tile53.data(), W, W, H, ori, WaveletFilterType::LEGALL_53);
+
+        for (size_t i = 0; i < orig_tile.size(); ++i) {
+            PRISM_ASSERT_EQ(tile53[i], orig_tile[i]);
+        }
+
+        // Test 32-bit CDF 9/7
+        std::vector<int32_t> tile97 = orig_tile;
+        Psc2Engine::forward_adiw_2d_i32(tile97.data(), W, W, H, ori, WaveletFilterType::CDF_97_INT);
+        Psc2Engine::inverse_adiw_2d_i32(tile97.data(), W, W, H, ori, WaveletFilterType::CDF_97_INT);
+
+        for (size_t i = 0; i < orig_tile.size(); ++i) {
+            PRISM_ASSERT_EQ(tile97[i], orig_tile[i]);
+        }
+    }
+}
+
+PRISM_TEST(test_psc2_checkerboard_convnet_compression_psnr_infinity) {
+    constexpr uint32_t W = 64;
+    constexpr uint32_t H = 64;
+
+    Psc2Config cfg;
+    cfg.width = W;
+    cfg.height = H;
+    cfg.tile_size = 32;
+    cfg.bit_depth = 8;
+    cfg.enable_directional_wavelet = true;
+    cfg.enable_spectral_coupling = true;
+    cfg.enable_checkerboard_convnet = true; // 4-Pass Checkerboard ConvNet prior
+    cfg.filter = WaveletFilterType::LEGALL_53;
+
+    Psc2Engine engine(cfg);
+
+    std::vector<uint8_t> raw_rgb(W * H * 3);
+    for (uint32_t y = 0; y < H; ++y) {
+        for (uint32_t x = 0; x < W; ++x) {
+            size_t idx = (y * W + x) * 3;
+            raw_rgb[idx + 0] = static_cast<uint8_t>((x * 9 + y * 5) % 256);
+            raw_rgb[idx + 1] = static_cast<uint8_t>((x * 3 + y * 11) % 256);
+            raw_rgb[idx + 2] = static_cast<uint8_t>((x * 7 ^ y * 13) % 256);
+        }
+    }
+
+    auto comp = engine.compress_frame_rgb(raw_rgb.data(), raw_rgb.size());
+    PRISM_ASSERT(!comp.bitstream_payload.empty());
+
+    // Serialize and deserialize bitstream
+    std::vector<uint8_t> serialized = Psc2Engine::serialize_frame(comp);
+    auto deser = Psc2Engine::deserialize_frame(serialized.data(), serialized.size());
+    PRISM_ASSERT(deser.config.enable_checkerboard_convnet);
+
+    std::vector<uint8_t> decomp = engine.decompress_frame_rgb(deser);
+    PRISM_ASSERT_EQ(decomp.size(), raw_rgb.size());
+    PRISM_ASSERT(Psc2Engine::verify_pixel_parity(raw_rgb.data(), decomp.data(), raw_rgb.size()));
+}
+
+PRISM_TEST(test_psc2_quad_bayer_multi_bit_depth_parity) {
+    constexpr uint32_t W = 64;
+    constexpr uint32_t H = 64;
+    const uint8_t bit_depths[] = {10, 12, 14, 16};
+
+    for (uint8_t bd : bit_depths) {
+        Psc2Config cfg;
+        cfg.width = W;
+        cfg.height = H;
+        cfg.bit_depth = bd;
+        cfg.enable_quad_bayer_coupling = true;
+
+        Psc2Engine engine(cfg);
+        uint32_t max_val = (bd == 16) ? 65535 : ((1u << bd) - 1);
+
+        std::vector<uint16_t> bayer_raw(W * H);
+        for (uint32_t y = 0; y < H; ++y) {
+            for (uint32_t x = 0; x < W; ++x) {
+                bayer_raw[y * W + x] = static_cast<uint16_t>(((x * 37) ^ (y * 59) + 11) % (max_val + 1));
+            }
+        }
+
+        auto comp = engine.compress_quad_bayer(bayer_raw.data(), W, H, bd);
+        std::vector<uint16_t> decomp = engine.decompress_quad_bayer(comp);
+
+        PRISM_ASSERT_EQ(decomp.size(), bayer_raw.size());
+        PRISM_ASSERT(Psc2Engine::verify_sample_parity_u16(bayer_raw.data(), decomp.data(), bayer_raw.size()));
+    }
+}
+
+PRISM_TEST(test_psc2_multithreaded_wavefront_parity) {
+    constexpr uint32_t W = 256;
+    constexpr uint32_t H = 256;
+
+    std::vector<uint8_t> raw_rgb(W * H * 3);
+    for (uint32_t y = 0; y < H; ++y) {
+        for (uint32_t x = 0; x < W; ++x) {
+            size_t idx = (y * W + x) * 3;
+            raw_rgb[idx + 0] = static_cast<uint8_t>((x * 11 + y * 7) % 256);
+            raw_rgb[idx + 1] = static_cast<uint8_t>((x * 19 ^ y * 13) % 256);
+            raw_rgb[idx + 2] = static_cast<uint8_t>((x * 3 + y * 23 + 47) % 256);
+        }
+    }
+
+    const uint32_t thread_counts[] = {1, 2, 4, 8};
+    for (uint32_t threads : thread_counts) {
+        // Test with MED
+        {
+            Psc2Config cfg;
+            cfg.width = W;
+            cfg.height = H;
+            cfg.tile_size = 64; // 4x4 = 16 tiles
+            cfg.enable_directional_wavelet = true;
+            cfg.enable_spectral_coupling = true;
+            cfg.enable_checkerboard_convnet = false;
+            cfg.num_worker_threads = threads;
+
+            Psc2Engine engine(cfg);
+            auto comp = engine.compress_frame_rgb(raw_rgb.data(), raw_rgb.size());
+            PRISM_ASSERT_EQ(comp.tile_headers.size(), 16u);
+
+            std::vector<uint8_t> decomp = engine.decompress_frame_rgb(comp);
+            PRISM_ASSERT_EQ(decomp.size(), raw_rgb.size());
+            PRISM_ASSERT(Psc2Engine::verify_pixel_parity(raw_rgb.data(), decomp.data(), raw_rgb.size()));
+        }
+
+        // Test with Checkerboard ConvNet
+        {
+            Psc2Config cfg;
+            cfg.width = W;
+            cfg.height = H;
+            cfg.tile_size = 64; // 16 tiles
+            cfg.enable_directional_wavelet = true;
+            cfg.enable_spectral_coupling = true;
+            cfg.enable_checkerboard_convnet = true;
+            cfg.num_worker_threads = threads;
+
+            Psc2Engine engine(cfg);
+            auto comp = engine.compress_frame_rgb(raw_rgb.data(), raw_rgb.size());
+            PRISM_ASSERT_EQ(comp.tile_headers.size(), 16u);
+
+            std::vector<uint8_t> decomp = engine.decompress_frame_rgb(comp);
+            PRISM_ASSERT_EQ(decomp.size(), raw_rgb.size());
+            PRISM_ASSERT(Psc2Engine::verify_pixel_parity(raw_rgb.data(), decomp.data(), raw_rgb.size()));
+        }
+    }
+}
+
+PRISM_TEST(test_psc2_p010_sensor_format_psnr_infinity) {
+    constexpr uint32_t W = 64;
+    constexpr uint32_t H = 64;
+    constexpr uint8_t BIT_DEPTH = 10; // 10-bit P010 sensor samples
+
+    Psc2Config cfg;
+    cfg.width = W;
+    cfg.height = H;
+    cfg.bit_depth = BIT_DEPTH;
+    cfg.tile_size = 32;
+    cfg.enable_quad_bayer_coupling = true;
+
+    Psc2Engine engine(cfg);
+
+    // Create 10-bit HDR sensor pattern [0..1023]
+    std::vector<uint16_t> p010_raw(W * H);
+    for (uint32_t y = 0; y < H; ++y) {
+        for (uint32_t x = 0; x < W; ++x) {
+            p010_raw[y * W + x] = static_cast<uint16_t>(((x * 29 + y * 41) ^ 0x123) & 0x3FF);
+        }
+    }
+
+    auto comp = engine.compress_quad_bayer(p010_raw.data(), W, H, BIT_DEPTH);
+    PRISM_ASSERT(comp.is_quad_bayer);
+
+    std::vector<uint16_t> decomp = engine.decompress_quad_bayer(comp);
+    PRISM_ASSERT_EQ(decomp.size(), p010_raw.size());
+
+    bool match = Psc2Engine::verify_sample_parity_u16(p010_raw.data(), decomp.data(), p010_raw.size());
+    PRISM_ASSERT(match);
+}
+

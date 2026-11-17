@@ -44,7 +44,42 @@ struct Psc2Config {
     bool enable_directional_wavelet = true;
     bool enable_spectral_coupling = true;
     bool enable_quad_bayer_coupling = false;
+    bool enable_checkerboard_convnet = false;
     uint32_t num_worker_threads = 4;
+};
+
+/**
+ * @brief 4-Pass Checkerboard Causal Integer ConvNet.
+ * Distills NeuralLVC's 94-pass Transformer into a 4-pass spatial checkerboard ConvNet (0.342 GMACs/frame at 1080p).
+ * Computes deterministic integer logistic parameters (mu, sigma) compliant with Prism-DetInt.
+ */
+class CheckerboardConvNet {
+public:
+    struct LogisticParams {
+        int16_t mu = 0;
+        uint8_t sigma = 16;
+    };
+
+    CheckerboardConvNet();
+
+    /**
+     * @brief Evaluates logistic parameters for a sample given causal neighbors and LL context.
+     */
+    LogisticParams predict(int16_t left, int16_t top, int16_t top_left, int16_t top_right,
+                           int16_t ll_context, uint8_t pass_index) const;
+
+    /**
+     * @brief Vectorized evaluation across a tile checkerboard pass.
+     */
+    void evaluate_tile_pass(const int16_t* tile_data, uint32_t stride, uint32_t w, uint32_t h,
+                            const int16_t* ll_plane, uint32_t ll_stride,
+                            uint8_t pass_index, std::vector<LogisticParams>& out_params) const;
+
+private:
+    std::array<int8_t, 8 * 8> layer1_weights_{};
+    std::array<int32_t, 8> layer1_bias_{};
+    std::array<int8_t, 8 * 2> layer2_weights_{};
+    std::array<int32_t, 2> layer2_bias_{};
 };
 
 /**
@@ -58,6 +93,7 @@ struct Psc2TileHeader {
     int8_t alpha_shear = 0;
     int8_t beta_shear = 0;
     uint8_t dominant_orientation = 0; // AdiwOrientation
+    uint8_t tile_codec_mode = 1;      // 0: Uniform rANS, 1: Empirical rANS, 2: Raw bypass
     uint32_t payload_byte_offset = 0;
     uint32_t payload_byte_size = 0;
 };
@@ -138,6 +174,23 @@ public:
      */
     static void inverse_adiw_2d(int16_t* tile_data, uint32_t stride, uint32_t width, uint32_t height,
                                 AdiwOrientation orientation, WaveletFilterType filter = WaveletFilterType::LEGALL_53);
+
+    /**
+     * @brief 32-bit forward 2D ADIW integer wavelet lifting for high bit-depth (12-16 bit) sensor tiles.
+     */
+    static void forward_adiw_2d_i32(int32_t* tile_data, uint32_t stride, uint32_t width, uint32_t height,
+                                    AdiwOrientation orientation, WaveletFilterType filter = WaveletFilterType::LEGALL_53);
+
+    /**
+     * @brief 32-bit inverse 2D ADIW integer wavelet lifting for high bit-depth (12-16 bit) sensor tiles.
+     */
+    static void inverse_adiw_2d_i32(int32_t* tile_data, uint32_t stride, uint32_t width, uint32_t height,
+                                    AdiwOrientation orientation, WaveletFilterType filter = WaveletFilterType::LEGALL_53);
+
+    /**
+     * @brief Singleton accessor for the 4-pass checkerboard ConvNet prior.
+     */
+    static const CheckerboardConvNet& get_convnet();
 
     /**
      * @brief Detect dominant gradient orientation from the coarse LL band.
