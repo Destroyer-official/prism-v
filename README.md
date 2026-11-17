@@ -872,6 +872,11 @@ adb shell am start -n com.prismv/.ui.MainActivity
 14. **Mentzer, F., et al.** (2024). *Finite Scalar Quantization: VQ-VAE Made Simple & Residual FSQ for Latent Neural Compression*. ICLR.
 15. **Lipman, Y., et al.** (2024–2026). *Flow Matching for Generative Modeling & One-Step Distilled Rectified Flow for Real-Time Video Synthesis*. ICML / NeurIPS.
 16. **Alliance for Open Media (AOMedia)** (2024). *AOMedia Film Grain Synthesis 1 (AFGS1) Specification: Autoregressive Parameter Estimation and Hardware Compositing Process*.
+17. **IETF RFC 9559 / RFC 8794** (2024–2026). *Matroska Media Container Format Specifications & Extensible Binary Meta Language (EBML)*.
+18. **ISO/IEC 14496-12** (7th Edition 2024). *Information technology — Coding of audio-visual objects — Part 12: ISO base media file format*.
+19. **IETF RFC 7845 / RFC 6716** (2016–2024). *Ogg Encapsulation for the Opus Audio Codec & Definition of the Opus Audio Codec*.
+20. **IEEE ISCAS** (2026). *Content-Adaptive Spatio-Temporal Bit Allocation for Hardware Video Encoders*. arXiv:2602.06242.
+21. **arXiv:2608.07799** (2026). *Saliency Kurtosis Modulation for Mobile Rate-Distortion Optimization*.
 
 ---
 

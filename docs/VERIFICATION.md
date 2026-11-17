@@ -108,20 +108,29 @@ Executed via `build/prism_tests.exe`:
   [ OK ] test_vfs_bbr2_open_proxy_serving (28.7785 ms)
   [ OK ] test_vfs_psc2_open_proxy_serving (12.9045 ms)
 
-[Frontier 3: NeRV-S & Residual FSQ Generative Codec]
+[Frontier 3: NeRV-S & Residual FSQ Generative Codec (Agent 4)]
   [ OK ] test_coolchic_synthesis_bounded_macs (0.0052 ms)
   [ OK ] test_coolchic_masked_soft_gating_blend (0.0001 ms)
   [ OK ] test_coolchic_pareto_dial_solver (0.0004 ms)
+  [ OK ] test_coolchic_determinism_and_torture (0.7137 ms)
+  [ OK ] test_coolchic_synthesize_frame_batch (0.0083 ms)
+  [ OK ] test_coolchic_activity_guided_sub_35_gmacs (0.0151 ms)
+  [ OK ] test_coolchic_latency_benchmark (0.0118 ms)
+  [ OK ] test_coolchic_yuv420_activity_guided (0.0229 ms)
   [ OK ] test_afgs1_noise_extraction_and_synthesis (0.0728 ms)
+  [ OK ] test_afgs1_temporal_grain_flicker_free (0.0384 ms)
   [ OK ] test_rfsq_lattice_quantization_roundtrip (0.0094 ms)
   [ OK ] test_rfsq_integer_layernorm_determinism (0.0041 ms)
   [ OK ] test_rfsq_semantic_delta_codec_bitrate (0.0125 ms)
+  [ OK ] test_rfsq_cross_platform_zero_divergence (0.0035 ms)
   [ OK ] test_prism_gen_dense_affine_warper_precision (0.0210 ms)
   [ OK ] test_prism_gen_detint_flow_generator (0.0845 ms)
   [ OK ] test_prism_gen_audio_concealment (0.0152 ms)
+  [ OK ] test_prism_detint_flow_gen_spirv_validity (0.2450 ms)
   [ OK ] test_nerv_triplane_lattice_hadamard_fusion (0.0381 ms)
   [ OK ] test_nerv_synthesis_mlp_mac_budget (0.0194 ms)
   [ OK ] test_nerv_hessian_bit_allocator (0.0112 ms)
+  [ OK ] test_nerv_continuous_subframe_render_latency (0.0382 ms)
 
 [Frontier 4: Dynamic 4D Gaussian Splatting Video Engine]
   [ OK ] test_chebyshev_polynomial_trajectory_evaluation (0.0106 ms)
