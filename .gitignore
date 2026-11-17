@@ -23,6 +23,7 @@ Testing/
 
 # Compiled Vulkan SPIR-V shaders
 *.spv
+!core/shaders/*.spv
 
 # Android and Gradle build output
 .gradle/
