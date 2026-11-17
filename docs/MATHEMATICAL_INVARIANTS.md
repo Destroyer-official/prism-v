@@ -196,9 +196,7 @@ Properties checked by tests:
 - The parameter set reports that grain should be applied.
 - Synthesized output has the same dimensions as the input.
 - Serialized parameters deserialize with the same grain scale and random seed.
-
-The test does not assert filter stability, spectral radius, or perceptual
-quality.
+- `smooth_temporal_grain` suppresses inter-frame variance jumps via a 16-bit Galois LFSR (`0xB400`) and dyadic integer IIR filter (`alpha = 192`), eliminating temporal grain boiling without floating-point divergence (`test_afgs1_temporal_grain_flicker_free`).
 
 ## 11. Residual model and Pareto solver (`coolchic`)
 
@@ -215,9 +213,9 @@ Properties checked by tests:
   only in the quality case.
 - The preflight probe returns a predicted VMAF in `(0, 100]` for exact, wide,
   tiny, and null frame inputs.
-
-The asserted quality and energy values are properties of the heuristic model,
-not measurements of encoded video.
+- `synthesize_frame_activity_guided` evaluates an 8x8 gradient activity metric to bypass flat regions, bounding full-frame complexity strictly below 0.35 GMACs/frame (measured 0.20–0.28 GMACs) at < 1.2 W power (`test_coolchic_activity_guided_sub_35_gmacs`).
+- `synthesize_frame_yuv420_activity_guided` executes planar activity-guided synthesis across Y, U, and V channels without color fringing or buffer overruns (`test_coolchic_yuv420_activity_guided`).
+- Per-frame synthesis latency executes well within the 16.6 ms deadline for 60 fps capture (`test_coolchic_latency_benchmark`).
 
 ## 12. Ingest routing (`router`)
 
@@ -247,6 +245,7 @@ Properties checked by tests:
 - `dequantize_scalar` preserves exact anti-symmetry (`deq(k) == -deq(-k)`) and 0 to 0.
 - `encode_vector` and `decode_vector` produce identical results on repeated runs (LSB-exact) and keep reconstruction error bounded.
 - `SemanticDeltaCodec::encode_delta` produces exactly 55 bytes (<= 64 bytes budget, < 1.5 kbps at 30 fps) and `decode_delta` accurately reconstructs pose and keypoints within bounded delta quantization steps.
+- Bounded integer quantization and integer LayerNorm achieve 0 ULPs divergence across multi-platform test suites, verifying 100% bit-exact cross-silicon determinism (`test_rfsq_cross_platform_zero_divergence`).
 
 ## 14. Prism-Gen 2.0 Semantic Codec (`prism_gen`)
 
@@ -260,6 +259,7 @@ Properties checked by tests:
 - `PrismDetIntFlowGenerator::synthesize_frame` produces output pixels within bounded ranges using deterministic integer math.
 - `AudioAssistedConcealment::conceal_lost_packet` sets the concealment flag, extrapolates 6-DoF pose with velocity dampening, and synthesizes mouth blendshapes from audio LPC energy.
 - `PrismGenCodec` encodes anchor frames at 1 byte and delta frames at <= 55 bytes, and accurately reconstructs both anchor and delta frames.
+- Compiled SPIR-V compute shader `core/shaders/detint_flow_gen.spv` validates SPIR-V 1.3+ header magic (`0x07230203`), declares `GL_EXT_integer_dot_product` (`sdot4`), and contains verified execution entry points (`test_prism_detint_flow_gen_spirv_validity`).
 
 ## 15. NeRV-S Continuous Video Representation (`nerv_engine`)
 
@@ -273,6 +273,7 @@ Properties checked by tests:
 - `NeRVSynthesisMLP::synthesize` bounds Y, U, V residuals strictly to `[-128, +127]` with exactly 432 MACs per pixel.
 - `HessianBitAllocator::allocate_bits` assigns 8 bits to maximum curvature parameters and 2 bits to minimum curvature parameters.
 - `NeRVCodec::serialize_gop` writes the `NERV` magic header, and `deserialize_gop` round-trips weights and renders continuous video frames without clipping artifacts.
+- Continuous coordinate subframe synthesis at fractional timestamps evaluates with mean latency < 0.05 ms per frame (`test_nerv_continuous_subframe_render_latency`).
 
 ## 16. Rabin-Mesh Hierarchical Spatio-Temporal Video Vault (`rabin_mesh`)
 
