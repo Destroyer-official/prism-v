@@ -1,5 +1,7 @@
 package com.prismv.spatial;
 
+import com.prismv.logging.PrismLogger;
+
 /**
  * PrismSpatialEngine:
  * Android Java API for Frontier 4: Dynamic 4D Gaussian Splatting Video (Prism-Spatial).
@@ -13,8 +15,9 @@ public class PrismSpatialEngine implements AutoCloseable {
     static {
         try {
             System.loadLibrary("prism_jni");
+            PrismLogger.i("PrismSpatialEngine", "Loaded native library prism_jni for 4DGS engine");
         } catch (UnsatisfiedLinkError e) {
-            // In headless/mock test environments, ignore linkage failure
+            PrismLogger.w("PrismSpatialEngine", "Native library prism_jni unavailable for 4DGS: " + e.getMessage());
         }
     }
 

@@ -82,13 +82,13 @@ The design of PSC 2.0 synthesizes and elevates seven foundational breakthroughs 
    - *Limitation:* RAWIC uses a deep autoregressive neural prior that requires ~18 GMACs per megapixel, making real-time mobile encoding impossible (>400 ms per frame on NPU).
    - *PSC 2.0 Synthesis:* Retains the 4-channel RGGB CFA structural decomposition, but replaces the heavy neural network with **closed-form fixed-point spectral coupling (A-IKLT)**, achieving identical decorrelation in <0.02 ms.
 2. **NeuralLVC (arXiv:2604.03353, Uricchio & Bertini, April 2026):**
-   - *Core Contribution:* Bijective linear tokenization with masked diffusion and lightweight reference embedding ($\text{RefEmb}$) for temporal prediction residuals.
+   - *Core Contribution:* Bijective linear tokenization with masked diffusion and lightweight reference embedding (`RefEmb`) for temporal prediction residuals.
    - *Limitation:* Masked diffusion requires 94 sequential denoising passes and PMAC compute scales.
    - *PSC 2.0 Synthesis:* Adopts bijective tokenization and temporal reference conditioning, but replaces the 94-pass diffusion model with **Adaptive Directional Integer Wavelets (ADIW)** and a **single-pass 4-group checkerboard context model** (pruning compute by 25,000x).
 3. **Direction-Adaptive Wavelet Transforms (Taubman, Ding, Boulgouris):**
    - *Core Contribution:* Demonstrating that rotating the 1D lifting stencil along continuous local geometric flow lines preserves edge continuity and eliminates high-frequency ringing.
    - *Limitation in Prior Art:* Early implementations required floating-point angle coordinates, explicit angle map signaling (overhead of 0.15–0.30 bpp), or violated integer reversibility due to rounding errors.
-   - *PSC 2.0 Innovation:* Formulates an **exact integer-to-integer directional lifting stencil** restricted to four discrete grid angles ($\theta \in \{0^\circ, 45^\circ, 90^\circ, 135^\circ\}$) and derives $\theta$ **100% implicitly from the coarse $LL$ band**, requiring **0 bits of side information**.
+   - *PSC 2.0 Innovation:* Formulates an **exact integer-to-integer directional lifting stencil** restricted to four discrete grid angles ($\theta \in \lbrace 0^\circ, 45^\circ, 90^\circ, 135^\circ \rbrace$) and derives $\theta$ **100% implicitly from the coarse $LL$ band**, requiring **0 bits of side information**.
 4. **JPEG XL Modular Squeeze Transforms & Adaptive Trees (ISO/IEC 18181-2):**
    - *Core Contribution:* Haar/Squeeze invertible integer operations with cross-component delta trees.
    - *Limitation:* Tree learning is an inherently sequential, serial process that cannot be SIMD-vectorized across SIMD-128 (NEON) or SIMD-512 (SME2).
@@ -107,7 +107,9 @@ The design of PSC 2.0 synthesizes and elevates seven foundational breakthroughs 
 ### 3.1 The Geometry of Directional Integer Lifting
 
 In a conventional 2D discrete wavelet transform, the horizontal filter decomposes rows into low and high frequencies, followed by vertical filtering on columns. When an image contains an edge at $45^\circ$ or $135^\circ$, the horizontal high-pass filter registers non-zero high coefficients, and the subsequent vertical high-pass filter creates non-zero cross-terms:
-$$\text{Energy Bleed} \implies \sigma^2(LH) \uparrow, \quad \sigma^2(HL) \uparrow, \quad \sigma^2(HH) \uparrow$$
+$$
+\text{Energy Bleed} \implies \sigma^2(LH) \uparrow, \quad \sigma^2(HL) \uparrow, \quad \sigma^2(HH) \uparrow
+$$
 
 ADIW eliminates this energy bleed by dynamically aligning the prediction and update stencils along the local geometric contour:
 
@@ -132,28 +134,44 @@ Directional Stencils on 2D Pixel Lattice:
 ### 3.2 Formal Mathematical Specification: ADIW 5/3 Lifting
 
 Let $X[x, y] \in \mathbb{Z}$ represent the input 2D planar integer signal.  
-The directional displacement vector $\mathbf{v}_\theta = (\Delta x, \Delta y)$ is defined for each orientation $\theta \in \{0^\circ, 45^\circ, 90^\circ, 135^\circ\}$:
-$$\mathbf{v}_{0^\circ} = (1, 0), \quad \mathbf{v}_{90^\circ} = (0, 1), \quad \mathbf{v}_{45^\circ} = (1, -1), \quad \mathbf{v}_{135^\circ} = (1, 1)$$
+The directional displacement vector $\mathbf{v}_\theta = (\Delta x, \Delta y)$ is defined for each orientation $\theta \in \lbrace 0^\circ, 45^\circ, 90^\circ, 135^\circ \rbrace$:
+$$
+\mathbf{v}_{0^\circ} = (1, 0), \quad \mathbf{v}_{90^\circ} = (0, 1), \quad \mathbf{v}_{45^\circ} = (1, -1), \quad \mathbf{v}_{135^\circ} = (1, 1)
+$$
 
 #### Forward ADIW 5/3 Transform:
 1. **Splitting:** Decompose the 2D grid into low-index (even) samples $X_e$ and high-index (odd) samples $X_o$ along the selected directional trajectory.
 2. **Directional Dual Lifting (Predict Step):**  
    The odd samples are predicted from the even samples along the trajectory $\mathbf{v}_\theta$:
-   $$\hat{X}_o[x, y] = \left\lfloor \frac{X_e[x - \mathbf{v}_\theta] + X_e[x + \mathbf{v}_\theta] + 1}{2} \right\rfloor$$
-   $$d[x, y] = X_o[x, y] - \hat{X}_o[x, y]$$
+   $$
+   \hat{X}_o[x, y] = \left\lfloor \frac{X_e[x - \mathbf{v}_\theta] + X_e[x + \mathbf{v}_\theta] + 1}{2} \right\rfloor
+   $$
+   $$
+   d[x, y] = X_o[x, y] - \hat{X}_o[x, y]
+   $$
 3. **Directional Primal Lifting (Update Step):**  
    The even samples are updated using the high-frequency detail residuals $d$:
-   $$s[x, y] = X_e[x, y] + \left\lfloor \frac{d[x - \mathbf{v}_\theta] + d[x + \mathbf{v}_\theta] + 2}{4} \right\rfloor$$
+   $$
+   s[x, y] = X_e[x, y] + \left\lfloor \frac{d[x - \mathbf{v}_\theta] + d[x + \mathbf{v}_\theta] + 2}{4} \right\rfloor
+   $$
 
 #### Inverse ADIW 5/3 Transform (Bit-Exact Perfect Reconstruction):
 Because the update and predict steps use pure two's-complement integer arithmetic with fixed dyadic shifts, the inverse is strictly bijective:
 1. **Invert Update Step:**
-   $$X_e[x, y] = s[x, y] - \left\lfloor \frac{d[x - \mathbf{v}_\theta] + d[x + \mathbf{v}_\theta] + 2}{4} \right\rfloor$$
+   $$
+   X_e[x, y] = s[x, y] - \left\lfloor \frac{d[x - \mathbf{v}_\theta] + d[x + \mathbf{v}_\theta] + 2}{4} \right\rfloor
+   $$
 2. **Invert Predict Step:**
-   $$\hat{X}_o[x, y] = \left\lfloor \frac{X_e[x - \mathbf{v}_\theta] + X_e[x + \mathbf{v}_\theta] + 1}{2} \right\rfloor$$
-   $$X_o[x, y] = d[x, y] + \hat{X}_o[x, y]$$
+   $$
+   \hat{X}_o[x, y] = \left\lfloor \frac{X_e[x - \mathbf{v}_\theta] + X_e[x + \mathbf{v}_\theta] + 1}{2} \right\rfloor
+   $$
+   $$
+   X_o[x, y] = d[x, y] + \hat{X}_o[x, y]
+   $$
 
-$$\text{Error} = X_{\text{reconstructed}}[x, y] - X_{\text{original}}[x, y] \equiv 0 \quad (\text{PSNR} = \infty)$$
+$$
+\text{Error} = X_{\text{reconstructed}}[x, y] - X_{\text{original}}[x, y] \equiv 0 \quad (\text{PSNR} = \infty)
+$$
 
 ---
 
@@ -161,20 +179,36 @@ $$\text{Error} = X_{\text{reconstructed}}[x, y] - X_{\text{original}}[x, y] \equ
 
 For high-resolution textures where LeGall 5/3 does not provide sufficient frequency selectivity, PSC 2.0 specifies an adaptive **4-stage Rational Dyadic Integer 9/7 Lifting Transform** based on the Calderbank-Daubechies-Sweldens lifting factorization, parameterized using 8-bit dyadic fractions (denominator = 128):
 
-$$\alpha_{\text{dyadic}} = -\frac{203}{128} \approx -1.5859375 \quad (\text{vs. true } \alpha = -1.586134)$$
-$$\beta_{\text{dyadic}} = -\frac{7}{128} \approx -0.0546875 \quad (\text{vs. true } \beta = -0.052980)$$
-$$\gamma_{\text{dyadic}} = \frac{113}{128} \approx 0.8828125 \quad (\text{vs. true } \gamma = 0.882911)$$
-$$\delta_{\text{dyadic}} = \frac{57}{128} \approx 0.4453125 \quad (\text{vs. true } \delta = 0.443506)$$
+$$
+\alpha_{\text{dyadic}} = -\frac{203}{128} \approx -1.5859375 \quad (\text{vs. true } \alpha = -1.586134)
+$$
+$$
+\beta_{\text{dyadic}} = -\frac{7}{128} \approx -0.0546875 \quad (\text{vs. true } \beta = -0.052980)
+$$
+$$
+\gamma_{\text{dyadic}} = \frac{113}{128} \approx 0.8828125 \quad (\text{vs. true } \gamma = 0.882911)
+$$
+$$
+\delta_{\text{dyadic}} = \frac{57}{128} \approx 0.4453125 \quad (\text{vs. true } \delta = 0.443506)
+$$
 
 #### The 4 Reversible Lifting Steps:
 1. **Predict 1:**
-   $$d^{(1)}[n] = X_o[n] + \left\lfloor \frac{-203 \cdot (X_e[n - \mathbf{v}_\theta] + X_e[n + \mathbf{v}_\theta]) + 64}{128} \right\rfloor$$
+   $$
+   d^{(1)}[n] = X_o[n] + \left\lfloor \frac{-203 \cdot (X_e[n - \mathbf{v}_\theta] + X_e[n + \mathbf{v}_\theta]) + 64}{128} \right\rfloor
+   $$
 2. **Update 1:**
-   $$s^{(1)}[n] = X_e[n] + \left\lfloor \frac{-7 \cdot (d^{(1)}[n - \mathbf{v}_\theta] + d^{(1)}[n + \mathbf{v}_\theta]) + 64}{128} \right\rfloor$$
+   $$
+   s^{(1)}[n] = X_e[n] + \left\lfloor \frac{-7 \cdot (d^{(1)}[n - \mathbf{v}_\theta] + d^{(1)}[n + \mathbf{v}_\theta]) + 64}{128} \right\rfloor
+   $$
 3. **Predict 2:**
-   $$d^{(2)}[n] = d^{(1)}[n] + \left\lfloor \frac{113 \cdot (s^{(1)}[n - \mathbf{v}_\theta] + s^{(1)}[n + \mathbf{v}_\theta]) + 64}{128} \right\rfloor$$
+   $$
+   d^{(2)}[n] = d^{(1)}[n] + \left\lfloor \frac{113 \cdot (s^{(1)}[n - \mathbf{v}_\theta] + s^{(1)}[n + \mathbf{v}_\theta]) + 64}{128} \right\rfloor
+   $$
 4. **Update 2:**
-   $$s^{(2)}[n] = s^{(1)}[n] + \left\lfloor \frac{57 \cdot (d^{(2)}[n - \mathbf{v}_\theta] + d^{(2)}[n + \mathbf{v}_\theta]) + 64}{128} \right\rfloor$$
+   $$
+   s^{(2)}[n] = s^{(1)}[n] + \left\lfloor \frac{57 \cdot (d^{(2)}[n - \mathbf{v}_\theta] + d^{(2)}[n + \mathbf{v}_\theta]) + 64}{128} \right\rfloor
+   $$
 
 *Reversibility:* Inverting the steps in reverse sequence with matching rounding operations guarantees 100% bit-exact restoration while providing an additional **3.5%–5.2% entropy reduction** over 5/3 on high-frequency textured frames.
 
@@ -188,13 +222,23 @@ A major vulnerability of prior directional wavelets was the bitrate overhead req
 1. In a multi-resolution wavelet hierarchy, the $LL$ subband is decoded and fully reconstructed *before* any high-frequency subbands ($LH, HL, HH$) are decoded.
 2. For any macroblock in the high-frequency subband, both the encoder and decoder evaluate the corresponding spatial region in the already-reconstructed $LL$ plane.
 3. The local integer gradient vector is computed using integer Sobel kernels:
-   $$G_x(x, y) = |LL(x+1, y) - LL(x-1, y)|$$
-   $$G_y(x, y) = |LL(x, y+1) - LL(x, y-1)|$$
-   $$G_{45}(x, y) = |LL(x+1, y-1) - LL(x-1, y+1)|$$
-   $$G_{135}(x, y) = |LL(x+1, y+1) - LL(x-1, y-1)|$$
+   $$
+   G_x(x, y) = |LL(x+1, y) - LL(x-1, y)|
+   $$
+   $$
+   G_y(x, y) = |LL(x, y+1) - LL(x, y-1)|
+   $$
+   $$
+   G_{45}(x, y) = |LL(x+1, y-1) - LL(x-1, y+1)|
+   $$
+   $$
+   G_{135}(x, y) = |LL(x+1, y+1) - LL(x-1, y-1)|
+   $$
 
 #### Orientation Selection Rule:
-$$\theta^* = \arg\min_{\theta \in \{0^\circ, 45^\circ, 90^\circ, 135^\circ\}} \left( \sum_{(x, y) \in \text{Block}} G_\theta(x, y) \right)$$
+$$
+\theta^* = \arg\min_{\theta \in \lbrace 0^\circ, 45^\circ, 90^\circ, 135^\circ \rbrace} \left( \sum_{(x, y) \in \text{Block}} G_\theta(x, y) \right)
+$$
 
 Because the decoder operates on the bit-exact identical $LL$ subband values as the encoder, **the selected orientation $\theta^*$ is identical on both sides down to the single clock cycle, requiring exactly ZERO bits of side information.**
 
@@ -205,7 +249,9 @@ Because the decoder operates on the bit-exact identical $LL$ subband values as t
 ### 4.1 The Limitation of Static YCoCg-R
 
 The classical YCoCg-R transform uses static coefficients:
-$$Co = R - B, \quad t = B + \lfloor Co / 2 \rfloor, \quad Cg = G - t, \quad Y = t + \lfloor Cg / 2 \rfloor$$
+$$
+Co = R - B, \quad t = B + \lfloor Co / 2 \rfloor, \quad Cg = G - t, \quad Y = t + \lfloor Cg / 2 \rfloor
+$$
 
 While optimal for idealized Lambertian surfaces under neutral white illuminants, real-world camera captures exhibit significant remaining cross-channel correlation:
 - **Saturated Chroma:** Sunset scenes, foliage, and neon lights show strong residual mutual information between $Y$ and $Co$, and between $Co$ and $Cg$.
@@ -238,16 +284,26 @@ flowchart LR
 ```
 
 #### Forward Transform Equations:
-$$Co'[x, y] = Co[x, y] - \left\lfloor \frac{\alpha_{\text{int}} \cdot Y[x, y] + 128}{256} \right\rfloor$$
-$$Cg'[x, y] = Cg[x, y] - \left\lfloor \frac{\beta_{\text{int}} \cdot Co'[x, y] + 128}{256} \right\rfloor$$
+$$
+Co'[x, y] = Co[x, y] - \left\lfloor \frac{\alpha_{\text{int}} \cdot Y[x, y] + 128}{256} \right\rfloor
+$$
+$$
+Cg'[x, y] = Cg[x, y] - \left\lfloor \frac{\beta_{\text{int}} \cdot Co'[x, y] + 128}{256} \right\rfloor
+$$
 
 #### Inverse Transform Equations (Strictly Bijective):
-$$Cg[x, y] = Cg'[x, y] + \left\lfloor \frac{\beta_{\text{int}} \cdot Co'[x, y] + 128}{256} \right\rfloor$$
-$$Co[x, y] = Co'[x, y] + \left\lfloor \frac{\alpha_{\text{int}} \cdot Y[x, y] + 128}{256} \right\rfloor$$
+$$
+Cg[x, y] = Cg'[x, y] + \left\lfloor \frac{\beta_{\text{int}} \cdot Co'[x, y] + 128}{256} \right\rfloor
+$$
+$$
+Co[x, y] = Co'[x, y] + \left\lfloor \frac{\alpha_{\text{int}} \cdot Y[x, y] + 128}{256} \right\rfloor
+$$
 
 #### Mathematical Determinant Proof:
 The transformation matrix representing the adaptive shear is:
-$$\mathbf{M}_{\text{shear}} = \begin{pmatrix} 1 & 0 & 0 \\ -\alpha & 1 & 0 \\ 0 & -\beta & 1 \end{pmatrix} \implies \det(\mathbf{M}_{\text{shear}}) = 1 \cdot (1 \cdot 1 - 0) = 1.00000$$
+$$
+\mathbf{M}_{\text{shear}} = \begin{pmatrix} 1 & 0 & 0 \\ -\alpha & 1 & 0 \\ 0 & -\beta & 1 \end{pmatrix} \implies \det(\mathbf{M}_{\text{shear}}) = 1 \cdot (1 \cdot 1 - 0) = 1.00000
+$$
 
 Because $\det = 1$, the volume of the integer lattice is strictly preserved (measure-preserving bijection). No sample expansion or information loss occurs regardless of the values of $\alpha$ and $\beta$.
 
@@ -257,15 +313,25 @@ Because $\det = 1$, the volume of the integer lattice is strictly preserved (mea
 
 The optimal parameters $\alpha^*, \beta^*$ are computed once per $128\times 128$ tile by the encoder using integer-accumulated covariance:
 
-$$\alpha^* = \frac{\sum_{(x, y) \in \text{Tile}} Y(x, y) \cdot Co(x, y)}{\sum_{(x, y) \in \text{Tile}} Y(x, y)^2}$$
-$$\beta^* = \frac{\sum_{(x, y) \in \text{Tile}} Co'(x, y) \cdot Cg(x, y)}{\sum_{(x, y) \in \text{Tile}} Co'(x, y)^2}$$
+$$
+\alpha^* = \frac{\sum_{(x, y) \in \text{Tile}} Y(x, y) \cdot Co(x, y)}{\sum_{(x, y) \in \text{Tile}} Y(x, y)^2}
+$$
+$$
+\beta^* = \frac{\sum_{(x, y) \in \text{Tile}} Co'(x, y) \cdot Cg(x, y)}{\sum_{(x, y) \in \text{Tile}} Co'(x, y)^2}
+$$
 
 The optimal values are mapped to signed 8-bit integers:
-$$\alpha_{\text{int}} = \text{clamp}\left( \text{round}(\alpha^* \cdot 256), -128, 127 \right)$$
-$$\beta_{\text{int}} = \text{clamp}\left( \text{round}(\beta^* \cdot 256), -128, 127 \right)$$
+$$
+\alpha_{\text{int}} = \text{clamp}\left( \text{round}(\alpha^* \cdot 256), -128, 127 \right)
+$$
+$$
+\beta_{\text{int}} = \text{clamp}\left( \text{round}(\beta^* \cdot 256), -128, 127 \right)
+$$
 
 *Signaling Overhead:* Just 2 bytes per $128\times 128$ tile:
-$$\text{Overhead} = \frac{16\text{ bits}}{128 \times 128\text{ pixels}} = \mathbf{0.000976\text{ bits/pixel}} \quad (\text{utterly negligible})$$
+$$
+\text{Overhead} = \frac{16\text{ bits}}{128 \times 128\text{ pixels}} = \mathbf{0.000976\text{ bits/pixel}} \quad (\text{utterly negligible})
+$$
 
 ---
 
@@ -315,7 +381,9 @@ Standard full-frame wavelet transforms require multiple scratch passes across me
 ### 5.2 The 100% L1-Resident $128\times 128$ Tile Architecture
 
 PSC 2.0 divides the frame into independent $128\times 128$ processing tiles:
-$$\text{Tile Size (16-bit subband)} = 128 \times 128 \times 2\text{ bytes} = \mathbf{32\text{ KB}}$$
+$$
+\text{Tile Size (16-bit subband)} = 128 \times 128 \times 2\text{ bytes} = \mathbf{32\text{ KB}}
+$$
 
 **Every mobile performance core (Cortex-X925, Cortex-A725, Oryon) includes 64 KB of dedicated L1 Data Cache.**  
 By constraining the active wavelet lifting stencil and checkerboard context to a $128\times 128$ tile, **the entire working set remains resident in L1 Data Cache throughout the entire transform, prediction, and rANS encoding cycle.** DRAM traffic drops by **87%**, and memory latency drops from 120 cycles to 4 cycles!
@@ -344,7 +412,9 @@ graph TD
 
 #### Wavefront Level Invariant:
 For any tile $(t_x, t_y)$, its wavefront index is:
-$$W = t_x + t_y$$
+$$
+W = t_x + t_y
+$$
 **All tiles sharing the same wavefront index $W$ are mathematically independent and execute concurrently across all available CPU cores without any locks or mutex contention.**
 
 #### Lock-Free Scheduling Mechanism:
@@ -519,7 +589,9 @@ All metrics below are projected based on validated 2026 empirical scaling models
 | **YachtDrive (4K60, 10-bit)** | 746.5 MB/s | 272.5 MB/s (36.5%)| 238.9 MB/s (32.0%)| 216.5 MB/s (29.0%)| **158.2 MB/s (21.2%)**| **-41.9%** |
 | **Bayer RAW10 (IMX890 50MP)**| 62.5 MB/frame | 23.1 MB (37.0%)   | 20.6 MB (33.0%)   | 18.1 MB (29.0%)   | **13.2 MB (21.1%)**   | **-42.8%** |
 
-$$\mathbf{Aggregate\ Average\ PSC\ 2.0\ Compressed\ Size:\ 20.8\%–21.8\%\ of\ Raw\ Size}$$
+$$
+\textbf{Aggregate Average PSC 2.0 Compressed Size: } 20.8\%\text{–}21.8\%\text{ of Raw Size}
+$$
 
 ---
 
@@ -583,7 +655,7 @@ gantt
 - **Deliverables:**
   - `core/src/simd/adiw_neon.cpp` & `core/src/simd/adiw_avx2.cpp`.
   - `core/src/wavefront_scheduler.cpp` with atomic dependency DAG.
-- **Verification Gate G2:** Benchmark confirms **>120 fps at 1080p** on an 8-core CPU, with L1 cache hit rate $>98.5\%$.
+- **Verification Gate G2:** Benchmark confirms **>120 fps at 1080p** on an 8-core CPU, with L1 cache hit rate >98.5%.
 
 ### Phase 3: Quad-Bayer RAW Ingest & Container Integration (Days 29–42)
 - **Objective:** Extend PSC 2.0 to handle 4-plane Quad-Bayer sensors and wire into the `.pvloss` chunk format.

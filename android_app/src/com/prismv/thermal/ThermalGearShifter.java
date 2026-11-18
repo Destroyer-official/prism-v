@@ -6,7 +6,7 @@ import android.content.IntentFilter;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.PowerManager;
-import android.util.Log;
+import com.prismv.logging.PrismLogger;
 import com.prismv.engine.SiliconFusedPipelineEngine;
 
 /**
@@ -61,7 +61,7 @@ public final class ThermalGearShifter {
                 mapStatusToGear(pm.getCurrentThermalStatus());
             }
         } catch (Throwable t) {
-            Log.w(TAG, "Unable to register thermal status listener: " + t.getMessage());
+            PrismLogger.w(TAG, "Unable to register thermal status listener: " + t.getMessage());
         }
     }
 
@@ -77,7 +77,7 @@ public final class ThermalGearShifter {
                 thermalListener = null;
             }
         } catch (Throwable t) {
-            Log.w(TAG, "Unable to unregister thermal status listener: " + t.getMessage());
+            PrismLogger.w(TAG, "Unable to unregister thermal status listener: " + t.getMessage());
         }
     }
 
@@ -192,13 +192,13 @@ public final class ThermalGearShifter {
             // Immediate downshift to protect silicon and prevent throttling
             currentGear = proposed;
             lastGearChangeMs = nowMs;
-            Log.i(TAG, "Thermal downshift to: " + currentGear.name() + " (" + currentGear.description + ")");
+            PrismLogger.i(TAG, "Thermal downshift to: " + currentGear.name() + " (" + currentGear.description + ")");
         } else if (isUpshift) {
             // Require 5000 ms of sustained cooling before stepping up
             if (nowMs - lastGearChangeMs >= DEBOUNCE_UPSHIFT_MS) {
                 currentGear = proposed;
                 lastGearChangeMs = nowMs;
-                Log.i(TAG, "Thermal upshift to: " + currentGear.name() + " (" + currentGear.description + ")");
+                PrismLogger.i(TAG, "Thermal upshift to: " + currentGear.name() + " (" + currentGear.description + ")");
             }
         }
     }

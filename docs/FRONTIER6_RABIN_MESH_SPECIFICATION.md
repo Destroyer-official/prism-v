@@ -54,16 +54,20 @@ Prism-V introduces **Hierarchical Rabin-Mesh**:
 
 ### 2.1 Level 1: Multi-Modal Perceptual Distance Metric
 Two video keyframes $F_a$ and $F_b$ are identified as near-duplicate takes if their joint perceptual distance $D(F_a, F_b) \le 1.0$:
-$$D(F_a, F_b) = w_1 \cdot \frac{\mathcal{H}_{\text{Hamming}}(\mathbf{h}_{\text{PDQ}}(F_a), \mathbf{h}_{\text{PDQ}}(F_b))}{\tau_{\text{PDQ}}} + w_2 \cdot \left(1 - \frac{\mathbf{e}_a \cdot \mathbf{e}_b}{\|\mathbf{e}_a\|_2 \|\mathbf{e}_b\|_2}\right)$$
+$$
+D(F_a, F_b) = w_1 \cdot \frac{\mathcal{H}_{\text{Hamming}}(\mathbf{h}_{\text{PDQ}}(F_a), \mathbf{h}_{\text{PDQ}}(F_b))}{\tau_{\text{PDQ}}} + w_2 \cdot \left(1 - \frac{\mathbf{e}_a \cdot \mathbf{e}_b}{\lVert \mathbf{e}_a \rVert_2 \lVert \mathbf{e}_b \rVert_2}\right)
+$$
 Where:
-- $\mathbf{h}_{\text{PDQ}} \in \{0, 1\}^{256}$ is the 256-bit perceptual hash.
+- $\mathbf{h}_{\text{PDQ}} \in \lbrace 0, 1 \rbrace^{256}$ is the 256-bit perceptual hash.
 - $\tau_{\text{PDQ}} = 64$ bits (maximum 25% bit discrepancy).
 - $\mathbf{e}_a, \mathbf{e}_b \in [-128, 127]^{128}$ are INT8 SSCD neural frame embeddings.
 - Weights $w_1 = 0.4$, $w_2 = 0.6$.
 
 ### 2.2 Level 3: SIMD VectorCDC Rolling Hash Invariant
 The content-defined chunk boundary is identified when the rolling polynomial hash satisfies a zero-mask condition:
-$$\mathcal{H}_{\text{gear}}(B_{i}, \dots, B_{i+w-1}) \equiv 0 \pmod{2^M}$$
+$$
+\mathcal{H}_{\text{gear}}(B_{i}, \dots, B_{i+w-1}) \equiv 0 \pmod{2^M}
+$$
 Where:
 - Target average chunk size: $S_{\text{avg}} = 2^M = 64\text{ KiB}$ ($M = 16$).
 - Minimum chunk size: $S_{\text{min}} = 16\text{ KiB}$.
@@ -72,9 +76,13 @@ Where:
 
 ### 2.3 Cryptographic Integrity Invariant
 Every chunk stored in the Rabin-Mesh Vault is addressed by its cryptographic SHA-256 digest:
-$$\text{ChunkID} = \text{SHA256}(\text{Data}[0 \dots L-1])$$
+$$
+\text{ChunkID} = \text{SHA256}(\text{Data}[0 \dots L-1])
+$$
 Restoration over the virtual file graph guarantees:
-$$\text{SHA256}(\mathcal{R}(\text{Manifest}_{\text{delta}}, \text{Vault})) \equiv \text{SHA256}(\text{Footage}_{\text{original}})$$
+$$
+\text{SHA256}(\mathcal{R}(\text{Manifest}_{\text{delta}}, \text{Vault})) \equiv \text{SHA256}(\text{Footage}_{\text{original}})
+$$
 No byte or bit is altered; mathematical entropy is perfectly conserved.
 
 ---
@@ -91,7 +99,7 @@ No byte or bit is altered; mathematical entropy is perfectly conserved.
 - Implements `onRead(long offset, int size, byte[] data)`:
   - Binary searches the manifest chunk table in $O(\log N)$ time.
   - Reads required bytes directly from the immutable vault chunks into the target buffer with zero intermediate heap allocations.
-  - Achieves **$<250\,\mu\text{s}$ seek latency**, fully satisfying real-time 4K video playback and scrubbing.
+  - Achieves **$<250\thinspace \mu\text{s}$ seek latency**, fully satisfying real-time 4K video playback and scrubbing.
 
 ### 3.3 Dynamic Master Re-Election Algorithm
 When the primary video file of a cluster is marked for deletion:

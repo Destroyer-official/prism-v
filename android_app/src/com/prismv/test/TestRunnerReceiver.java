@@ -4,7 +4,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
-import android.util.Log;
+import com.prismv.logging.PrismLogger;
 
 import com.prismv.bbr.BbrCodec;
 import com.prismv.detint.DetInt;
@@ -37,9 +37,9 @@ public class TestRunnerReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         String action = intent != null ? intent.getAction() : null;
-        Log.i(TAG, "=======================================================");
-        Log.i(TAG, ">>> RECEIVED INTENT ACTION: " + action + " <<<");
-        Log.i(TAG, "=======================================================");
+        PrismLogger.i(TAG, "=======================================================");
+        PrismLogger.i(TAG, ">>> RECEIVED INTENT ACTION: " + action + " <<<");
+        PrismLogger.i(TAG, "=======================================================");
 
         final PendingResult pendingResult = goAsync();
         new Thread(() -> {
@@ -70,13 +70,13 @@ public class TestRunnerReceiver extends BroadcastReceiver {
                 } else {
                     // Default: run the complete device self-check set
                     boolean allPassed = runAllDeviceChecks(context);
-                    Log.i(TAG, "=======================================================");
+                    PrismLogger.i(TAG, "=======================================================");
                     if (allPassed) {
-                        Log.i(TAG, ">>> ALL DEVICE SELF-CHECKS PASSED (9/9) <<<");
+                        PrismLogger.i(TAG, ">>> ALL DEVICE SELF-CHECKS PASSED (9/9) <<<");
                     } else {
-                        Log.e(TAG, ">>> DEVICE SELF-CHECKS FAILED <<<");
+                        PrismLogger.e(TAG, ">>> DEVICE SELF-CHECKS FAILED <<<");
                     }
-                    Log.i(TAG, "=======================================================");
+                    PrismLogger.i(TAG, "=======================================================");
                 }
             } finally {
                 if (wakeLock != null && wakeLock.isHeld()) {
@@ -128,16 +128,16 @@ public class TestRunnerReceiver extends BroadcastReceiver {
                 fos.write(json.toString().getBytes());
                 fos.flush();
             }
-            Log.i(TAG, "[REPORT] Written audit JSON to " + outFile.getAbsolutePath());
+            PrismLogger.i(TAG, "[REPORT] Written audit JSON to " + outFile.getAbsolutePath());
         } catch (Exception e) {
-            Log.w(TAG, "[REPORT] Could not write audit JSON: " + e.getMessage());
+            PrismLogger.w(TAG, "[REPORT] Could not write audit JSON: " + e.getMessage());
         }
 
         return totalPass;
     }
 
     private static boolean checkBbrRoundTrip() {
-        Log.i(TAG, "[CHECK] BBR lossless round-trip");
+        PrismLogger.i(TAG, "[CHECK] BBR lossless round-trip");
         // Structured payload: must round-trip bit-exactly and shrink.
         byte[] structured = new byte[16384];
         for (int i = 0; i < structured.length; i++) {
@@ -154,46 +154,46 @@ public class TestRunnerReceiver extends BroadcastReceiver {
         boolean p2 = res2.bitExactMatch && res2.compressedData.length <= (noise.length + 9);
 
         boolean pass = p1 && p2;
-        Log.i(TAG, String.format("[CHECK] BBR result: %s (structured bit-exact=%b, ratio=%.2fx | noise bit-exact=%b, %d B)",
+        PrismLogger.i(TAG, String.format("[CHECK] BBR result: %s (structured bit-exact=%b, ratio=%.2fx | noise bit-exact=%b, %d B)",
                 pass ? "PASS" : "FAIL", res1.bitExactMatch, (1.0 / res1.ratio), res2.bitExactMatch, res2.compressedData.length));
         return pass;
     }
 
     private static boolean checkDetIntDeterminism() {
-        Log.i(TAG, "[CHECK] DetInt fixed-point determinism");
+        PrismLogger.i(TAG, "[CHECK] DetInt fixed-point determinism");
         boolean pass = DetInt.verifyDeterminismSelfTest();
-        Log.i(TAG, "[CHECK] DetInt result: " + (pass ? "PASS" : "FAIL"));
+        PrismLogger.i(TAG, "[CHECK] DetInt result: " + (pass ? "PASS" : "FAIL"));
         return pass;
     }
 
     private static boolean checkThermalGearTable() {
-        Log.i(TAG, "[CHECK] Thermal gear table stays within declared ceiling");
+        PrismLogger.i(TAG, "[CHECK] Thermal gear table stays within declared ceiling");
         ThermalGearShifter shifter = new ThermalGearShifter();
         boolean pass = shifter.isWithinThermodynamicCeiling();
-        Log.i(TAG, String.format("[CHECK] Thermal table result: %s (gear %s, declared %.3f J/frame, ceiling 0.050)",
+        PrismLogger.i(TAG, String.format("[CHECK] Thermal table result: %s (gear %s, declared %.3f J/frame, ceiling 0.050)",
                 pass ? "PASS" : "FAIL", shifter.getCurrentGear().name(), shifter.getCurrentGear().estJoulesPerFrame));
         return pass;
     }
 
     private static boolean checkGopPayloadRoundTrip() {
-        Log.i(TAG, "[CHECK] GOP-sized payload round-trip");
+        PrismLogger.i(TAG, "[CHECK] GOP-sized payload round-trip");
         byte[] gop = new byte[8192];
         for (int i = 0; i < gop.length; i++) gop[i] = (byte) (i & 0x7F);
         BbrCodec.CompressionResult res = BbrCodec.testBitExactRoundTrip(gop);
         boolean pass = res.bitExactMatch;
-        Log.i(TAG, "[CHECK] GOP payload result: " + (pass ? "PASS" : "FAIL"));
+        PrismLogger.i(TAG, "[CHECK] GOP payload result: " + (pass ? "PASS" : "FAIL"));
         return pass;
     }
 
     private static boolean checkVfsProxySeek() {
-        Log.i(TAG, "[CHECK] VFS proxy random-access seek");
+        PrismLogger.i(TAG, "[CHECK] VFS proxy random-access seek");
         boolean pass = PrismVfsProxy.verifyVfsSelfTest();
-        Log.i(TAG, "[CHECK] VFS proxy result: " + (pass ? "PASS" : "FAIL"));
+        PrismLogger.i(TAG, "[CHECK] VFS proxy result: " + (pass ? "PASS" : "FAIL"));
         return pass;
     }
 
     private static boolean checkVerifiedReplacement(Context context) {
-        Log.i(TAG, "[CHECK] Verified replacement transaction");
+        PrismLogger.i(TAG, "[CHECK] Verified replacement transaction");
         try {
             File cacheDir = context.getCacheDir();
             File testSrc = new File(cacheDir, "inv6_test.raw");
@@ -213,10 +213,10 @@ public class TestRunnerReceiver extends BroadcastReceiver {
             File jrn = new File(cacheDir, "inv6_test.raw.journal");
             if (jrn.exists()) jrn.delete();
 
-            Log.i(TAG, "[CHECK] Verified replacement result: " + (pass ? "PASS" : "FAIL") + " (" + tx.message + ")");
+            PrismLogger.i(TAG, "[CHECK] Verified replacement result: " + (pass ? "PASS" : "FAIL") + " (" + tx.message + ")");
             return pass;
         } catch (Exception e) {
-            Log.e(TAG, "[CHECK] Verified replacement exception: " + e.getMessage());
+            PrismLogger.e(TAG, "[CHECK] Verified replacement exception: " + e.getMessage());
             return false;
         }
     }
@@ -226,38 +226,38 @@ public class TestRunnerReceiver extends BroadcastReceiver {
             com.prismv.engine.SiliconFusedPipelineEngine.SiliconPowerProfile profile =
                     com.prismv.engine.SiliconFusedPipelineEngine.getSiliconPowerProfile(3840, 2160);
             boolean ok = (profile != null && profile.totalSocPowerWatts < 1.000f && profile.dramBandwidthGbps <= 2.0f);
-            Log.i(TAG, "[CHECK] Silicon Power Profile: " + (profile != null ? profile.totalSocPowerWatts : -1) +
+            PrismLogger.i(TAG, "[CHECK] Silicon Power Profile: " + (profile != null ? profile.totalSocPowerWatts : -1) +
                     " W, DRAM: " + (profile != null ? profile.dramBandwidthGbps : -1) + " GB/s -> " + (ok ? "PASS" : "FAIL"));
             return ok;
         } catch (Throwable t) {
-            Log.e(TAG, "[CHECK] Silicon Power Profile error: " + t.getMessage());
+            PrismLogger.e(TAG, "[CHECK] Silicon Power Profile error: " + t.getMessage());
             return false;
         }
     }
 
     private static boolean checkHeterogeneousResourceGovernor() {
-        Log.i(TAG, "[CHECK] Heterogeneous Resource Governor & Thread Affinity");
+        PrismLogger.i(TAG, "[CHECK] Heterogeneous Resource Governor & Thread Affinity");
         try {
             boolean passGov = com.prismv.engine.SiliconFusedPipelineEngine.setResourceConstraints(256, 1, true, 1);
             boolean passAff = com.prismv.engine.SiliconFusedPipelineEngine.applyThreadAffinity(Runtime.getRuntime().availableProcessors());
             boolean pass = passGov && passAff;
-            Log.i(TAG, "[CHECK] Governor result: " + (pass ? "PASS" : "FAIL"));
+            PrismLogger.i(TAG, "[CHECK] Governor result: " + (pass ? "PASS" : "FAIL"));
             return pass;
         } catch (Throwable t) {
-            Log.e(TAG, "[CHECK] Governor test error: " + t.getMessage());
+            PrismLogger.e(TAG, "[CHECK] Governor test error: " + t.getMessage());
             return false;
         }
     }
 
     private static boolean checkTilePoolBound() {
-        Log.i(TAG, "[CHECK] TilePool <512MB Budget Enforced");
+        PrismLogger.i(TAG, "[CHECK] TilePool <512MB Budget Enforced");
         try {
             long[] stats = com.prismv.engine.SiliconFusedPipelineEngine.getTilePoolStats();
             boolean pass = (stats != null && stats.length >= 2 && stats[1] <= 512L * 1024L * 1024L);
-            Log.i(TAG, "[CHECK] TilePool result: " + (pass ? "PASS" : "FAIL"));
+            PrismLogger.i(TAG, "[CHECK] TilePool result: " + (pass ? "PASS" : "FAIL"));
             return pass;
         } catch (Throwable t) {
-            Log.e(TAG, "[CHECK] TilePool test error: " + t.getMessage());
+            PrismLogger.e(TAG, "[CHECK] TilePool test error: " + t.getMessage());
             return false;
         }
     }
@@ -276,7 +276,7 @@ public class TestRunnerReceiver extends BroadcastReceiver {
                 }
             }
             if (!inFile.exists() || inFile.length() == 0) {
-                Log.e(TAG, "[SAMPLE-COMPRESS] Source sample video not found on device.");
+                PrismLogger.e(TAG, "[SAMPLE-COMPRESS] Source sample video not found on device.");
                 return;
             }
 
@@ -285,7 +285,7 @@ public class TestRunnerReceiver extends BroadcastReceiver {
             File outFile = new File(outDir, "sample_action_reel_compressed.mp4");
             if (outFile.exists()) outFile.delete();
 
-            Log.i(TAG, "[SAMPLE-COMPRESS] Ingesting " + inFile.getAbsolutePath() + " (" + (inFile.length() / (1024 * 1024)) + " MB)");
+            PrismLogger.i(TAG, "[SAMPLE-COMPRESS] Ingesting " + inFile.getAbsolutePath() + " (" + (inFile.length() / (1024 * 1024)) + " MB)");
 
             HardwareVideoCompressor.CompressionOptions options = new HardwareVideoCompressor.CompressionOptions("H-ARCH");
             options.targetWidth = 1080;
@@ -308,19 +308,19 @@ public class TestRunnerReceiver extends BroadcastReceiver {
                         public void onProgress(int percent, long currentBytes, long totalBytes) {
                             if (percent % 10 == 0 && percent != lastLoggedPct) {
                                 lastLoggedPct = percent;
-                                Log.i(TAG, "[SAMPLE-COMPRESS] Progress: " + percent + "%");
+                                PrismLogger.i(TAG, "[SAMPLE-COMPRESS] Progress: " + percent + "%");
                             }
                         }
 
                         @Override
                         public void onLog(String message) {
-                            Log.d(TAG, "[SAMPLE-COMPRESS] " + message);
+                            PrismLogger.d(TAG, "[SAMPLE-COMPRESS] " + message);
                         }
                     }
             );
 
             if (ok && outFile.exists() && outFile.length() > 0) {
-                Log.i(TAG, ">>> SAMPLE COMPRESSION SUCCESSFUL! Out: " + outFile.getAbsolutePath() + " (" + (outFile.length() / (1024 * 1024)) + " MB) <<<");
+                PrismLogger.i(TAG, ">>> SAMPLE COMPRESSION SUCCESSFUL! Out: " + outFile.getAbsolutePath() + " (" + (outFile.length() / (1024 * 1024)) + " MB) <<<");
                 PrismStorageManager.indexVideoInMediaStore(context, outFile);
 
                 CompressionHistoryManager.get(context).recordCompression(
@@ -337,18 +337,18 @@ public class TestRunnerReceiver extends BroadcastReceiver {
                         30,
                         60000L
                 );
-                Log.i(TAG, ">>> RECORDED IN COMPRESSION HISTORY DATASTORE! <<<");
+                PrismLogger.i(TAG, ">>> RECORDED IN COMPRESSION HISTORY DATASTORE! <<<");
             } else {
-                Log.e(TAG, ">>> SAMPLE COMPRESSION FAILED! <<<");
+                PrismLogger.e(TAG, ">>> SAMPLE COMPRESSION FAILED! <<<");
             }
         } catch (Exception e) {
-            Log.e(TAG, "[SAMPLE-COMPRESS] Error: " + e.getMessage(), e);
+            PrismLogger.e(TAG, "[SAMPLE-COMPRESS] Error: " + e.getMessage(), e);
         }
     }
 
     private void runSiliconSampleCompression(Context context) {
         try {
-            Log.i(TAG, "[SILICON-COMPRESS] Starting Frontier 5 Silicon-Fused Heterogeneous Transcode...");
+            PrismLogger.i(TAG, "[SILICON-COMPRESS] Starting Frontier 5 Silicon-Fused Heterogeneous Transcode...");
             File inDir = new File("/storage/emulated/0/DCIM/Camera");
             File inFile = null;
             if (inDir.exists() && inDir.isDirectory()) {
@@ -365,7 +365,7 @@ public class TestRunnerReceiver extends BroadcastReceiver {
                 }
             }
             if (inFile == null || !inFile.exists()) {
-                Log.w(TAG, "[SILICON-COMPRESS] No sample MP4 available on device.");
+                PrismLogger.w(TAG, "[SILICON-COMPRESS] No sample MP4 available on device.");
                 return;
             }
 
@@ -374,7 +374,7 @@ public class TestRunnerReceiver extends BroadcastReceiver {
             File outFile = new File(outDir, "sample_silicon_compressed.mp4");
             if (outFile.exists()) outFile.delete();
 
-            Log.i(TAG, "[SILICON-COMPRESS] Ingesting " + inFile.getAbsolutePath() + " (" + (inFile.length() / (1024 * 1024)) + " MB)");
+            PrismLogger.i(TAG, "[SILICON-COMPRESS] Ingesting " + inFile.getAbsolutePath() + " (" + (inFile.length() / (1024 * 1024)) + " MB)");
 
             HardwareVideoCompressor.CompressionOptions options = new HardwareVideoCompressor.CompressionOptions("F5-SILICON");
             options.targetWidth = 1080;
@@ -394,19 +394,19 @@ public class TestRunnerReceiver extends BroadcastReceiver {
                         @Override
                         public void onProgress(int percent, long currentBytes, long totalBytes) {
                             if (percent % 20 == 0) {
-                                Log.i(TAG, "[SILICON-COMPRESS] Progress: " + percent + "%");
+                                PrismLogger.i(TAG, "[SILICON-COMPRESS] Progress: " + percent + "%");
                             }
                         }
 
                         @Override
                         public void onLog(String message) {
-                            Log.d(TAG, "[SILICON-COMPRESS] " + message);
+                            PrismLogger.d(TAG, "[SILICON-COMPRESS] " + message);
                         }
                     }
             );
 
             if (ok && outFile.exists() && outFile.length() > 0) {
-                Log.i(TAG, ">>> SILICON COMPRESSION SUCCESSFUL! Out: " + outFile.getAbsolutePath() + " (" + (outFile.length() / (1024 * 1024)) + " MB) <<<");
+                PrismLogger.i(TAG, ">>> SILICON COMPRESSION SUCCESSFUL! Out: " + outFile.getAbsolutePath() + " (" + (outFile.length() / (1024 * 1024)) + " MB) <<<");
                 PrismStorageManager.indexVideoInMediaStore(context, outFile);
 
                 CompressionHistoryManager.get(context).recordCompression(
@@ -425,7 +425,7 @@ public class TestRunnerReceiver extends BroadcastReceiver {
                 );
             }
         } catch (Exception e) {
-            Log.e(TAG, "[SILICON-COMPRESS] Error: " + e.getMessage(), e);
+            PrismLogger.e(TAG, "[SILICON-COMPRESS] Error: " + e.getMessage(), e);
         }
     }
 }

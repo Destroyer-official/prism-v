@@ -7,7 +7,7 @@ import android.media.MediaFormat;
 import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Build;
-import android.util.Log;
+import com.prismv.logging.PrismLogger;
 
 import java.io.File;
 
@@ -117,7 +117,7 @@ public class FpsExtractor {
                         float parsed = Float.parseFloat(capFpsStr.trim());
                         if (parsed >= 10.0f && parsed <= 960.0f) {
                             captureFps = parsed;
-                            Log.d(TAG, "Tier 2 Capture Framerate detected: " + captureFps);
+                            PrismLogger.d(TAG, "Tier 2 Capture Framerate detected: " + captureFps);
                         }
                     } catch (Exception ignored) {}
                 }
@@ -133,13 +133,13 @@ public class FpsExtractor {
                         long dMs = Long.parseLong(durStr.trim());
                         if (fc > 0 && dMs > 0) {
                             countFps = (fc * 1000.0f) / dMs;
-                            Log.d(TAG, "Tier 4 Frame Count Framerate: " + countFps + " (" + fc + " frames / " + dMs + " ms)");
+                            PrismLogger.d(TAG, "Tier 4 Frame Count Framerate: " + countFps + " (" + fc + " frames / " + dMs + " ms)");
                         }
                     } catch (Exception ignored) {}
                 }
             }
         } catch (Exception e) {
-            Log.w(TAG, "MMR inspection warning: " + e.getMessage());
+            PrismLogger.w(TAG, "MMR inspection warning: " + e.getMessage());
         } finally {
             if (ownsMmr && mmr != null) {
                 try { mmr.release(); } catch (Exception ignored) {}
@@ -172,7 +172,7 @@ public class FpsExtractor {
                             } catch (Exception ignored) {}
                         }
                         if (trackFps > 0) {
-                            Log.d(TAG, "Tier 1 MediaFormat KEY_FRAME_RATE: " + trackFps);
+                            PrismLogger.d(TAG, "Tier 1 MediaFormat KEY_FRAME_RATE: " + trackFps);
                         }
                     }
 
@@ -226,11 +226,11 @@ public class FpsExtractor {
                     if (deltaCount >= 5 && maxDeltaUs > minDeltaUs && (maxDeltaUs - minDeltaUs) > (avgIntervalUs * 0.25f)) {
                         isVfr = true;
                     }
-                    Log.d(TAG, "Tier 3 Sample PTS Framerate: " + sampleFps + " (avg: " + avgIntervalUs + " us, deltas: " + deltaCount + ", VFR: " + isVfr + ")");
+                    PrismLogger.d(TAG, "Tier 3 Sample PTS Framerate: " + sampleFps + " (avg: " + avgIntervalUs + " us, deltas: " + deltaCount + ", VFR: " + isVfr + ")");
                 }
             }
         } catch (Exception e) {
-            Log.w(TAG, "MediaExtractor inspection warning: " + e.getMessage());
+            PrismLogger.w(TAG, "MediaExtractor inspection warning: " + e.getMessage());
         } finally {
             if (extractor != null) {
                 try { extractor.release(); } catch (Exception ignored) {}

@@ -14,7 +14,7 @@ import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.os.SystemClock;
-import android.util.Log;
+import com.prismv.logging.PrismLogger;
 
 import com.prismv.engine.HardwareVideoCompressor;
 import com.prismv.history.CompressionHistoryManager;
@@ -72,6 +72,19 @@ public class PrismMediaProcessingService extends Service {
     public static final String BROADCAST_ETA_SECONDS = "bc_eta_seconds";
     public static final String BROADCAST_FRAMES_DONE = "bc_frames_done";
     public static final String BROADCAST_TOTAL_FRAMES = "bc_total_frames";
+    public static final String BROADCAST_CANCELLED = "bc_cancelled";
+    public static final String BROADCAST_ERROR = "bc_error";
+
+    public static void cancelCompression(Context context) {
+        HardwareVideoCompressor.requestCancel();
+        Intent intent = new Intent(context, PrismMediaProcessingService.class);
+        intent.setAction(ACTION_CANCEL);
+        try {
+            context.startService(intent);
+        } catch (Exception e) {
+            PrismLogger.w(TAG, "[FGS] cancelCompression startService note: " + e.getMessage());
+        }
+    }
 
     private static final String CHANNEL_PROGRESS = PrismNotificationManager.CHANNEL_PROGRESS;
     private static final int NOTIF_PROGRESS_ID = PrismNotificationManager.NOTIF_PROGRESS_ID;
@@ -107,7 +120,7 @@ public class PrismMediaProcessingService extends Service {
                 context.startService(intent);
             }
         } catch (Exception e) {
-            Log.e(TAG, "[FGS] Failed to start compression service: " + e.getMessage(), e);
+            PrismLogger.e(TAG, "[FGS] Failed to start compression service: " + e.getMessage(), e);
         }
     }
 
@@ -131,7 +144,7 @@ public class PrismMediaProcessingService extends Service {
                 context.startService(intent);
             }
         } catch (Exception e) {
-            Log.e(TAG, "[FGS] Failed to start batch compression service: " + e.getMessage(), e);
+            PrismLogger.e(TAG, "[FGS] Failed to start batch compression service: " + e.getMessage(), e);
         }
     }
 
@@ -147,7 +160,7 @@ public class PrismMediaProcessingService extends Service {
             wakeLock.setReferenceCounted(false);
         }
         thermalShifter.registerThermalListener(this);
-        Log.i(TAG, "[FGS] PrismMediaProcessingService created.");
+        PrismLogger.i(TAG, "[FGS] PrismMediaProcessingService created.");
     }
 
     @Override
@@ -156,36 +169,35 @@ public class PrismMediaProcessingService extends Service {
 
         String action = intent.getAction();
         if (ACTION_CANCEL.equals(action)) {
-            Log.i(TAG, "[FGS] Cancel requested by user.");
+            PrismLogger.i(TAG, "[FGS] Cancel requested by user.");
             isCancelled = true;
+            HardwareVideoCompressor.requestCancel();
+            broadcastTerminalState(true, "Compression cancelled by user");
             stopForegroundServiceSafely();
             return START_NOT_STICKY;
         }
 
         if (isWorking) {
-            Log.w(TAG, "[FGS] Service already processing a compression batch.");
+            PrismLogger.w(TAG, "[FGS] Service already processing a compression batch.");
             return START_STICKY;
         }
 
         // Start Foreground immediately with initial prominent notification
         Notification initialNotif = buildProgressNotification(1, 1, "Initializing hardware transcode...", 0, 0.0, 36.5, 34.0);
         try {
-            if (Build.VERSION.SDK_INT >= 34) { // Android 14+ (API 34+)
-                startForeground(NOTIF_PROGRESS_ID, initialNotif, FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING);
-                Log.i(TAG, "[FGS] Service running in foreground with mediaProcessing type (API 34+).");
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(NOTIF_PROGRESS_ID, initialNotif, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
-                Log.i(TAG, "[FGS] Service running in foreground with dataSync type (API 29-33).");
+                PrismLogger.i(TAG, "[FGS] Service running in foreground with dataSync type (API " + Build.VERSION.SDK_INT + ").");
             } else {
                 startForeground(NOTIF_PROGRESS_ID, initialNotif);
-                Log.i(TAG, "[FGS] Service running in foreground (legacy API).");
+                PrismLogger.i(TAG, "[FGS] Service running in foreground (legacy API).");
             }
         } catch (Exception e) {
-            Log.e(TAG, "[FGS] Failed to startForeground with specific type, fallback: " + e.getMessage(), e);
+            PrismLogger.e(TAG, "[FGS] Failed to startForeground with specific type, fallback: " + e.getMessage(), e);
             try {
                 startForeground(NOTIF_PROGRESS_ID, initialNotif);
             } catch (Exception ex) {
-                Log.e(TAG, "[FGS] Critical failure to startForeground: " + ex.getMessage(), ex);
+                PrismLogger.e(TAG, "[FGS] Critical failure to startForeground: " + ex.getMessage(), ex);
             }
         }
 
@@ -195,12 +207,14 @@ public class PrismMediaProcessingService extends Service {
 
         isWorking = true;
         isCancelled = false;
+        HardwareVideoCompressor.resetCancel();
 
         new Thread(() -> executeCompressionPipeline(intent)).start();
         return START_NOT_STICKY;
     }
 
     private void executeCompressionPipeline(Intent intent) {
+        boolean sentFinalBroadcast = false;
         try {
             ArrayList<String> inputPaths = intent.getStringArrayListExtra(EXTRA_BATCH_PATHS);
             if (inputPaths == null || inputPaths.isEmpty()) {
@@ -212,16 +226,21 @@ public class PrismMediaProcessingService extends Service {
             }
 
             if (inputPaths.isEmpty()) {
-                Log.e(TAG, "[FGS] No input paths provided.");
+                PrismLogger.e(TAG, "[FGS] No input paths provided.");
+                broadcastTerminalState(false, "No input video path provided");
+                sentFinalBroadcast = true;
                 stopForegroundServiceSafely();
                 return;
             }
+
+            broadcastProgress(1, inputPaths.size(), "Initializing hardware pipeline...", 1, 0, 36.0, 34.0,
+                    false, null, 0, 0, "Preparing...", 0, 0, 0);
 
             // Disk Space Safety Guard (<500 MB abort to prevent ENOSPC mid-encode)
             long freeBytes = getFreeDiskSpaceBytes(this);
             long minRequiredBytes = 500L * 1024 * 1024;
             if (freeBytes < minRequiredBytes) {
-                Log.e(TAG, "[FGS] Low storage guard triggered: " + (freeBytes / (1024 * 1024)) + " MB available.");
+                PrismLogger.e(TAG, "[FGS] Low storage guard triggered: " + (freeBytes / (1024 * 1024)) + " MB available.");
                 broadcastProgress(1, 1, "Storage Low: <500 MB Free", 0, 0, 0, 0, true, null, 0, 0, "Aborted - Insufficient Storage", 0, 0, 0);
                 stopForegroundServiceSafely();
                 return;
@@ -273,7 +292,7 @@ public class PrismMediaProcessingService extends Service {
 
             for (int i = 0; i < totalVideos; i++) {
                 if (isCancelled) {
-                    Log.w(TAG, "[FGS] Batch aborted due to cancellation.");
+                    PrismLogger.w(TAG, "[FGS] Batch aborted due to cancellation.");
                     break;
                 }
 
@@ -281,7 +300,7 @@ public class PrismMediaProcessingService extends Service {
                 String inPath = inputPaths.get(i);
                 File inFile = new File(inPath);
                 if (!inFile.exists() || inFile.length() == 0) {
-                    Log.w(TAG, "[FGS] Input file missing or empty: " + inPath);
+                    PrismLogger.w(TAG, "[FGS] Input file missing or empty: " + inPath);
                     continue;
                 }
 
@@ -314,7 +333,7 @@ public class PrismMediaProcessingService extends Service {
                 }
                 String outPath = outFile.getAbsolutePath();
 
-                Log.i(TAG, String.format(Locale.US, "[FGS] Transcoding [%d/%d]: %s -> %s", itemIdx, totalVideos, itemName, outPath));
+                PrismLogger.i(TAG, String.format(Locale.US, "[FGS] Transcoding [%d/%d]: %s -> %s", itemIdx, totalVideos, itemName, outPath));
                 activeJobId = inPath;
                 PrismWorkJournal.get(this).recordJobStart(inPath, inPath, outPath);
 
@@ -356,7 +375,7 @@ public class PrismMediaProcessingService extends Service {
 
                     @Override
                     public void onLog(String message) {
-                        Log.d(TAG, "[FGS-Engine] " + message);
+                        PrismLogger.d(TAG, "[FGS-Engine] " + message);
                     }
                 });
 
@@ -391,15 +410,19 @@ public class PrismMediaProcessingService extends Service {
                     PrismWorkJournal.get(this).recordJobCompleted(inPath);
                     activeJobId = null;
 
-                    Log.i(TAG, String.format(Locale.US, "[FGS] Completed item %d/%d: Saved %.1f MB (-%.1f%%) to Movies/Prism-V/",
+                    PrismLogger.i(TAG, String.format(Locale.US, "[FGS] Completed item %d/%d: Saved %.1f MB (-%.1f%%) to Movies/Prism-V/",
                             itemIdx, totalVideos, savedBytes / (1024.0 * 1024.0), pct));
                 } else {
-                    PrismWorkJournal.get(this).recordJobFailed(inPath, "Compression pipeline aborted or incomplete");
+                    try { if (outFile.exists()) outFile.delete(); } catch (Exception ignored) {}
+                    PrismWorkJournal.get(this).recordJobFailed(inPath, isCancelled ? "Cancelled by user" : "Compression pipeline aborted or incomplete");
                     activeJobId = null;
                 }
             }
 
-            if (!isCancelled && successfulCount > 0) {
+            if (isCancelled || HardwareVideoCompressor.isCancelRequested()) {
+                broadcastTerminalState(true, "Compression cancelled by user");
+                sentFinalBroadcast = true;
+            } else if (successfulCount > 0) {
                 long totalSavedBytes = Math.max(0, totalOriginalBytes - totalCompressedBytes);
                 double totalSavedMB = totalSavedBytes / (1024.0 * 1024.0);
                 double totalSavedPct = (totalOriginalBytes > 0) ? (totalSavedBytes / (double) totalOriginalBytes) * 100.0 : 0.0;
@@ -421,8 +444,23 @@ public class PrismMediaProcessingService extends Service {
                 // Final Broadcast to UI
                 broadcastProgress(totalVideos, totalVideos, "Batch Completed", 100, 30.0, 38.0, 38.0, true,
                         lastCompressedPath, totalSavedMB, totalSavedPct);
+                sentFinalBroadcast = true;
+            } else {
+                broadcastTerminalState(false, "Hardware compression failed or stalled. Please retry or switch profile.");
+                sentFinalBroadcast = true;
+            }
+        } catch (Throwable t) {
+            PrismLogger.e(TAG, "[FGS] Unhandled pipeline error: " + t.getMessage(), t);
+            if (!sentFinalBroadcast) {
+                broadcastTerminalState(false, "Compression error: " + (t.getMessage() != null ? t.getMessage() : t.getClass().getSimpleName()));
+                sentFinalBroadcast = true;
             }
         } finally {
+            isWorking = false;
+            if (!sentFinalBroadcast) {
+                broadcastTerminalState(isCancelled || HardwareVideoCompressor.isCancelRequested(),
+                        isCancelled ? "Compression cancelled by user" : "Compression stopped");
+            }
             if (wakeLock != null && wakeLock.isHeld()) {
                 wakeLock.release();
             }
@@ -430,11 +468,25 @@ public class PrismMediaProcessingService extends Service {
         }
     }
 
+    private void broadcastTerminalState(boolean cancelled, String message) {
+        Intent bc = new Intent(ACTION_PROGRESS_BROADCAST);
+        bc.setPackage(getPackageName());
+        bc.putExtra(BROADCAST_IS_DONE, true);
+        bc.putExtra(BROADCAST_CANCELLED, cancelled);
+        if (!cancelled && message != null) {
+            bc.putExtra(BROADCAST_ERROR, message);
+        }
+        bc.putExtra(BROADCAST_ITEM_NAME, message != null ? message : "");
+        bc.putExtra(BROADCAST_ETA_STRING, cancelled ? "CANCELLED" : "FAILED");
+        sendBroadcast(bc);
+    }
+
     private void broadcastProgress(int index, int total, String itemName, int percent,
                                    double fps, double tempC, double ramMB, boolean isDone,
                                    String savedPath, double freedMB, double pctSaved,
                                    String etaString, int etaSeconds, long framesDone, long totalFrames) {
         Intent bc = new Intent(ACTION_PROGRESS_BROADCAST);
+        bc.setPackage(getPackageName());
         bc.putExtra(BROADCAST_INDEX, index);
         bc.putExtra(BROADCAST_TOTAL, total);
         bc.putExtra(BROADCAST_ITEM_NAME, itemName);
@@ -532,7 +584,7 @@ public class PrismMediaProcessingService extends Service {
 
     private void stopForegroundServiceSafely() {
         isWorking = false;
-        Log.i(TAG, "[FGS] Stopping foreground service.");
+        PrismLogger.i(TAG, "[FGS] Stopping foreground service.");
         if (wakeLock != null && wakeLock.isHeld()) {
             try { wakeLock.release(); } catch (Exception ignored) {}
         }
@@ -560,7 +612,7 @@ public class PrismMediaProcessingService extends Service {
     }
 
     private void handleServiceTimeout(int startId, int fgsType) {
-        Log.w(TAG, "[FGS] Foreground service timeout reached (startId=" + startId + ", fgsType=" + fgsType +
+        PrismLogger.w(TAG, "[FGS] Foreground service timeout reached (startId=" + startId + ", fgsType=" + fgsType +
                 "). Checkpointing to SQLite WorkJournal, scheduling JobScheduler handoff, and stopping gracefully.");
         isCancelled = true;
         try {
@@ -569,7 +621,7 @@ public class PrismMediaProcessingService extends Service {
                 PrismWorkJournal.get(this).recordJobTimeout(currentJob);
             }
         } catch (Throwable t) {
-            Log.e(TAG, "[FGS] Failed to record job timeout in journal: " + t.getMessage());
+            PrismLogger.e(TAG, "[FGS] Failed to record job timeout in journal: " + t.getMessage());
         }
         PrismJobService.scheduleResumeJob(getApplicationContext());
         stopForegroundServiceSafely();
@@ -606,6 +658,6 @@ public class PrismMediaProcessingService extends Service {
         if (wakeLock != null && wakeLock.isHeld()) {
             wakeLock.release();
         }
-        Log.i(TAG, "[FGS] PrismMediaProcessingService destroyed.");
+        PrismLogger.i(TAG, "[FGS] PrismMediaProcessingService destroyed.");
     }
 }

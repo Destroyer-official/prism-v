@@ -2,6 +2,8 @@ package com.prismv.ui;
 
 import android.graphics.Color;
 
+import com.prismv.logging.PrismLogger;
+
 /**
  * SkinManager:
  * Central Studio Design System & Hardware-Matched Theme Manager for Prism-V.
@@ -121,6 +123,7 @@ public final class SkinManager {
         if (skin != null) {
             activeSkin = skin;
             applySkinToTheme();
+            PrismLogger.i("SkinManager", "Applied design skin: " + skin.displayName);
         }
     }
 

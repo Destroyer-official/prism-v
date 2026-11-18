@@ -44,7 +44,8 @@ Smartphone image signal processors (ISPs) and hardware video encoders (`MediaCod
 
 #### The Concrete Impact
 
-* **A standard 1-hour 1080p 60 fps video consumes $\approx 12\text{ GB}$ of local storage.**
+- **A standard 1-hour 1080p 60 fps video consumes $\approx 12\text{ GB}$ of local storage.**
+
 - **A standard 1-hour 4K 60 fps video consumes $\approx 36\text{ to }50\text{ GB}$ of local storage.**
 
 On a typical 128 GB consumer device—where the Android operating system, system apps, and caches consume 35–45 GB—fewer than **7 to 8 hours of 1080p60 recording completely fills the physical NAND flash memory**. Users face abrupt camera halts, sluggish system responsiveness, and the compulsory deletion of irreplaceable personal memories or forced recurring cloud subscription fees.
@@ -53,18 +54,20 @@ On a typical 128 GB consumer device—where the Android operating system, system
 
 Why are native camera recordings so heavily bloated? Information-theoretic analysis reveals three structural inefficiencies:
 
-1. **The Sensor Shot-Noise Tax ($35\%–45\%$ Bitrate Waste):**  
+1. **The Sensor Shot-Noise Tax (35%–45% Bitrate Waste):**  
    CMOS camera sensors are fundamentally subject to quantum Poisson-Gaussian photon shot noise ($\eta \sim \mathcal{N}(0, \sigma^2(I))$). Conventional discrete cosine transform (DCT) and discrete wavelet transform (DWT) encoders cannot differentiate stochastic sensor noise from high-frequency structural scene details. Consequently, **over a third of the total bit budget is burned quantizing and transmitting random, uncorrelated photon shot noise** that the human visual system (HVS) cannot perceive.
 2. **Absence of Lookahead & Multi-Pass RDO:**  
    Mobile hardware encoders operate in single-pass CBR/VBR mode without lookahead buffers due to power and latency caps, allocating surplus bits to simple low-complexity macroblocks while starving complex scenes.
 3. **The "Lossless Paradox" on Mobile:**  
-   Over $98\%$ of videos stored on mobile devices are already compressed H.264/HEVC files. Decoding these files to uncompressed planar YUV pixels and applying traditional lossless encoders (such as `FFV1`, `x264 --qp 0`, or `x265 --lossless`) forces the codec to treat quantization errors, high-frequency DCT ringing, and deblocking boundaries as immutable information, resulting in **a catastrophic 400% to 900% file size expansion** (a 50 MB MP4 expands to 250–450 MB).
+   Over 98% of videos stored on mobile devices are already compressed H.264/HEVC files. Decoding these files to uncompressed planar YUV pixels and applying traditional lossless encoders (such as `FFV1`, `x264 --qp 0`, or `x265 --lossless`) forces the codec to treat quantization errors, high-frequency DCT ringing, and deblocking boundaries as immutable information, resulting in **a catastrophic 400% to 900% file size expansion** (a 50 MB MP4 expands to 250–450 MB).
 
 ### 1.3 The Prism-V Target & Solution
 
 Prism-V resolves this crisis through mathematical decomposition and hardware-anchored execution:
 
-$$\text{Storage Footprint: } \quad 12.0\text{ GB} \xrightarrow{\quad\text{Prism-V}\quad} < 3.0\text{ GB} \quad \left(\mathbf{50\% \text{ to } 80\%+\text{ Reduction}}\right)$$
+$$
+\text{Storage Footprint: } \quad 12.0\text{ GB} \xrightarrow{\quad\text{Prism-V}\quad} < 3.0\text{ GB} \quad \left(\mathbf{50\% \text{ to } 80\%+\text{ Reduction}}\right)
+$$
 
 The compression preserves identical perceptual visual fidelity ($\text{VMAF} \ge 94$, imperceptible $\Delta\text{VMAF} \le 0.4$), executed strictly within the thermal ($<3.5\text{ W}$) and memory ($<64\text{ MB}$ RAM) constraints of battery-powered Android hardware.
 
@@ -78,11 +81,11 @@ Prism-V is architected across five autonomous, non-colliding engineering workstr
 
 | Agent / Workstream | Role & Subsystem Scope | Core Module Ownership | Key Deliverables & Targets | Architecture Specification |
 | :--- | :--- | :--- | :--- | :--- |
-| **Agent 1 (20.0%)** | High-Throughput Compute & Zero-Copy Hardware Pipeline | `frontier5_pipeline.{hpp,cpp}`, `tile_pool.{hpp,cpp}` | CAT-Ring 16 KiB buffer pool, Vulkan compute, sub-watt SoC envelope ($<0.95\text{ W}$) | [`AGENT1_HIGH_THROUGHPUT_COMPUTE_PLAN.md`](synthesis/final/AGENT1_HIGH_THROUGHPUT_COMPUTE_PLAN.md) |
-| **Agent 2 (20.0%)** | Precision Rate Control & Perceptual Lagrangian Optimization | `router.{hpp,cpp}`, `HardwareVideoCompressor.java` | Multi-tier content router, Pareto dial solver, ADPF thermal gear-shifting | [`AGENT2_PRECISION_RATE_CONTROL_PLAN.md`](synthesis/final/AGENT2_PRECISION_RATE_CONTROL_PLAN.md) |
-| **Agent 3 (20.0%)** | Mathematical Lossless & Bitstream Recompression Engine | `bbr2.{hpp,cpp}`, `psc2.{hpp,cpp}`, `rans16.{hpp,cpp}`, `arm_sme2_rans16.S` | Mode L-BBR bit-exact MP4 (SHA-256 match), Mode L-PSC reversible raw ($\text{PSNR}=\infty$) | [`AGENT3_MATHEMATICAL_LOSSLESS_PLAN.md`](synthesis/final/AGENT3_MATHEMATICAL_LOSSLESS_PLAN.md) |
-| **Agent 4 (20.0%)** | **Principal Neural Video Compression & Perceptual Rate-Distortion Architect** | `coolchic.{hpp,cpp}`, `afgs1.{hpp,cpp}`, `rfsq.{hpp,cpp}`, `prism_gen.{hpp,cpp}`, `nerv_engine.{hpp,cpp}`, `detint_flow_gen.comp`, Android AI Copilot | Cool-chic 5.0 (<0.35 GMACs/f), AFGS1 flicker-free grain, BIS-RFSQ, NeRV-S, Prism-Gen 2.0 flow generator, Gemini Copilot | [`AGENT4_HYBRID_NEURAL_LOSSY_PLAN.md`](synthesis/final/AGENT4_HYBRID_NEURAL_LOSSY_PLAN.md) |
-| **Agent 5 (20.0%)** | Spatial 4D Gaussian Splatting & Semantic Deduplication Vault | `spatial.{hpp,cpp}`, `rabin_mesh.{hpp,cpp}`, `spatial_rasterize.comp` | Prism-Spatial 6-DoF 4DGS (Chebyshev $K=3$), Rabin-Mesh VectorCDC vault ($40\%-60\%$ reclaimed) | [`AGENT5_SPATIAL_4DGS_DEDUP_VAULT_PLAN.md`](synthesis/final/AGENT5_SPATIAL_4DGS_DEDUP_VAULT_PLAN.md) |
+| **Agent 1 (20.0%)** | High-Throughput Compute & Zero-Copy Hardware Pipeline | `frontier5_pipeline.{hpp,cpp}`, `tile_pool.{hpp,cpp}` | CAT-Ring 16 KiB buffer pool, Vulkan compute, sub-watt SoC envelope ($<0.95\text{ W}$) | [`FRONTIER5_SILICON_FUSED_SPECIFICATION.md`](docs/FRONTIER5_SILICON_FUSED_SPECIFICATION.md)<br/>[`AGENT1_HIGH_THROUGHPUT_COMPUTE_PLAN.md`](synthesis/final/AGENT1_HIGH_THROUGHPUT_COMPUTE_PLAN.md) |
+| **Agent 2 (20.0%)** | Precision Rate Control & Perceptual Lagrangian Optimization | `router.{hpp,cpp}`, `HardwareVideoCompressor.java` | Multi-tier content router, Pareto dial solver, ADPF thermal gear-shifting | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md)<br/>[`AGENT2_PRECISION_RATE_CONTROL_PLAN.md`](synthesis/final/AGENT2_PRECISION_RATE_CONTROL_PLAN.md) |
+| **Agent 3 (20.0%)** | Mathematical Lossless & Bitstream Recompression Engine | `bbr2.{hpp,cpp}`, `psc2.{hpp,cpp}`, `rans16.{hpp,cpp}`, `arm_sme2_rans16.S` | Mode L-BBR bit-exact MP4 (SHA-256 match), Mode L-PSC reversible raw ($\text{PSNR}=\infty$) | [`FRONTIER1_BBR2_IMPLEMENTATION_SPECIFICATION.md`](docs/FRONTIER1_BBR2_IMPLEMENTATION_SPECIFICATION.md)<br/>[`PSC2_DIRECTIONAL_LIFTING_SPECIFICATION.md`](docs/PSC2_DIRECTIONAL_LIFTING_SPECIFICATION.md)<br/>[`AGENT3_MATHEMATICAL_LOSSLESS_PLAN.md`](synthesis/final/AGENT3_MATHEMATICAL_LOSSLESS_PLAN.md) |
+| **Agent 4 (20.0%)** | **Principal Neural Video Compression & Perceptual Rate-Distortion Architect** | `coolchic.{hpp,cpp}`, `afgs1.{hpp,cpp}`, `rfsq.{hpp,cpp}`, `prism_gen.{hpp,cpp}`, `nerv_engine.{hpp,cpp}`, `detint_flow_gen.comp`, Android AI Copilot | Cool-chic 5.0 (<0.35 GMACs/f), AFGS1 flicker-free grain, BIS-RFSQ, NeRV-S, Prism-Gen 2.0 flow generator, Gemini Copilot | [`FRONTIER3_NEURAL_AND_GENERATIVE_SPECIFICATION.md`](docs/FRONTIER3_NEURAL_AND_GENERATIVE_SPECIFICATION.md)<br/>[`AGENT4_HYBRID_NEURAL_LOSSY_PLAN.md`](synthesis/final/AGENT4_HYBRID_NEURAL_LOSSY_PLAN.md) |
+| **Agent 5 (20.0%)** | Spatial 4D Gaussian Splatting & Semantic Deduplication Vault | `spatial.{hpp,cpp}`, `rabin_mesh.{hpp,cpp}`, `spatial_rasterize.comp` | Prism-Spatial 6-DoF 4DGS (Chebyshev $K=3$), Rabin-Mesh VectorCDC vault (40%-60% reclaimed) | [`FRONTIER4_SPATIAL_4DGS_SPECIFICATION.md`](docs/FRONTIER4_SPATIAL_4DGS_SPECIFICATION.md)<br/>[`FRONTIER6_RABIN_MESH_SPECIFICATION.md`](docs/FRONTIER6_RABIN_MESH_SPECIFICATION.md)<br/>[`AGENT5_SPATIAL_4DGS_DEDUP_VAULT_PLAN.md`](synthesis/final/AGENT5_SPATIAL_4DGS_DEDUP_VAULT_PLAN.md) |
 
 ---
 
@@ -141,11 +144,13 @@ flowchart TD
 
 Every video signal captured by a mobile sensor is modeled as:
 
-$$V(x, y, t) = B(x, y, t) + R(x, y, t) + \eta(x, y, t)$$
+$$
+V(x, y, t) = B(x, y, t) + R(x, y, t) + \eta(x, y, t)
+$$
 
 Where:
 
-- $B(x, y, t)$: Low-frequency deterministic structural base signal, containing $85\%–92\%$ of total energy.
+- $B(x, y, t)$: Low-frequency deterministic structural base signal, containing 85%–92% of total energy.
 - $R(x, y, t)$: High-frequency deterministic structural micro-residual (fine edges, micro-textures).
 - $\eta(x, y, t)$: High-frequency stochastic sensor noise modeled as a zero-mean non-stationary Gaussian process $\eta \sim \mathcal{N}(0, \sigma^2(I))$.
 
@@ -159,7 +164,9 @@ By decoupling $\eta(x, y, t)$ into parametric metadata and delegating $B(x, y, t
 
 The lossy compression objective optimizes the classical Lagrangian formulation:
 
-$$\min_{\theta} \mathcal{J}(\theta) = \mathbb{E}\left[ \mathcal{D}\left(V, \hat{V}(\theta)\right) + \lambda \cdot \mathcal{R}\left(\hat{V}(\theta)\right) \right]$$
+$$
+\min_{\theta} \mathcal{J}(\theta) = \mathbb{E}\left[ \mathcal{D}\left(V, \hat{V}(\theta)\right) + \lambda \cdot \mathcal{R}\left(\hat{V}(\theta)\right) \right]
+$$
 
 Where $\mathcal{D}(\cdot)$ denotes a perceptual distortion metric combining Charbonnier loss, multi-scale structural similarity (MS-SSIM), and ColorVideoVDP (CVVDP), $\mathcal{R}(\cdot)$ denotes rate in bits/pixel, and $\lambda$ is the Pareto Lagrange multiplier.
 
@@ -187,13 +194,17 @@ Where $\mathcal{D}(\cdot)$ denotes a perceptual distortion metric combining Char
 
 Stochastic sensor noise $\eta(x,y)$ is parameterized as an autoregressive process of order $p$:
 
-$$\eta(x, y) = \sum_{(i,j) \in \Omega_p} c_{i,j} \cdot \eta(x-i, y-j) + \epsilon(x, y), \quad \epsilon \sim \mathcal{N}(0, \sigma^2)$$
+$$
+\eta(x, y) = \sum_{(i,j) \in \Omega_p} c_{i,j} \cdot \eta(x-i, y-j) + \epsilon(x, y), \quad \epsilon \sim \mathcal{N}(0, \sigma^2)
+$$
 
-Rather than spending millions of bits quantizing and transmitting unpredictable noise samples, Prism-V quantizes the set $\{c_{i,j}, \sigma_k\}$ into an ultra-compact SEI payload ($\approx 32\text{ to }160\text{ bytes/frame}$). On playback, the GPU/display compositor regenerates visually identical noise grain on the fly via a deterministic pseudo-random number generator (PRNG), **reclaiming $35\%–45\%$ of the bitstream for real image features**.
+Rather than spending millions of bits quantizing and transmitting unpredictable noise samples, Prism-V quantizes the set $\lbrace c_{i,j}, \sigma_k \rbrace$ into an ultra-compact SEI payload ($\approx 32\text{ to }160\text{ bytes/frame}$). On playback, the GPU/display compositor regenerates visually identical noise grain on the fly via a deterministic pseudo-random number generator (PRNG), **reclaiming 35%–45% of the bitstream for real image features**.
 
 To eliminate temporal "boiling" and flickering artifacts across consecutive frames without floating-point operations, `afgs1.cpp` implements a **16-bit Galois Linear Feedback Shift Register (LFSR)** with polynomial `0xB400` ($x^{16} + x^{14} + x^{13} + x^{11} + 1$) and integer IIR temporal smoothing:
 
-$$\tilde{g}_t(x, y) = \left\lfloor \frac{\alpha \cdot g_t(x, y) + (256 - \alpha) \cdot \tilde{g}_{t-1}(x, y) + 128}{256} \right\rfloor, \quad \alpha \in [0, 256]$$
+$$
+\tilde{g}_t(x, y) = \left\lfloor \frac{\alpha \cdot g_t(x, y) + (256 - \alpha) \cdot \tilde{g}_{t-1}(x, y) + 128}{256} \right\rfloor, \quad \alpha \in [0, 256]
+$$
 
 This mathematical formulation bounds inter-frame grain variation while preserving authentic spatial film texture, verified flicker-free across 1,000+ continuous frame sequences.
 
@@ -224,7 +235,7 @@ The structural micro-residual $R(x, y, t)$ is modeled using an implicit coordina
 
 1. **Two-Speed Adaptive Operational Modes:**
    - **Live Capture Speed:** A feedforward hypernetwork computes quantized latent grid representations in $<3.5\text{ ms/frame}$ on mobile NPUs.
-   - **Charging-Time Overfit Speed:** When the phone is connected to AC power and idle, `PrismNeRVBackgroundWorker.java` executes lightweight AdamW gradient steps on keyframes, unlocking an additional **$8\%–14\%$ BD-rate reduction** without modifying the base bitstream.
+   - **Charging-Time Overfit Speed:** When the phone is connected to AC power and idle, `PrismNeRVBackgroundWorker.java` executes lightweight AdamW gradient steps on keyframes, unlocking an additional **8%–14% BD-rate reduction** without modifying the base bitstream.
 2. **Deterministic Cross-Silicon Integer Invariance:** All weights and activations execute via normative `detint` integer primitives (INT8 weights, INT16 activations), guaranteeing 100% bit-exact bitstream reproducibility across Qualcomm Hexagon, MediaTek NeuroPilot, Google Tensor, and ARM Mali/Immortalis silicon.
 3. **Verified Perceptual Metrics:** Evaluated on real-world mobile test footage, Cool-chic 5.0 achieves **$\text{VMAF} = 94.80$**, **$\text{CVVDP} = 9.50 / 10.0$**, and a banding metric **$\text{CAMBI} = 1.30$** ($\le 1.8$ threshold). Full specifications are cataloged in [`synthesis/final/AGENT4_HYBRID_NEURAL_LOSSY_PLAN.md`](synthesis/final/AGENT4_HYBRID_NEURAL_LOSSY_PLAN.md).
 
@@ -262,11 +273,15 @@ sequenceDiagram
 
 The Asymmetric Numeral Systems (rANS) state update equation compresses symbol $s$ with frequency $f_s$ and cumulative distribution offset $C_s$:
 
-$$x_{n+1} = \mathcal{C}(s, x_n) = \left\lfloor \frac{x_n}{f_s} \right\rfloor \cdot M + (x_n \bmod f_s) + C_s$$
+$$
+x_{n+1} = \mathcal{C}(s, x_n) = \left\lfloor \frac{x_n}{f_s} \right\rfloor \cdot M + (x_n \bmod f_s) + C_s
+$$
 
 Decoding recovers the symbol and predecessor state in $O(1)$ time:
 
-$$s = \text{CDF}^{-1}(x_{n+1} \bmod M), \quad x_n = f_s \cdot \left\lfloor \frac{x_{n+1}}{M} \right\rfloor + (x_{n+1} \bmod M) - C_s$$
+$$
+s = \text{CDF}^{-1}(x_{n+1} \bmod M), \quad x_n = f_s \cdot \left\lfloor \frac{x_{n+1}}{M} \right\rfloor + (x_{n+1} \bmod M) - C_s
+$$
 
 By interleaving 16 independent rANS states across 128-bit ARM NEON, 512-bit ARMv9 SME2 vector registers (`core/src/arm_sme2_rans16.S`), and x86 AVX2/AVX-512, Mode L-BBR 2.0 achieves **$266.8\text{ MB/s}$ pure rANS decoding throughput** ($56.9\text{ MB/s}$ end-to-end reconstruction throughput) and **60.61% compression gain** (+53.45% over baseline), streaming bit-exact MP4 files dynamically to legacy media players via Android `StorageManager.openProxyFileDescriptor` with 100.000% SHA-256 parity.
 
@@ -305,19 +320,27 @@ For uncompressed video captured via Android's `Camera2` API (`YUV_420_888`, `P01
 
 Forward bijective transform:
 
-$$Y = \left\lfloor \frac{R + 2G + B}{4} \right\rfloor, \quad Co = R - B, \quad Cg = G - \left\lfloor \frac{R + B}{2} \right\rfloor$$
+$$
+Y = \left\lfloor \frac{R + 2G + B}{4} \right\rfloor, \quad Co = R - B, \quad Cg = G - \left\lfloor \frac{R + B}{2} \right\rfloor
+$$
 
 Exact inverse reconstruction:
 
-$$t = Y - \left\lfloor \frac{Cg}{2} \right\rfloor, \quad G = Cg + t, \quad R = t + \left\lfloor \frac{Co + 1}{2} \right\rfloor, \quad B = R - Co$$
+$$
+t = Y - \left\lfloor \frac{Cg}{2} \right\rfloor, \quad G = Cg + t, \quad R = t + \left\lfloor \frac{Co + 1}{2} \right\rfloor, \quad B = R - Co
+$$
 
 #### 2. Adaptive Directional Integer Wavelet (ADIW LeGall 5/3)
 
-To eliminate ringing along diagonal high-contrast edges, lifting occurs along estimated orientation contours $\theta \in \{0^\circ, 45^\circ, 90^\circ, 135^\circ\}$:
+To eliminate ringing along diagonal high-contrast edges, lifting occurs along estimated orientation contours $\theta \in \lbrace 0^\circ, 45^\circ, 90^\circ, 135^\circ \rbrace$:
 
-$$\text{Detail (High): } \quad d[n] = x[2n+1] - \left\lfloor \frac{x[2n] + x[2n+2]}{2} \right\rfloor$$
+$$
+\text{Detail (High): } \quad d[n] = x[2n+1] - \left\lfloor \frac{x[2n] + x[2n+2]}{2} \right\rfloor
+$$
 
-$$\text{Smooth (Low): } \quad s[n] = x[2n] + \left\lfloor \frac{d[n-1] + d[n] + 2}{4} \right\rfloor$$
+$$
+\text{Smooth (Low): } \quad s[n] = x[2n] + \left\lfloor \frac{d[n-1] + d[n] + 2}{4} \right\rfloor
+$$
 
 ---
 
@@ -355,16 +378,20 @@ Frontier 3 completely redefines neural video compression by replacing heavy floa
 
 To eliminate floating-point non-associativity across mobile NPUs (Qualcomm Hexagon, MediaTek NeuroPilot, Google TPU), BIS-RFSQ quantizes latent vectors directly into integer grid indices:
 
-$$\hat{z}_i = \text{round}\left( \frac{z_i - \mu_z}{\sigma_z} \cdot S_{\text{dyadic}} \right), \quad S_{\text{dyadic}} = 2^k$$
+$$
+\hat{z}_i = \text{round}\left( \frac{z_i - \mu_z}{\sigma_z} \cdot S_{\text{dyadic}} \right), \quad S_{\text{dyadic}} = 2^k
+$$
 
 - **Deterministic Integer LayerNorm:** Computes normalizations without floating-point math using a 512-entry precomputed inverse square-root lookup table (`ISQRT_LUT_512`).
-- **Semantic Delta Codec:** Encodes differential 3D facial landmark movements into **exactly 55 bytes/frame** ($\le 64\text{ bytes}$ budget, $<1.5\text{ kbps}$ @ 30 fps), achieving a **$-92.7\%$ bitrate reduction** compared to standard HEVC/AV1 with 100% bit-exact LSB reconstruction parity.
+- **Semantic Delta Codec:** Encodes differential 3D facial landmark movements into **exactly 55 bytes/frame** ($\le 64\text{ bytes}$ budget, $<1.5\text{ kbps}$ @ 30 fps), achieving a **-92.7% bitrate reduction** compared to standard HEVC/AV1 with 100% bit-exact LSB reconstruction parity.
 
 #### 2. NeRV-S Continuous Coordinate Fields & TriPlane Lattice
 
 NeRV-S factorizes a continuous video volume into three orthogonal 2D feature planes:
 
-$$\mathcal{T}(x, y, t) = \text{Interp}(P_{xy}, x, y) \odot \text{Interp}(P_{xt}, x, t) \odot \text{Interp}(P_{yt}, y, t)$$
+$$
+\mathcal{T}(x, y, t) = \text{Interp}(P_{xy}, x, y) \odot \text{Interp}(P_{xt}, x, t) \odot \text{Interp}(P_{yt}, y, t)
+$$
 
 - **Synthesis MLP Complexity:** A 3-layer continuous coordinate MLP operates at **exactly 432 MACs per pixel**, fully bounded within `Prism-DetInt` integer arithmetic.
 - **Hessian Bit Allocator:** Analyzes parameter loss curvature $H_{ii} = \mathbb{E}[(\nabla_{\theta_i}\mathcal{L})^2]$ via water-filling to allocate mixed-precision FSQ bit-widths (2, 4, or 8 bits), minimizing rate-distortion loss without wasting bits on flat spatial regions.
@@ -373,6 +400,7 @@ $$\mathcal{T}(x, y, t) = \text{Interp}(P_{xy}, x, y) \odot \text{Interp}(P_{xt},
 #### 3. Prism-Gen 2.0 & 1-Step Distilled Flow Matching Compute Shader
 
 For interactive communication and real-time streaming:
+
 - **Dense Affine Warper:** Evaluates backward coordinate warping fields from 32 sparse 3D landmarks via fixed-point Gaussian radial basis function (RBF) kernels.
 - **Vulkan Compute Flow Generator:** `core/shaders/detint_flow_gen.comp` implements 1-step distilled flow matching in GLSL with `#extension GL_EXT_integer_dot_product : enable` (`sdot4`), compiled to SPIR-V (`detint_flow_gen.spv`, 6,932 bytes) executing in $<4.5\text{ ms}$ on mobile GPUs.
 - **Audio-Assisted Packet Concealment (A-EC):** Under packet loss conditions, LPC acoustic energy coefficients extrapolate mouth blendshapes and head pose with velocity dampening, guaranteeing glitch-free playback even during severe network drops.
@@ -383,7 +411,9 @@ For interactive communication and real-time streaming:
 
 For stereoscopic, multi-camera, and spatial XR video, Prism-Spatial represents dynamic 3D scenes as time-dependent 4D Gaussian primitives:
 
-$$\mathcal{G}_i(t) = \left\{ \mu_i(t), \; \Sigma_i(t), \; \alpha_i(t), \; \mathbf{c}_i(t) \right\}$$
+$$
+\mathcal{G}_i(t) = \left\lbrace  \mu_i(t), \quad  \Sigma_i(t), \quad  \alpha_i(t), \quad  \mathbf{c}_i(t) \right\rbrace 
+$$
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
@@ -416,12 +446,14 @@ $$\mathcal{G}_i(t) = \left\{ \mu_i(t), \; \Sigma_i(t), \; \alpha_i(t), \; \mathb
 
 Temporal motion trajectories $\mu_i(t) \in \mathbb{R}^3$ are projected onto orthogonal Chebyshev polynomials of degree $K=3$:
 
-$$\mu_i(t) = \sum_{k=0}^K \mathbf{a}_{i,k} \cdot T_k(t), \quad T_0(t) = 1, \quad T_1(t) = t, \quad T_{k+1}(t) = 2t T_k(t) - T_{k-1}(t)$$
+$$
+\mu_i(t) = \sum_{k=0}^K \mathbf{a}_{i,k} \cdot T_k(t), \quad T_0(t) = 1, \quad T_1(t) = t, \quad T_{k+1}(t) = 2t T_k(t) - T_{k-1}(t)
+$$
 
-- **Static Background Clustering:** $78.0\%$ of Gaussians exhibit zero higher-order coefficients ($\|\mathbf{a}_{i,k}\|_{k \ge 1} = 0$), anchored once per GOP.
-- **Dead-Zone Lattice VQ (DZ-HLVQ):** Zeroes micro-motion residuals with Euclidean norm within dead-zone radius $\tau_{\text{dead}} = 1.8 \Delta_v$, achieving **$88.1\%$ residual zero-sparsity**.
-- **Low-Rank Subspace Projection:** Compresses 9-D Chebyshev trajectory polynomials into a 4-D orthonormal latent subspace ($55.5\%$ dimension reduction) with zero reconstruction error.
-- **Mobile Vulkan Compute Rasterizer:** `core/shaders/spatial_rasterize.comp` executes mobile-native $16\times 16$ pixel tile binning with front-to-back depth sorting. Features cooperative workgroup ray termination consensus (`s_active_pixel_count`) and anisotropic EWA 2D covariance projection, sustaining **$149.75\text{ Million splats/second}$** ($0.070\text{ ms/frame}$, delivering **$99.5\%$ real-time headroom** at 4K60 within $0.85\text{ W}$ GPU power draw).
+- **Static Background Clustering:** 78.0% of Gaussians exhibit zero higher-order coefficients ($\lVert \mathbf{a}_{i,k} \rVert_{k \ge 1} = 0$), anchored once per GOP.
+- **Dead-Zone Lattice VQ (DZ-HLVQ):** Zeroes micro-motion residuals with Euclidean norm within dead-zone radius $\tau_{\text{dead}} = 1.8 \Delta_v$, achieving **88.1% residual zero-sparsity**.
+- **Low-Rank Subspace Projection:** Compresses 9-D Chebyshev trajectory polynomials into a 4-D orthonormal latent subspace (55.5% dimension reduction) with zero reconstruction error.
+- **Mobile Vulkan Compute Rasterizer:** `core/shaders/spatial_rasterize.comp` executes mobile-native $16\times 16$ pixel tile binning with front-to-back depth sorting. Features cooperative workgroup ray termination consensus (`s_active_pixel_count`) and anisotropic EWA 2D covariance projection, sustaining **$149.75\text{ Million splats/second}$** ($0.070\text{ ms/frame}$, delivering **99.5% real-time headroom** at 4K60 within $0.85\text{ W}$ GPU power draw).
 
 ---
 
@@ -472,11 +504,13 @@ Frontier 5 establishes a **production-grade zero-copy heterogeneous silicon arch
 
 3. **Zero-Copy Lock-Free GOP Micro-Slicer & Nanosecond Atom Stitcher (`LockFreeChunkedParallelSlicer`):**
    - Slices massive videos into $5\text{s} - 10\text{s}$ independent GOP micro-tasks without unrolling into raw intermediate pixels.
-   - Nanosecond epoch accumulation guarantees **$0.000\,\mu\text{s}$ PTS/DTS drift** and seamless continuous playback across GOP boundaries.
+   - Nanosecond epoch accumulation guarantees **$0.000\thinspace \mu\text{s}$ PTS/DTS drift** and seamless continuous playback across GOP boundaries.
 
 4. **Closed-Loop Predictive Thermal Dynamic Gear-Shifter (`PredictiveThermalGearShifter`):**
    - Lumped RC thermodynamic chassis model:
-     $$C_{\text{th}} \frac{dT_{\text{chassis}}}{dt} = P_{\text{active}} - \frac{T_{\text{chassis}} - T_{\text{ambient}}}{R_{\text{th}}}$$
+     $$
+     C_{\text{th}} \frac{dT_{\text{chassis}}}{dt} = P_{\text{active}} - \frac{T_{\text{chassis}} - T_{\text{ambient}}}{R_{\text{th}}}
+     $$
      with thermal time constant $\tau = R_{\text{th}} C_{\text{th}} = 45\text{ s}$ ($R_{\text{th}} = 4.86\text{ K/W}$, $C_{\text{th}} = 9.25\text{ J/K}$).
    - Passive smartphone chassis dissipation is bounded at $P_{\text{chassis}} \le 3.5\text{ W}$ to guarantee skin temperature remains strictly below $42.0^\circ\text{C}$ (IEC 62368-1 Clause 9).
    - Asymmetric gear transitions: **0 ms immediate downshift** under thermal spikes; **5,000 ms hysteresis debounce** for upshift to prevent rapid gear oscillation.
@@ -493,15 +527,15 @@ Frontier 5 establishes a **production-grade zero-copy heterogeneous silicon arch
 
 ### 3.7 Frontier 6: Hierarchical Rabin-Mesh Vault & Deduplication Engine
 
-Modern smartphone camera rolls suffer from massive redundancy: empirical audits confirm **$38\%–62\%$ of stored smartphone video bytes are redundant** (burst takes, bracketed shots, social media cross-posting, and trimmed clips). Conventional file deduplication (SHA-256) fails due to trivial container shifts (`ftyp`, `moov`, `stco` box offsets), and transcoding causes thermal throttling and perceptual generation loss.
+Modern smartphone camera rolls suffer from massive redundancy: empirical audits confirm **38%–62% of stored smartphone video bytes are redundant** (burst takes, bracketed shots, social media cross-posting, and trimmed clips). Conventional file deduplication (SHA-256) fails due to trivial container shifts (`ftyp`, `moov`, `stco` box offsets), and transcoding causes thermal throttling and perceptual generation loss.
 
 The **Rabin-Mesh Engine** (`core/src/rabin_mesh.cpp`) implements a 3-level spatio-temporal content-defined chunking architecture:
 
 1. **Level 1 — Perceptual Keyframe Fingerprinting:** Extracts 256-bit binary perceptual hashes (vPDQ) and 128-D quantized INT8 SSCD neural descriptors from leading IDR keyframes, identifying duplicate or near-duplicate burst takes at $>47,000\text{ fps}$.
 2. **Level 2 — GOP Slicing & Burst Clustering:** Partitions video elementary streams at closed-GOP boundaries, aligning identical keyframe intervals across takes.
 3. **Level 3 — SIMD VectorCDC Sub-Block Partitioning:** High-speed 16-byte vector-parallel Rabin rolling hash chunker ($16\text{ KiB}$ min, $64\text{ KiB}$ avg, $256\text{ KiB}$ max) operating at **$>2.2\text{ GB/s}$**, deduplicating identical macroblocks and background I-frames across separate files.
-4. **Virtual Reconstruction File Graph (`.pvmesh`):** Generates lightweight Directed Acyclic Graph (DAG) delta manifests. Redundant videos reference shared vault blocks without duplicate physical storage, reclaiming **$40\%–60\%$ of gallery storage** (**$57.5\%$ verified on burst takes**).
-5. **Android VFS Proxy Seekability:** Integrates into Android's `openProxyFileDescriptor()` with **$182.09\ \mu\text{s}$ mean random-access seek latency**, enabling smooth 60/120 fps scrubbing in third-party video players without full-file materialization.
+4. **Virtual Reconstruction File Graph (`.pvmesh`):** Generates lightweight Directed Acyclic Graph (DAG) delta manifests. Redundant videos reference shared vault blocks without duplicate physical storage, reclaiming **40%–60% of gallery storage** (**57.5% verified on burst takes**).
+5. **Android VFS Proxy Seekability:** Integrates into Android's `openProxyFileDescriptor()` with **$182.09\thinspace\mu\text{s}$ mean random-access seek latency**, enabling smooth 60/120 fps scrubbing in third-party video players without full-file materialization.
 6. **Crash Consistency & Invariant 6 (Zero Media Loss):** All write workflows are managed by a 2-phase commit ACID journal (`VerifiedTransaction`) with `fsync` storage synchronization. Master re-election ensures zero orphaned vault blocks if a user deletes a master take.
 
 ---
@@ -514,20 +548,27 @@ Mobile video recompression engines frequently suffer from catastrophic file size
 
 Under no operational condition may a compressed file exceed the byte size of the input source. Prism-V enforces the **Never-Worse Bitrate Ceiling**:
 
-$$R_{\text{target}} \le \min\left(R_{\text{source}} \times 0.70, \; R_{\text{user\_target}}\right)$$
+$$
+R_{\text{target}} \le \min\left(R_{\text{source}} \times 0.70, \quad  R_{\text{user-target}}\right)
+$$
 
 Where:
-- $R_{\text{source}} = \frac{8 \cdot \text{FileSizeBytes}}{T_{\text{ground\_truth}}}$
+
+- $R_{\text{source}} = \frac{8 \cdot \text{FileSizeBytes}}{T_{\text{ground-truth}}}$
 - $R_{\text{target}}$ is the hardware encoder's enforced bitrate target in bps.
 
 **Mathematical Proof of Non-Inflation:**
 Let $S_{\text{in}}$ be the input size, $T$ the ground-truth duration in seconds, and $R_{\text{source}} = \frac{8 S_{\text{in}}}{T}$. For any lossy pass, the total allocated bit budget is:
 
-$$B_{\text{target}} = \int_0^T R_{\text{target}}(t) \, dt \le R_{\text{target}} \cdot T \le \left(0.70 \cdot \frac{8 S_{\text{in}}}{T}\right) \cdot T = 0.70 \cdot 8 S_{\text{in}}$$
+$$
+B_{\text{target}} = \int_0^T R_{\text{target}}(t) \thinspace  dt \le R_{\text{target}} \cdot T \le \left(0.70 \cdot \frac{8 S_{\text{in}}}{T}\right) \cdot T = 0.70 \cdot 8 S_{\text{in}}
+$$
 
 Accounting for maximum container overhead $\Omega \le 0.02 \cdot S_{\text{in}}$:
 
-$$S_{\text{out}} = \frac{B_{\text{target}}}{8} + \Omega \le 0.70 \cdot S_{\text{in}} + 0.02 \cdot S_{\text{in}} = 0.72 \cdot S_{\text{in}} < S_{\text{in}}$$
+$$
+S_{\text{out}} = \frac{B_{\text{target}}}{8} + \Omega \le 0.70 \cdot S_{\text{in}} + 0.02 \cdot S_{\text{in}} = 0.72 \cdot S_{\text{in}} < S_{\text{in}}
+$$
 
 Therefore, $S_{\text{out}} < S_{\text{in}}$ strictly holds for all $S_{\text{in}} > 0$. If $R_{\text{source}}$ is already hyper-efficient ($<1.5\text{ Mbps}$ for 1080p, $<800\text{ kbps}$ for 720p), the engine automatically bypasses lossy encoding and triggers **Mode L-BBR 2.0 / Mode L-Remux** zero-copy bitstream copy, guaranteeing zero file expansion and master quality preservation.
 
@@ -544,6 +585,7 @@ Standard MP4 files can place the Sync Sample Box (`stss`) before or after the Ti
 #### 3.8.4 Fail-Safe Closed-Loop PID Governor (FSNWG)
 
 Hardware encoders on mobile silicon (Qualcomm Snapdragon, Samsung Exynos, MediaTek Dimensity) lack true Constant Quality (`BITRATE_MODE_CQ`) modes and produce massive bitrate bursts during high-entropy scenes. Prism-V deploys the **Fail-Safe Never-Worse File Guard (FSNWG)**:
+
 1. **Continuous Budget Tracking:** Monitors cumulative written bytes $S_{\text{written}}(t)$ vs linear budget $S_{\text{budget}}(t) = R_{\text{target}} \cdot \frac{t}{8}$.
 2. **Tier-1 Step-Down (15% Overshoot):** If $S_{\text{written}}(t) > 1.15 \cdot S_{\text{budget}}(t)$, dynamically injects a 30% bitrate reduction via `MediaCodec.setParameters(KEY_VIDEO_BITRATE)`.
 3. **Tier-2 Floor Clamp (25% Overshoot):** If overshoot persists, injects a 50% bitrate floor clamp.
@@ -552,6 +594,7 @@ Hardware encoders on mobile silicon (Qualcomm Snapdragon, Samsung Exynos, MediaT
 #### 3.8.5 High-Efficiency Opus / AAC Audio Transcoding
 
 Camera recordings frequently include uncompressed PCM/WAV audio (1.4 Mbps) or bloated AAC (>320 kbps), wasting 500–600 MB per hour. Prism-V integrates `AudioTranscoder`, an asynchronous hardware audio transcode loop:
+
 - Auto-detects PCM, uncompressed, or high-bitrate audio tracks.
 - Transcodes to 96 kbps Opus / 128 kbps AAC-LC with optional real-time Stereo-to-Mono downmixing.
 - Employs a non-blocking `pendingDecIndex` state machine that queues decoded PCM frames during encoder backpressure, eliminating dropped samples and audio pops.
@@ -560,7 +603,9 @@ Camera recordings frequently include uncompressed PCM/WAV audio (1.4 Mbps) or bl
 
 Variable Frame Rate (VFR) recordings from mobile camera sensors frequently fluctuate between 24 and 60 fps. Re-encoding or lossless trimming previously caused progressive audio/video desynchronization. Prism-V enforces strictly monotonic timestamps:
 
-$$PTS_i \ge \max(0, \; PTS_{i-1} + 1000\,\mu\text{s})$$
+$$
+PTS_i \ge \max(0, \quad  PTS_{i-1} + 1000\thinspace \mu\text{s})
+$$
 
 Across subframe trim boundaries and concatenated takes, all presentation timestamps are normalized relative to initial capture offsets, guaranteeing $0\text{ ns}$ drift over 1-hour stress tests.
 
@@ -587,11 +632,11 @@ Evaluated on standard JVET Class B (`BQTerrace`, `Cactus`, `MarketPlace`), UVG 1
 
 | Codec Pipeline | Average Bitrate (1080p60) | PSNR-Y (dB) | SSIM | VMAF Score | ColorVideoVDP (CVVDP) | BD-Rate vs Hardware AVC |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Android Stock AVC (H.264)** | $28.0\text{ Mbps}$ | $39.8\text{ dB}$ | $0.942$ | $93.1$ | $8.6 / 10.0$ | Baseline ($0.0\%$) |
-| **Android Stock HEVC (H.265)** | $16.5\text{ Mbps}$ | $40.5\text{ dB}$ | $0.951$ | $93.6$ | $8.8 / 10.0$ | $-38.4\%$ |
-| **SVT-AV1 (Preset M6, CPU)** | $7.8\text{ Mbps}$ | $41.8\text{ dB}$ | $0.963$ | $94.4$ | $9.1 / 10.0$ | $-68.2\%$ |
-| **Prism-Lossy (Live Capture)** | **$5.8\text{ Mbps}$** | **$42.1\text{ dB}$** | **$0.968$** | **$94.8$** | **$9.3 / 10.0$** | **$-76.5\%$** |
-| **Prism-Lossy (Overfit Charging)** | **$4.9\text{ Mbps}$** | **$42.9\text{ dB}$** | **$0.974$** | **$95.7$** | **$9.5 / 10.0$** | **$-81.2\%$** |
+| **Android Stock AVC (H.264)** | $28.0\text{ Mbps}$ | $39.8\text{ dB}$ | $0.942$ | $93.1$ | $8.6 / 10.0$ | Baseline (0.0%) |
+| **Android Stock HEVC (H.265)** | $16.5\text{ Mbps}$ | $40.5\text{ dB}$ | $0.951$ | $93.6$ | $8.8 / 10.0$ | -38.4% |
+| **SVT-AV1 (Preset M6, CPU)** | $7.8\text{ Mbps}$ | $41.8\text{ dB}$ | $0.963$ | $94.4$ | $9.1 / 10.0$ | -68.2% |
+| **Prism-Lossy (Live Capture)** | **$5.8\text{ Mbps}$** | **$42.1\text{ dB}$** | **$0.968$** | **$94.8$** | **$9.3 / 10.0$** | **-76.5%** |
+| **Prism-Lossy (Overfit Charging)** | **$4.9\text{ Mbps}$** | **$42.9\text{ dB}$** | **$0.974$** | **$95.7$** | **$9.5 / 10.0$** | **-81.2%** |
 
 ---
 
@@ -599,10 +644,10 @@ Evaluated on standard JVET Class B (`BQTerrace`, `Cactus`, `MarketPlace`), UVG 1
 
 | Mode | Target Media Source | Primary Baseline | Prism-V Result | Sequential Read Speed | Mathematical Parity Guarantee |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Mode L-BBR** | Pre-compressed MP4s (H.264) | Original MP4 ($0\%$) | **$14.5\% – 23.5\%$ smaller** | $180 – 340\text{ MB/s}$ | SHA-256 Bit-Exact Identity |
-| **Mode L-BBR** | Pre-compressed MP4s (HEVC) | Original MP4 ($0\%$) | **$9.0\% – 15.5\%$ smaller** | $160 – 290\text{ MB/s}$ | SHA-256 Bit-Exact Identity |
-| **Mode L-PSC** | Raw Sensor YUV420 Stream | FFV1 v3 ($35.8\%$ raw) | **$27.5\% – 31.0\%$ raw** | $30 – 60\text{ fps}$ real-time | $\text{PSNR} = \infty\text{ dB}$ (Reversible) |
-| **Mode L-PSC** | 10-bit Quad-Bayer RAW10 | Uncompressed Bayer | **$38.2\% – 42.0\%$ raw** | $45\text{ fps}$ sustained | $\text{PSNR} = \infty\text{ dB}$ (Reversible) |
+| **Mode L-BBR** | Pre-compressed MP4s (H.264) | Original MP4 (0%) | **14.5% – 23.5% smaller** | $180 – 340\text{ MB/s}$ | SHA-256 Bit-Exact Identity |
+| **Mode L-BBR** | Pre-compressed MP4s (HEVC) | Original MP4 (0%) | **9.0% – 15.5% smaller** | $160 – 290\text{ MB/s}$ | SHA-256 Bit-Exact Identity |
+| **Mode L-PSC** | Raw Sensor YUV420 Stream | FFV1 v3 (35.8% raw) | **27.5% – 31.0% raw** | $30 – 60\text{ fps}$ real-time | $\text{PSNR} = \infty\text{ dB}$ (Reversible) |
+| **Mode L-PSC** | 10-bit Quad-Bayer RAW10 | Uncompressed Bayer | **38.2% – 42.0% raw** | $45\text{ fps}$ sustained | $\text{PSNR} = \infty\text{ dB}$ (Reversible) |
 
 ---
 
@@ -612,7 +657,7 @@ Measurements gathered on physical hardware (ARM Cortex-A76 / Cortex-A55 SoC, Med
 
 | Operational Mode | Active Hardware Subsystems | Power Draw (W) | Energy per Frame | Thermal Rise ($\Delta T$) after 60 min | Sustained FPS |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Pure Software AV1 (libaom)** | 8-Core CPU ($100\%$ Load) | $5.80\text{ W}$ | $0.967\text{ J/frame}$ | $+18.5^\circ\text{C}$ (Thermal Throttling) | $6.0\text{ fps}$ (Non-real-time) |
+| **Pure Software AV1 (libaom)** | 8-Core CPU (100% Load) | $5.80\text{ W}$ | $0.967\text{ J/frame}$ | $+18.5^\circ\text{C}$ (Thermal Throttling) | $6.0\text{ fps}$ (Non-real-time) |
 | **Pure Neural Autoencoder** | NPU + GPU (Cooperative) | $4.20\text{ W}$ | $0.140\text{ J/frame}$ | $+14.2^\circ\text{C}$ (Throttling @ 90s) | $30.0\text{ fps}$ |
 | **Stock MediaCodec (Camera)** | ISP + MediaCodec ASIC | $1.45\text{ W}$ | $0.024\text{ J/frame}$ | $+3.8^\circ\text{C}$ (Stable) | $60.0\text{ fps}$ |
 | **Prism-Lossy (Live Capture)** | MediaCodec ASIC + NEON AFGS1 | **$0.88\text{ W}$** | **$0.014\text{ J/frame}$** | **$+2.1^\circ\text{C}$ (Stable)** | **$60.0\text{ fps}$** |
@@ -720,22 +765,29 @@ The Android client (`android_app/`) provides an analytical presentation suite br
 │     ├─ Rate-Distortion Dial: Adaptive Pareto QP & bit-budget guidance   │
 │     └─ GeminiClient        : Ultra-low latency Gemini API assistant     │
 │                                                                         │
-│   [ Forensic Media Toolbox ]                                            │
+│   [ Forensic Media & Creator Toolbox (ToolboxDialogs.java) ]            │
 │     ├─ Subframe Trimmer  : Keyframe-accurate temporal segment extractor │
+│     ├─ Transform Studio  : Resolution scaler, rotation, crop & aspect   │
+│     ├─ Clip Merger       : Multi-video zero-copy stream concatenation   │
+│     ├─ GIF Studio        : Palette quantization, FPS & loop synthesis   │
 │     ├─ Fit-to-Size Engine: Strict bit budget allocator (target MB cap)  │
 │     ├─ Privacy Shield    : Selective facial & license plate redaction   │
-│     └─ Metadata Scrubber : Exif, GPS, and device serial sanitization    │
+│     ├─ Metadata Scrubber : Exif, GPS, and device serial sanitization    │
+│     └─ Dedup Radar       : Burst gallery scanner & Rabin-Mesh ingest    │
 │                                                                         │
 │   [ Background AI & Resilient Processing Service ]                      │
 │     ├─ PrismNeRVBackgroundWorker : Charging-time continuous overfit     │
-│     └─ PrismMediaProcessingService: Foreground service with wake-lock,   │
-│        transactional two-phase commit rollback, and crash resilience    │
+│     ├─ PrismJobService           : Timeout handoff & battery constraint │
+│     ├─ RabinMeshWorker           : Asynchronous gallery deduplication   │
+│     └─ PrismMediaProcessingService: Android 15+ FGS with onTimeout(),   │
+│        PrismWorkJournal checkpoints, wake-lock & crash resilience       │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 - **Multimodal Gemini AI Copilot Dialog:** Seamless UI integration (`GeminiCopilotDialog.java`) providing intelligent scene categorization, artifact diagnostics, and automated bitrate-quality trade-off recommendations via multimodal analysis.
 - **Charging-Time NeRV Overfitting Worker:** `PrismNeRVBackgroundWorker.java` schedules background optimization during AC charging, executing 300–600 lightweight gradient steps on keyframes to unlock an additional **8%–14% BD-rate reduction** without modifying base bitstreams.
+- **Creator & Forensic Media Toolbox:** Implemented across 5,100+ lines in `ToolboxDialogs.java`, providing local hardware-accelerated trimming, clip concatenation (`fastClipConcat`), resolution/rotation transforms, GIF palette synthesis, privacy blurring, metadata stripping (`fastMetadataStrip`), and live Rabin-Mesh deduplication radar.
 - **Atomic Frame Synchronization ($\Delta = 0\text{ ms}$):** Leverages Android's low-level `MediaPlayer.SEEK_CLOSEST` targeting exact master stream presentation timestamps ($PTS$). Both decoders synchronize down to the individual frame index.
 - **Transactional Rollback Journaling:** Storage operations utilize a two-phase commit write-ahead journal (`core/src/transaction.cpp`). If processing is interrupted by an incoming phone call, low battery shutdown, or OS process termination, the target file is reverted with zero filesystem corruption.
 
@@ -743,46 +795,90 @@ The Android client (`android_app/`) provides an analytical presentation suite br
 
 ## 7. Native CLI Reference & Build Guide
 
-### 7.1 Standalone CLI Usage (`prism`)
+### 7.1 Complete Standalone CLI Reference (`prism` — 21 Commands)
 
-The native binary compiled in `build/prism` provides direct command-line control:
+The native binary compiled in `build/prism` exposes full command-line control over all 6 Frontiers, hardware diagnostics, and vault operations:
 
 ```bash
-# 1. Audit system invariants (16 KiB page size, integer bounds, LUT monotonicity)
+# --- System Audits & Content Routing ---
+# 1. Audit all 10 system invariants (16 KiB page size, integer bounds, Frontiers 1-6)
 prism audit
 
-# 2. Compress video into .pvloss container using BBR 2.0 bitstream compaction
-prism compress input.mp4 output.pvloss --contract bbr
+# 2. Content-adaptive tri-contract routing analysis (auto-selects BBR/PSC/Hybrid/Remux)
+prism route input.mp4 --lossless
 
-# 3. Decompress and verify bit-exact SHA-256 roundtrip
+# --- Frontier 1 & 2: Bit-Exact Lossless Compression ---
+# 3. Compress video into .pvloss container (contracts: bbr, bbr2, psc2)
+prism compress input.mp4 output.pvloss --contract bbr2
+
+# 4. Decompress .pvloss container with SHA-256 bit-exact verification
 prism decompress output.pvloss restored.mp4
 
-# 4. Clean-room ISOBMFF remuxing (packet-preserving MP4 normalization)
+# 5. Frontier 2 PSC 2.0 directional wavelet compression (filters: 53|97, Quad-Bayer RAW)
+prism compress-psc2 raw.rgb output.pvloss --width 1920 --height 1080 --filter 53 --tile 128 --quad-bayer
+
+# 6. Frontier 2 PSC 2.0 bit-exact decompression (PSNR = ∞)
+prism decompress-psc2 output.pvloss restored.rgb
+
+# 7. Zero-copy RAM VFS proxy mount test for .pvloss containers
+prism vfs-mount output.pvloss
+
+# 8. Clean-room ISOBMFF remuxing (packet-preserving MP4 normalization)
 prism remux raw_camera.mp4 clean_normalized.mp4
 
-# 5. Content-defined deduplication chunking into an isolated block vault
-prism dedup recording.mp4 vault/ manifest.pvref
+# --- Frontier 3: Generative Residuals & Continuous Fields ---
+# 9. Prism-Gen 2.0 semantic keypoint + flow matching encoding (<1.5 kbps payload)
+prism encode-gen talking_head.yuv output.pgen --width 1920 --height 1080
 
-# 6. Reconstruct canonical video from deduplicated vault
-prism restore manifest.pvref vault/ reconstructed.mp4
+# 10. NeRV-S continuous TriPlane coordinate field GOP encoding
+prism nerv-gop clip.yuv output.nerv --frames 60
 
-# 7. Frontier 5 Silicon-Fused Zero-Copy Pipeline (Dual-Track MP4 + AFGS1)
+# --- Frontier 4: Dynamic 4D Gaussian Splatting (6-DoF XR) ---
+# 11. Encode dynamic 4DGS splats with Chebyshev K=3 trajectories & DZ-HLVQ
+prism spatial-encode synthetic scene.4dgs --count 10000
+
+# 12. Inspect compressed .4dgs container metadata and static anchor ratios
+prism spatial-info scene.4dgs
+
+# 13. Run 4K60 kinematic trajectory evaluation & rasterization throughput benchmark
+prism spatial-benchmark --count 10000 --frames 60
+
+# --- Frontier 5: Silicon-Fused Pipeline, Resource Governor & Thermal RC ---
+# 14. Execute Frontier 5 Silicon-Fused zero-copy pipeline (Dual-Track MP4 + AFGS1)
 prism frontier5 synthetic test_out.mp4 --width 1920 --height 1080 --frames 60
 
-# 8. Heterogeneous Resource Governor Diagnostics (RAM Budget & CPU Core Affinity)
+# 15. Heterogeneous Resource Governor diagnostics (RAM ceiling & CPU core affinity)
 prism governor --ram-mb 512 --cores 8 --cpu balanced --power balanced
 
-# 9. Closed-Loop Thermodynamic Lumped RC Simulation (Chassis Headroom & ADPF Stepping)
+# 16. Closed-loop lumped RC thermodynamic simulation (IEC 62368-1 chassis limit)
 prism thermal --power-watts 3.50 --duration-sec 60 --ambient 25.0
 
-# 10. Frontier 6 Rabin-Mesh Deduplication & Android VFS Seek Latency Verification
-verify_mesh_dedup
+# --- Frontier 6: Rabin-Mesh Deduplication & Block Vault ---
+# 17. Content-defined chunking deduplication into isolated block vault
+prism dedup recording.mp4 vault/ manifest.pvref
 
-# 11. Frontier 4 4DGS Continuous 6-DoF Free-Viewpoint Video Benchmark
-exp_1d_frontier4
+# 18. Reconstruct bit-exact video from deduplicated vault
+prism restore manifest.pvref vault/ reconstructed.mp4
 
-# 12. Frontier 6 Multi-Resolution Spatio-Temporal Ingest Benchmark
-exp_1e_frontier6
+# 19. Scan gallery directory via vPDQ + SSCD perceptual keyframe fingerprinting
+prism mesh-scan ./camera_roll/
+
+# 20. Ingest burst cluster into Rabin-Mesh DAG vault (.pvmesh)
+prism mesh-ingest vault/ cluster_01 master.mp4 delta1.mp4 delta2.mp4
+
+# 21. Restore canonical video from .pvmesh DAG delta manifest
+prism mesh-restore manifest.pvmesh vault/ reconstructed.mp4
+
+# --- Standalone Verification & Frontier Benchmark Suites ---
+./build/verify_real_video <input.mp4>   # Real MP4 SHA-256 bit-exact roundtrip & probe
+./build/verify_mesh_dedup               # Frontier 6 Rabin-Mesh & VFS seek benchmark
+./build/exp_1a_bbr2                     # Frontier 1 BBR 2.0 vs BBR 1.0 benchmark
+./build/exp_2a_psc2                     # Frontier 2 PSC 2.0 & Quad-Bayer benchmark
+./build/exp_1b_lossy                    # Frontier 3 Cool-chic 5.0 & AFGS1 evaluation
+./build/exp_1b_frontier5                # Frontier 5 sub-1.0 W power & DRAM benchmark
+./build/exp_1c_frontier3                # Frontier 3 BIS-RFSQ, NeRV-S, Prism-Gen suite
+./build/exp_1d_frontier4                # Frontier 4 4DGS 6-DoF kinematic benchmark
+./build/exp_1e_frontier6                # Frontier 6 multi-resolution ingest benchmark
 ```
 
 ---
@@ -837,20 +933,41 @@ adb shell am start -n com.prismv/.ui.MainActivity
 
 ---
 
+### 7.4 Engineering Documentation & Specification Index
+
+All subsystems, mathematical invariants, and verification receipts are formally documented in `docs/`:
+
+| Document | Scope & Content |
+| :--- | :--- |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Complete end-to-end subsystem architecture (6 Frontiers, 25 C++ modules, Android UI/Services/JNI). |
+| [docs/VERIFICATION.md](docs/VERIFICATION.md) | Automated CTest logs, 156/156 unit test receipts, JNI checkpoints, and physical device screenshots. |
+| [docs/MATHEMATICAL_INVARIANTS.md](docs/MATHEMATICAL_INVARIANTS.md) | Formal specification of all 10 system invariants audited by `prism audit`. |
+| [docs/FRONTIER1_BBR2_IMPLEMENTATION_SPECIFICATION.md](docs/FRONTIER1_BBR2_IMPLEMENTATION_SPECIFICATION.md) | Frontier 1: BBR 2.0 (SSG-CR4, C-MAVQ, 16-Way SIMD rANS, SHA-256 bit-exact recompression). |
+| [docs/PSC2_DIRECTIONAL_LIFTING_SPECIFICATION.md](docs/PSC2_DIRECTIONAL_LIFTING_SPECIFICATION.md) | Frontier 2: PSC 2.0 (ADIW 5/3 & 9/7 directional wavelets, YCoCg-R2, Quad-Bayer A-IKLT, $\text{PSNR}=\infty$). |
+| [docs/FRONTIER3_NEURAL_AND_GENERATIVE_SPECIFICATION.md](docs/FRONTIER3_NEURAL_AND_GENERATIVE_SPECIFICATION.md) | Frontier 3: Cool-chic 5.0, AFGS1 LFSR/IIR grain, BIS-RFSQ, NeRV-S TriPlane, and Prism-Gen 2.0 flow matching. |
+| [docs/FRONTIER4_SPATIAL_4DGS_SPECIFICATION.md](docs/FRONTIER4_SPATIAL_4DGS_SPECIFICATION.md) | Frontier 4: Prism-Spatial 6-DoF 4DGS (Chebyshev $K=3$, DZ-HLVQ, mobile Vulkan 1.3 compute rasterizer). |
+| [docs/FRONTIER5_SILICON_FUSED_SPECIFICATION.md](docs/FRONTIER5_SILICON_FUSED_SPECIFICATION.md) | Frontier 5: CAT-Ring 16 KiB zero-copy pool, sub-1.0 W heterogeneous pipeline, thermal lumped RC model. |
+| [docs/FRONTIER6_RABIN_MESH_SPECIFICATION.md](docs/FRONTIER6_RABIN_MESH_SPECIFICATION.md) | Frontier 6: Rabin-Mesh VectorCDC gallery deduplication vault, `.pvmesh` DAGs, and 2PC ACID safety. |
+| [docs/GAP_AUDIT_REPORT.md](docs/GAP_AUDIT_REPORT.md) | Historical gap audit record and production `v1.1.2` resolution verification. |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Clean-room IP policy, coding standards, build workflow, and PR verification checklist. |
+| [SECURITY.md](SECURITY.md) | Supported releases (`v1.1.x`), local-only privacy architecture, and vulnerability reporting. |
+
+---
+
 ## 8. Mathematical Notation & Formal Glossary
 
 | Symbol | Mathematical Definition | Scope & System Meaning |
 | :--- | :--- | :--- |
 | $V(x, y, t)$ | $\mathbb{Z}^{H \times W \times 3} \to \mathbb{R}$ | Original spatiotemporal video tensor at coordinates $(x,y)$ and time $t$. |
-| $B(x, y, t)$ | $\mathbb{R}^{H \times W \times 3}$ | Deterministic structural base layer carrying $85\%–92\%$ of total frame energy. |
+| $B(x, y, t)$ | $\mathbb{R}^{H \times W \times 3}$ | Deterministic structural base layer carrying 85%–92% of total frame energy. |
 | $R(x, y, t)$ | $\mathbb{R}^{H \times W \times 3}$ | Structural micro-residual layer synthesized by Cool-chic 5.0 neural field. |
 | $\eta(x, y, t)$ | $\sim \mathcal{N}(0, \sigma^2(I))$ | Non-stationary stochastic Poisson-Gaussian sensor shot noise. |
 | $M$ | $32,768 = 2^{15}$ | Normalization mass for 15-bit dyadic rANS probability tables. |
-| $f_s, C_s$ | $f_s \in [1, M], \; C_s = \sum_{k < s} f_k$ | Individual symbol frequency and cumulative CDF offset in rANS state updates. |
-| $T_k(t)$ | $\cos(k \arccos t)$ | Degree-$k$ Chebyshev polynomial of the first kind evaluated over $t \in [-1, 1]$. |
-| $\mathcal{G}_i(t)$ | $\{\mu_i(t), \Sigma_i(t), \alpha_i(t), \mathbf{c}_i(t)\}$ | Dynamic 4D Gaussian splat primitive (mean position, covariance, opacity, color). |
+| $f_s, C_s$ | $f_s \in [1, M], \quad C_s = \sum_{k < s} f_k$ | Individual symbol frequency and cumulative CDF offset in rANS state updates. |
+| $T_k(t)$ | $\cos(k \cdot \arccos t)$ | Degree $k$ Chebyshev polynomial of the first kind evaluated over $t \in [-1, 1]$. |
+| $\mathcal{G}_i(t)$ | $\lbrace \mu_i(t), \Sigma_i(t), \alpha_i(t), \mathbf{c}_i(t) \rbrace$ | Dynamic 4D Gaussian splat primitive (mean position, covariance, opacity, color). |
 | $\tau_{\text{dead}}$ | $1.8 \cdot \Delta_v$ | Dead-zone hyper-lattice vector quantization truncation threshold. |
-| $\text{PAGE\_SIZE}$ | $16,384\text{ Bytes}$ | Memory page alignment bound for Android 15/16 kernel compliance. |
+| `PAGE_SIZE` | $16,384\text{ Bytes}$ | Memory page alignment bound for Android 15/16 kernel compliance. |
 
 ---
 

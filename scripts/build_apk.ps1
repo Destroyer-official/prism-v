@@ -106,7 +106,7 @@ if (-not $signed) { throw "No signed APK was produced in $SignedDir" }
 
 $ReleaseDir = Join-Path $RepoRoot "release"
 New-Item -ItemType Directory -Force -Path $ReleaseDir | Out-Null
-$ReleaseApk = Join-Path $ReleaseDir "prism-v-v1.1.2.apk"
+$ReleaseApk = Join-Path $ReleaseDir "prism-v-v1.1.3.apk"
 Copy-Item -Force $signed.FullName $ReleaseApk
 
 Write-Host "Build complete: $($signed.FullName)"

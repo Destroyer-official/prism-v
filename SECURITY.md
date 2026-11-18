@@ -11,8 +11,9 @@ File operations in the native core use a two-phase transactional sequence with a
 Security updates and patches are actively maintained for the following versions:
 
 | Version | Supported | Notes |
-|---|---|---|
-| `v1.0.x` | Yes | Current stable production release series |
+| --- | --- | --- |
+| `v1.1.x` | Yes | Current stable production release series |
+| `v1.0.x` | Yes | Legacy maintenance release series |
 | `main` | Yes | Active development branch |
 | `< 1.0` | No | Prototype pre-releases |
 
@@ -27,6 +28,7 @@ We take the security of Prism-V seriously. If you discover a potential vulnerabi
 ### Information to Include
 
 Please provide as much information as possible to facilitate rapid triage and remediation:
+
 - **Component**: The affected module (e.g. `core/container_pvloss`, `core/remux`, `android_app/DuoComparisonPlayerView`, JNI bridge).
 - **Environment**: Operating system, architecture (ARM64 / x86_64), compiler, Android OS version, and device model.
 - **Reproduction**: Step-by-step instructions and minimal reproduction sample or test file.

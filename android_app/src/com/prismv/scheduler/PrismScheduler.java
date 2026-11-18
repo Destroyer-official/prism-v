@@ -8,6 +8,8 @@ import android.os.BatteryManager;
 import android.os.Build;
 import android.os.PowerManager;
 
+import com.prismv.logging.PrismLogger;
+
 import java.util.Calendar;
 
 /**
@@ -53,6 +55,7 @@ public final class PrismScheduler {
 
     public static void setAutoEnabled(Context context, boolean enabled) {
         getPrefs(context).edit().putBoolean(KEY_AUTO_ENABLED, enabled).apply();
+        PrismLogger.i("PrismScheduler", "Policy updated: autoEnabled=" + enabled);
     }
 
     public static boolean isRequireCharging(Context context) {
@@ -61,6 +64,7 @@ public final class PrismScheduler {
 
     public static void setRequireCharging(Context context, boolean req) {
         getPrefs(context).edit().putBoolean(KEY_REQ_CHARGING, req).apply();
+        PrismLogger.i("PrismScheduler", "Policy updated: requireCharging=" + req);
     }
 
     public static boolean isPauseLowBattery(Context context) {
@@ -69,6 +73,7 @@ public final class PrismScheduler {
 
     public static void setPauseLowBattery(Context context, boolean pause) {
         getPrefs(context).edit().putBoolean(KEY_PAUSE_LOW_BATT, pause).apply();
+        PrismLogger.i("PrismScheduler", "Policy updated: pauseLowBattery=" + pause);
     }
 
     public static String getScheduleMode(Context context) {
@@ -77,6 +82,7 @@ public final class PrismScheduler {
 
     public static void setScheduleMode(Context context, String mode) {
         getPrefs(context).edit().putString(KEY_SCHEDULE_MODE, mode).apply();
+        PrismLogger.i("PrismScheduler", "Policy updated: scheduleMode=" + mode);
     }
 
     public static int getBatteryLevel(Context context) {

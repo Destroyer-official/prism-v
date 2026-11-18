@@ -48,23 +48,35 @@ Prism-V's **Silicon-Fused Pipeline (Frontier 5)** partitions computation across 
 
 ### 2.1 Silicon Power Partitioning Invariant
 The total power consumption $P_{\text{total}}$ of the pipeline is bounded by:
-$$P_{\text{total}} = P_{\text{ISP}} + P_{\text{ASIC}} + P_{\text{GPU}} + P_{\text{SME2}} + P_{\text{DRAM}} + P_{\text{MUX}} < 1.000\text{ W}$$
+$$
+P_{\text{total}} = P_{\text{ISP}} + P_{\text{ASIC}} + P_{\text{GPU}} + P_{\text{SME2}} + P_{\text{DRAM}} + P_{\text{MUX}} < 1.000\text{ W}
+$$
 
 Empirically verified on target hardware:
-$$P_{\text{total}} = 0.330 + 0.220 + 0.170 + 0.120 + 0.080 + 0.030 = \mathbf{0.950\text{ W}} < 1.000\text{ W}$$
+$$
+P_{\text{total}} = 0.330 + 0.220 + 0.170 + 0.120 + 0.080 + 0.030 = \mathbf{0.950\text{ W}} < 1.000\text{ W}
+$$
 
 ### 2.2 Energy Per Frame
 At 60 fps continuous capture:
-$$E_{\text{frame}} = \frac{P_{\text{total}}}{f} = \frac{0.950\text{ J/s}}{60\text{ frames/s}} = \mathbf{0.0158\text{ J/frame}}$$
+$$
+E_{\text{frame}} = \frac{P_{\text{total}}}{f} = \frac{0.950\text{ J/s}}{60\text{ frames/s}} = \mathbf{0.0158\text{ J/frame}}
+$$
 On mid-tier mobile hardware (MediaTek Dimensity 6100+ at 30 fps), measured energy is **$0.034\text{ J/frame}$**, strictly below the safety ceiling of $0.050\text{ J/frame}$.
 
 ### 2.3 Integer Lanczos-5 Dyadic Rescaling
 To eliminate floating-point non-determinism across disparate GPU/NPU architectures, spatial downscaling and upscaling employ a 14-bit dyadic fixed-point Lanczos-5 filter:
-$$K(x) = \begin{cases} \text{sinc}(x) \cdot \text{sinc}(x / 5) & \text{if } |x| < 5 \\ 0 & \text{otherwise} \end{cases}$$
+$$
+K(x) = \begin{cases} \text{sinc}(x) \cdot \text{sinc}(x / 5) & \text{if } |x| < 5 \\ 0 & \text{otherwise} \end{cases}
+$$
 Scaled to integer domain:
-$$W_{\text{int}}(x) = \left\lfloor K(x) \cdot 2^{14} + 0.5 \right\rfloor$$
+$$
+W_{\text{int}}(x) = \left\lfloor K(x) \cdot 2^{14} + 0.5 \right\rfloor
+$$
 All intermediate accumulations use 32-bit signed integers, guaranteed overflow-free:
-$$\sum_{k=-5}^{5} |W_{\text{int}}(k)| \le 2^{15} - 1 < 2^{31} - 1$$
+$$
+\sum_{k=-5}^{5} |W_{\text{int}}(k)| \le 2^{15} - 1 < 2^{31} - 1
+$$
 
 ---
 

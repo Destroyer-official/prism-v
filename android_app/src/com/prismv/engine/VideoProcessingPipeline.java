@@ -4,7 +4,7 @@ import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
 import android.provider.OpenableColumns;
-import android.util.Log;
+import com.prismv.logging.PrismLogger;
 
 import com.prismv.bbr.BbrCodec;
 import com.prismv.detint.DetInt;
@@ -36,7 +36,7 @@ public final class VideoProcessingPipeline {
             isNativeLoaded = true;
         } catch (Throwable e) {
             isNativeLoaded = false;
-            Log.w(TAG, "Native library prism_jni not available: " + e.getMessage());
+            PrismLogger.w(TAG, "Native library prism_jni not available: " + e.getMessage());
         }
     }
 
@@ -73,7 +73,7 @@ public final class VideoProcessingPipeline {
                     }
                 }
             } catch (Throwable e) {
-                Log.w(TAG, "Native metadata probe exception: " + e.getMessage());
+                PrismLogger.w(TAG, "Native metadata probe exception: " + e.getMessage());
             }
         }
         return meta;
@@ -218,6 +218,10 @@ public final class VideoProcessingPipeline {
         new Thread(() -> {
             try {
                 long t0 = System.currentTimeMillis();
+                String modeLog = (options != null && options.mode != null) ? options.mode : "H-ARCH";
+                PrismLogger.i(TAG, String.format(Locale.US,
+                        "compressVideo START: name=%s uri=%s mode=%s batch=%s (%d/%d)",
+                        displayName, String.valueOf(videoUri), modeLog, isBatch, batchIdx, batchTot));
                 notifyingListener.onProgress(2, 0, 0, "Ingesting video stream...");
 
                 File outDir = context.getExternalFilesDir(null);
@@ -231,16 +235,19 @@ public final class VideoProcessingPipeline {
                 String inputFilePath = resolveInputFilePath(context, videoUri, displayName);
 
                 if (inputFilePath == null) {
+                    PrismLogger.e(TAG, "Cannot resolve input file path for displayName=" + displayName + " uri=" + videoUri);
                     notifyingListener.onError("Cannot resolve input file path for: " + displayName);
                     return;
                 }
 
                 File inputFile = new File(inputFilePath);
                 long totalBytes = inputFile.length();
+                PrismLogger.i(TAG, "Resolved input path: " + inputFilePath + " size=" + totalBytes + " bytes");
 
                 // Disk Guard: verify at least 500 MB available storage
                 long freeSpace = com.prismv.worker.PrismMediaProcessingService.getFreeDiskSpaceBytes(context);
                 if (freeSpace < 500L * 1024 * 1024) {
+                    PrismLogger.e(TAG, "Disk Guard triggered: freeSpace=" + (freeSpace / (1024 * 1024)) + " MB (<500 MB required)");
                     notifyingListener.onError("Insufficient storage: " + (freeSpace / (1024 * 1024)) + " MB free. Minimum 500 MB required to prevent ENOSPC.");
                     return;
                 }
@@ -291,12 +298,14 @@ public final class VideoProcessingPipeline {
 
                                 @Override
                                 public void onLog(String message) {
-                                    Log.i(TAG, message);
+                                    PrismLogger.i(TAG, message);
                                 }
                             }
                     );
 
                     if (!success || !compVideoFile.exists() || compVideoFile.length() == 0) {
+                        PrismLogger.e(TAG, "Hardware compression failed: success=" + success
+                                + " exists=" + compVideoFile.exists() + " len=" + compVideoFile.length());
                         notifyingListener.onError("Hardware compression failed to produce output.");
                         return;
                     }
@@ -336,6 +345,10 @@ public final class VideoProcessingPipeline {
                             compPvlossFile.getAbsolutePath(), compVideoFile.getAbsolutePath()
                     );
 
+                    PrismLogger.i(TAG, String.format(Locale.US,
+                            "compressVideo COMPLETE [%s]: %s | %.2f MB -> %.2f MB (-%.1f%%) in %dms (%.2f MB/s) out=%s",
+                            mode, displayName, totalBytes / (1024.0 * 1024.0), compSizeBytes / (1024.0 * 1024.0),
+                            dossier.percentReduction, durationMs, dossier.throughputMBps, compVideoFile.getAbsolutePath()));
                     notifyingListener.onProgress(100, totalBytes, totalBytes, "Compression & Verification complete!");
                     notifyingListener.onComplete(dossier);
 
@@ -418,7 +431,7 @@ public final class VideoProcessingPipeline {
                 }
 
             } catch (Exception e) {
-                Log.e(TAG, "Streaming compression error: " + e.getMessage(), e);
+                PrismLogger.e(TAG, "Streaming compression error: " + e.getMessage(), e);
                 notifyingListener.onError("Compression error: " + e.getMessage());
             }
         }).start();
@@ -459,7 +472,7 @@ public final class VideoProcessingPipeline {
             }
             return cacheFile.getAbsolutePath();
         } catch (Exception e) {
-            Log.e(TAG, "Failed to copy content uri to cache", e);
+            PrismLogger.e(TAG, "Failed to copy content uri to cache", e);
             return null;
         }
     }

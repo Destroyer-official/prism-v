@@ -2,7 +2,7 @@ package com.prismv.engine;
 
 import android.app.ActivityManager;
 import android.content.Context;
-import android.util.Log;
+import com.prismv.logging.PrismLogger;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -75,12 +75,12 @@ public final class HardwareRamBufferPool {
             }
 
             sGlobalAllocatedBytes = totalAllocatedBytes;
-            Log.i(TAG, String.format(Locale.US,
+            PrismLogger.i(TAG, String.format(Locale.US,
                     "Acquired Hardware RAM Buffer Pool: %.1f MB native memory (Budget: %d MB, %d chunks)",
                     totalAllocatedBytes / (1024.0 * 1024.0), requestedBudgetMb, activeDirectBuffers.size()));
         } catch (OutOfMemoryError oom) {
             sGlobalAllocatedBytes = totalAllocatedBytes;
-            Log.w(TAG, "Native buffer allocation bounded by system memory: " + oom.getMessage());
+            PrismLogger.w(TAG, "Native buffer allocation bounded by system memory: " + oom.getMessage());
         }
     }
 
@@ -111,6 +111,6 @@ public final class HardwareRamBufferPool {
         totalAllocatedBytes = 0;
         sGlobalAllocatedBytes = 0;
         System.gc();
-        Log.d(TAG, "Hardware RAM Buffer Pool released.");
+        PrismLogger.d(TAG, "Hardware RAM Buffer Pool released.");
     }
 }

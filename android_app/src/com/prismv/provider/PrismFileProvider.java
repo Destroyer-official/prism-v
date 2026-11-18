@@ -9,14 +9,17 @@ import android.os.Environment;
 import android.os.ParcelFileDescriptor;
 import android.provider.OpenableColumns;
 
+import com.prismv.logging.PrismLogger;
+
 import java.io.File;
 import java.io.FileNotFoundException;
 
 /**
- * Clean-room ContentProvider for sharing videos and compressed containers
- * with external apps (Samsung Gallery, VLC, WhatsApp, Google Photos, etc.)
+ * Clean-room ContentProvider for sharing videos, compressed containers, and diagnostic logs
+ * with external apps (Samsung Gallery, VLC, WhatsApp, Telegram, Gmail, Google Photos, etc.)
  */
 public class PrismFileProvider extends ContentProvider {
+    private static final String TAG = "PrismFileProvider";
     public static final String AUTHORITY = "com.prismv.provider";
 
     @Override
@@ -39,6 +42,18 @@ public class PrismFileProvider extends ContentProvider {
         File direct = new File(fileName);
         if (direct.isAbsolute() && direct.exists()) return direct;
 
+        // 0b. Diagnostic log directories (external & internal)
+        File extDir = getContext().getExternalFilesDir(null);
+        if (extDir != null) {
+            File extLogFile = new File(new File(extDir, PrismLogger.LOGS_SUBDIR), fileName);
+            if (extLogFile.exists()) return extLogFile;
+        }
+        File intLogFile = new File(new File(getContext().getFilesDir(), PrismLogger.LOGS_SUBDIR), fileName);
+        if (intLogFile.exists()) return intLogFile;
+
+        File intCrashFile = new File(new File(new File(getContext().getFilesDir(), PrismLogger.LOGS_SUBDIR), PrismLogger.CRASHES_SUBDIR), fileName);
+        if (intCrashFile.exists()) return intCrashFile;
+
         // 1. Check public Movies/Prism-V/
         File pubFile = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "Prism-V/" + fileName);
         if (pubFile.exists()) return pubFile;
@@ -48,7 +63,7 @@ public class PrismFileProvider extends ContentProvider {
         if (appMovieFile.exists()) return appMovieFile;
 
         // 3. Check external files dir
-        File extFile = new File(getContext().getExternalFilesDir(null), fileName);
+        File extFile = new File(extDir, fileName);
         if (extFile.exists()) return extFile;
 
         // 4. Check internal files dir
@@ -70,9 +85,11 @@ public class PrismFileProvider extends ContentProvider {
 
         File file = resolveFile(fileName);
         if (file == null || !file.exists()) {
+            PrismLogger.w(TAG, "openFile not found: uri=" + uri + " fileName=" + fileName);
             throw new FileNotFoundException("File not found: " + fileName);
         }
 
+        PrismLogger.d(TAG, "openFile serving: " + file.getAbsolutePath() + " (" + file.length() + " bytes)");
         return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
     }
 
@@ -87,6 +104,9 @@ public class PrismFileProvider extends ContentProvider {
             if (lower.endsWith(".mov")) return "video/quicktime";
             if (lower.endsWith(".m4a")) return "audio/mp4";
             if (lower.endsWith(".opus")) return "audio/opus";
+            if (lower.endsWith(".txt") || lower.endsWith(".log")) return "text/plain";
+            if (lower.endsWith(".json")) return "application/json";
+            if (lower.endsWith(".zip")) return "application/zip";
             if (lower.endsWith(".pvloss")) return "application/octet-stream";
         }
         return "application/octet-stream";

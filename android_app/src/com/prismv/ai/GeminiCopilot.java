@@ -8,7 +8,7 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
-import android.util.Log;
+import com.prismv.logging.PrismLogger;
 
 import com.prismv.ui.PrismHud;
 import com.prismv.ui.PrismPreferences;
@@ -57,7 +57,8 @@ public class GeminiCopilot {
         public String codec = "AVC (H.264)";
         public String audioDna = "Stereo 48.0 kHz • AAC-LC @ 192 kbps";
         public String colorStandard = "BT.709 SDR (Rec.709 8-bit)";
-        public String deviceModel = "Samsung Galaxy SM-E156B (Android 14)";
+        public String deviceModel = android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL
+                + " (Android " + android.os.Build.VERSION.RELEASE + ")";
         public String activeProfile = "H-ARCH";
         public String activeContainer = "MP4";
         public String activeAspectRatio = "No Change";
@@ -128,8 +129,12 @@ public class GeminiCopilot {
     public static void query(Context context, String userQuery, VideoContext vCtx, CopilotCallback callback) {
         PrismPreferences prefs = PrismPreferences.get(context);
         String apiKey = prefs.getGeminiApiKey();
+        boolean useCloud = (apiKey != null && !apiKey.trim().isEmpty());
+        PrismLogger.i(TAG, "Copilot query: route=" + (useCloud ? "CLOUD_API" : "ON_DEVICE")
+                + " promptLen=" + (userQuery != null ? userQuery.length() : 0)
+                + " file=" + (vCtx != null ? vCtx.fileName : "null"));
 
-        if (apiKey != null && !apiKey.trim().isEmpty()) {
+        if (useCloud) {
             queryLiveGeminiApi(apiKey.trim(), userQuery, vCtx, callback, context);
         } else {
             // 100% Real Device Gemini On-Device Neural Intelligence Core
@@ -176,7 +181,7 @@ public class GeminiCopilot {
             context.startActivity(intent);
             launched = true;
         } catch (Exception e) {
-            Log.d(TAG, "Direct bard intent failed: " + e.getMessage());
+            PrismLogger.d(TAG, "Direct bard intent failed: " + e.getMessage());
         }
 
         if (!launched) {
@@ -188,7 +193,7 @@ public class GeminiCopilot {
                     launched = true;
                 }
             } catch (Exception e) {
-                Log.d(TAG, "Launch intent failed: " + e.getMessage());
+                PrismLogger.d(TAG, "Launch intent failed: " + e.getMessage());
             }
         }
 
@@ -300,11 +305,11 @@ public class GeminiCopilot {
                     }
                     throw new Exception("Empty candidate response from Gemini API");
                 } else {
-                    Log.w(TAG, "Gemini API HTTP " + code + ", failing over to Device Gemini engine");
+                    PrismLogger.w(TAG, "Gemini API HTTP " + code + ", failing over to Device Gemini engine");
                     mainHandler.post(() -> queryOnDeviceDiagnosticEngine(userQuery, vCtx, callback));
                 }
             } catch (Exception e) {
-                Log.e(TAG, "Gemini API network issue: " + e.getMessage() + ", falling over to Device Gemini");
+                PrismLogger.e(TAG, "Gemini API network issue: " + e.getMessage() + ", falling over to Device Gemini");
                 mainHandler.post(() -> queryOnDeviceDiagnosticEngine(userQuery, vCtx, callback));
             } finally {
                 if (conn != null) conn.disconnect();

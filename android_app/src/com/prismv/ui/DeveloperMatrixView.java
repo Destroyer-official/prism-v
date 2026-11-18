@@ -21,6 +21,7 @@ import android.widget.TextView;
 import com.prismv.bbr.BbrCodec;
 import com.prismv.detint.DetInt;
 import com.prismv.engine.VideoProcessingPipeline;
+import com.prismv.logging.PrismLogger;
 import com.prismv.transaction.VerifiedReplacement;
 import com.prismv.vfs.PrismVfsProxy;
 
@@ -98,7 +99,46 @@ public class DeveloperMatrixView extends LinearLayout {
         addView(buildDeviceCard(context));
         addView(buildEncoderCard(context));
         addView(buildBenchmarkAndTelemetryCard(context));
+        addView(buildDiagnosticLogsCard(context));
         addView(buildSelfTestCard(context));
+    }
+
+    private LinearLayout buildDiagnosticLogsCard(Context context) {
+        LinearLayout card = createCard(context, "FULL DIAGNOSTIC LOGS & BUG EXPORT");
+
+        PrismLogger.LogStats stats = PrismLogger.getStats(context);
+        TextView note = new TextView(context);
+        note.setText(String.format(Locale.US,
+                "Full persistent logs across all components (%.1f KB stored • %d session entries • %d crash reports). Download or share if any issue occurs.",
+                stats.totalBytes / 1024.0, stats.sessionLines, stats.crashCount));
+        note.setTextColor(Color.parseColor("#94A3B8"));
+        note.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        note.setPadding(0, 0, 0, dp(10));
+        card.addView(note);
+
+        Button btnDownload = new Button(context);
+        btnDownload.setText("Download Full Logs (.txt)");
+        btnDownload.setTextColor(Color.WHITE);
+        btnDownload.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        btnDownload.setTypeface(Typeface.DEFAULT_BOLD);
+        btnDownload.setBackground(createRoundedDrawable(Color.parseColor("#0284C7"), Color.parseColor("#38BDF8"), dp(1), dp(10)));
+        btnDownload.setOnClickListener(v -> LogViewerDialog.triggerDownloadLogs(context, false));
+        LinearLayout.LayoutParams lp1 = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(42));
+        lp1.setMargins(0, 0, 0, dp(8));
+        btnDownload.setLayoutParams(lp1);
+        card.addView(btnDownload);
+
+        Button btnView = new Button(context);
+        btnView.setText("View Live Logs / Share to Developer");
+        btnView.setTextColor(Color.WHITE);
+        btnView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        btnView.setTypeface(Typeface.DEFAULT_BOLD);
+        btnView.setBackground(createRoundedDrawable(Color.parseColor("#1E293B"), Color.parseColor("#334155"), dp(1), dp(10)));
+        btnView.setOnClickListener(v -> LogViewerDialog.show(context));
+        btnView.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(42)));
+        card.addView(btnView);
+
+        return card;
     }
 
     private LinearLayout buildBenchmarkAndTelemetryCard(Context context) {
@@ -288,6 +328,7 @@ public class DeveloperMatrixView extends LinearLayout {
     }
 
     private void executeSelfTests() {
+        PrismLogger.i("DeveloperMatrix", "Starting " + SELF_TEST_COUNT + " local self-tests...");
         btnRunTests.setEnabled(false);
         pbTesting.setVisibility(VISIBLE);
         pbTesting.setProgress(0);
@@ -394,6 +435,11 @@ public class DeveloperMatrixView extends LinearLayout {
     }
 
     private void postResult(String name, boolean passed, int progress) {
+        if (passed) {
+            PrismLogger.i("DeveloperMatrix", "Self-test [" + progress + "/" + SELF_TEST_COUNT + "] PASS: " + name);
+        } else {
+            PrismLogger.e("DeveloperMatrix", "Self-test [" + progress + "/" + SELF_TEST_COUNT + "] FAIL: " + name);
+        }
         handler.post(() -> {
             if (passed) passedChecks++;
 
@@ -412,11 +458,13 @@ public class DeveloperMatrixView extends LinearLayout {
         btnRunTests.setEnabled(true);
         pbTesting.setVisibility(GONE);
         int failed = SELF_TEST_COUNT - passedChecks;
+        PrismLogger.i("DeveloperMatrix", "Self-tests finished: " + passedChecks + "/" + SELF_TEST_COUNT + " passed (failed=" + failed + ")");
         tvInvariantSummary.setText(String.format(Locale.US, "%d of %d checks passed", passedChecks, SELF_TEST_COUNT));
         tvInvariantSummary.setTextColor(failed == 0 ? Color.parseColor("#34D399") : Color.parseColor("#EF4444"));
     }
 
     private void finishRunWithError(Exception e) {
+        PrismLogger.e("DeveloperMatrix", "Self-tests aborted with error: " + e.getMessage(), e);
         btnRunTests.setEnabled(true);
         pbTesting.setVisibility(GONE);
         tvInvariantSummary.setText("Self-test error: " + e.getMessage());

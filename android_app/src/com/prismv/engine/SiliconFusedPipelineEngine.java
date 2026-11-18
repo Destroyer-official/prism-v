@@ -1,7 +1,7 @@
 package com.prismv.engine;
 
 import android.os.Build;
-import android.util.Log;
+import com.prismv.logging.PrismLogger;
 
 /**
  * Frontier 5: Silicon-Fused Zero-Copy Heterogeneous Pipeline Engine (Java / Android NDK).
@@ -124,7 +124,7 @@ public final class SiliconFusedPipelineEngine {
             float[] raw = VideoProcessingPipeline.nativeGetFrontier5Metrics(width, height);
             return new SiliconPowerProfile(raw);
         } catch (Throwable t) {
-            Log.w(TAG, "Failed to query native Frontier 5 metrics: " + t.getMessage());
+            PrismLogger.w(TAG, "Failed to query native Frontier 5 metrics: " + t.getMessage());
             return new SiliconPowerProfile(null);
         }
     }
@@ -137,7 +137,7 @@ public final class SiliconFusedPipelineEngine {
             byte[] combined = VideoProcessingPipeline.nativeProcessFrontier5Frame(rawLumaFrame, width, height);
             return new ProcessedFrameResult(combined);
         } catch (Throwable t) {
-            Log.e(TAG, "Frontier 5 frame processing error: " + t.getMessage());
+            PrismLogger.e(TAG, "Frontier 5 frame processing error: " + t.getMessage());
             return new ProcessedFrameResult(null);
         }
     }
@@ -149,7 +149,7 @@ public final class SiliconFusedPipelineEngine {
         try {
             return VideoProcessingPipeline.nativeExecuteVulkanLanczos5(srcPlane, srcW, srcH, dstW, dstH);
         } catch (Throwable t) {
-            Log.e(TAG, "Vulkan Lanczos-5 execution error: " + t.getMessage());
+            PrismLogger.e(TAG, "Vulkan Lanczos-5 execution error: " + t.getMessage());
             return null;
         }
     }
@@ -161,7 +161,7 @@ public final class SiliconFusedPipelineEngine {
         try {
             return VideoProcessingPipeline.nativeMuxFrontier5Container(baseNalu, residualPayload, afgsParams, width, height, ptsMs);
         } catch (Throwable t) {
-            Log.e(TAG, "Frontier 5 container mux error: " + t.getMessage());
+            PrismLogger.e(TAG, "Frontier 5 container mux error: " + t.getMessage());
             return null;
         }
     }
@@ -180,7 +180,7 @@ public final class SiliconFusedPipelineEngine {
         try {
             return VideoProcessingPipeline.nativeSetResourceConstraints(maxRamMb, cpuMode, enableGpu, powerPriority);
         } catch (Throwable t) {
-            Log.w(TAG, "nativeSetResourceConstraints fallback: " + t.getMessage());
+            PrismLogger.w(TAG, "nativeSetResourceConstraints fallback: " + t.getMessage());
             return true;
         }
     }
@@ -195,7 +195,7 @@ public final class SiliconFusedPipelineEngine {
         try {
             return VideoProcessingPipeline.nativeApplyThreadAffinity(totalCores);
         } catch (Throwable t) {
-            Log.w(TAG, "nativeApplyThreadAffinity fallback: " + t.getMessage());
+            PrismLogger.w(TAG, "nativeApplyThreadAffinity fallback: " + t.getMessage());
             return true;
         }
     }
@@ -208,7 +208,7 @@ public final class SiliconFusedPipelineEngine {
         try {
             return VideoProcessingPipeline.nativeEvaluateThermalHeadroom(headroom, timeMs);
         } catch (Throwable t) {
-            Log.w(TAG, "nativeEvaluateThermalHeadroom fallback: " + t.getMessage());
+            PrismLogger.w(TAG, "nativeEvaluateThermalHeadroom fallback: " + t.getMessage());
             return 3;
         }
     }
@@ -220,7 +220,7 @@ public final class SiliconFusedPipelineEngine {
         try {
             return VideoProcessingPipeline.nativeGetThermalGear();
         } catch (Throwable t) {
-            Log.w(TAG, "nativeGetThermalGear fallback: " + t.getMessage());
+            PrismLogger.w(TAG, "nativeGetThermalGear fallback: " + t.getMessage());
             return 3;
         }
     }
@@ -232,7 +232,7 @@ public final class SiliconFusedPipelineEngine {
         try {
             return VideoProcessingPipeline.nativeGetTilePoolStats();
         } catch (Throwable t) {
-            Log.w(TAG, "nativeGetTilePoolStats fallback: " + t.getMessage());
+            PrismLogger.w(TAG, "nativeGetTilePoolStats fallback: " + t.getMessage());
             return new long[]{0, 512L * 1024 * 1024, 0};
         }
     }

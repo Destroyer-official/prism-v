@@ -8,7 +8,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
-import android.util.Log;
+import com.prismv.logging.PrismLogger;
 
 import com.prismv.scheduler.PrismScheduler;
 import com.prismv.storage.PrismWorkJournal;
@@ -36,7 +36,7 @@ public class PrismJobService extends JobService {
         try {
             JobScheduler js = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
             if (js == null) {
-                Log.w(TAG, "JobScheduler unavailable on this device.");
+                PrismLogger.w(TAG, "JobScheduler unavailable on this device.");
                 return;
             }
 
@@ -61,15 +61,15 @@ public class PrismJobService extends JobService {
             builder.setOverrideDeadline(30 * 60 * 1000L);
 
             int result = js.schedule(builder.build());
-            Log.i(TAG, "[JobScheduler] Scheduled handoff job " + JOB_ID_RESUME + " (result=" + result + ")");
+            PrismLogger.i(TAG, "[JobScheduler] Scheduled handoff job " + JOB_ID_RESUME + " (result=" + result + ")");
         } catch (Exception e) {
-            Log.e(TAG, "[JobScheduler] Failed to schedule resume job: " + e.getMessage(), e);
+            PrismLogger.e(TAG, "[JobScheduler] Failed to schedule resume job: " + e.getMessage(), e);
         }
     }
 
     @Override
     public boolean onStartJob(final JobParameters params) {
-        Log.i(TAG, "[JobScheduler] onStartJob triggered for job ID: " + params.getJobId());
+        PrismLogger.i(TAG, "[JobScheduler] onStartJob triggered for job ID: " + params.getJobId());
 
         workerThread = new Thread(() -> {
             boolean reschedule = false;
@@ -77,13 +77,13 @@ public class PrismJobService extends JobService {
                 PrismWorkJournal journal = PrismWorkJournal.get(getApplicationContext());
                 List<PrismWorkJournal.JournalEntry> interrupted = journal.getInterruptedJobs();
 
-                Log.i(TAG, "[JobScheduler] Found " + interrupted.size() + " interrupted jobs in WorkJournal.");
+                PrismLogger.i(TAG, "[JobScheduler] Found " + interrupted.size() + " interrupted jobs in WorkJournal.");
 
                 if (!interrupted.isEmpty()) {
                     // Check if conditions permit running right now
                     PrismScheduler.ScheduleStatus status = PrismScheduler.evaluateStatus(getApplicationContext());
                     if (status.canRunNow) {
-                        Log.i(TAG, "[JobScheduler] Environment ready (" + status.statusMessage + "). Resuming foreground service.");
+                        PrismLogger.i(TAG, "[JobScheduler] Environment ready (" + status.statusMessage + "). Resuming foreground service.");
                         java.util.ArrayList<String> resumePaths = new java.util.ArrayList<>();
                         for (PrismWorkJournal.JournalEntry entry : interrupted) {
                             if (entry.inputPath != null && !resumePaths.contains(entry.inputPath)) {
@@ -98,19 +98,19 @@ public class PrismJobService extends JobService {
                             try {
                                 getApplicationContext().startForegroundService(serviceIntent);
                             } catch (Exception e) {
-                                Log.w(TAG, "Cannot startForegroundService from background job: " + e.getMessage());
+                                PrismLogger.w(TAG, "Cannot startForegroundService from background job: " + e.getMessage());
                                 reschedule = true;
                             }
                         } else {
                             getApplicationContext().startService(serviceIntent);
                         }
                     } else {
-                        Log.i(TAG, "[JobScheduler] Conditions not met (" + status.statusMessage + "). Will reschedule.");
+                        PrismLogger.i(TAG, "[JobScheduler] Conditions not met (" + status.statusMessage + "). Will reschedule.");
                         reschedule = true;
                     }
                 }
             } catch (Exception e) {
-                Log.e(TAG, "[JobScheduler] Error processing interrupted jobs: " + e.getMessage(), e);
+                PrismLogger.e(TAG, "[JobScheduler] Error processing interrupted jobs: " + e.getMessage(), e);
                 reschedule = true;
             } finally {
                 jobFinished(params, reschedule);
@@ -123,7 +123,7 @@ public class PrismJobService extends JobService {
 
     @Override
     public boolean onStopJob(JobParameters params) {
-        Log.w(TAG, "[JobScheduler] onStopJob triggered. Work interrupted; requesting reschedule.");
+        PrismLogger.w(TAG, "[JobScheduler] onStopJob triggered. Work interrupted; requesting reschedule.");
         if (workerThread != null && workerThread.isAlive()) {
             workerThread.interrupt();
         }

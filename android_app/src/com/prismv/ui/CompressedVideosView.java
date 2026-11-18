@@ -1531,7 +1531,7 @@ public class CompressedVideosView extends LinearLayout {
                 previewHandler.post(updateSeekRunnable);
             });
         } catch (Exception e) {
-            android.util.Log.e("CompressedVideosView", "Failed to start preview VideoView: " + e.getMessage());
+            com.prismv.logging.PrismLogger.e("CompressedVideosView", "Failed to start preview VideoView: " + e.getMessage());
         }
 
         View.OnClickListener togglePlay = v -> {

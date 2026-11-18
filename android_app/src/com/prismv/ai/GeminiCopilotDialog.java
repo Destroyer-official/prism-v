@@ -215,7 +215,11 @@ public final class GeminiCopilotDialog {
         inputBar.addView(etInput);
 
         Button btnSend = new Button(context);
-        btnSend.setText("");
+        btnSend.setText("➤");
+        btnSend.setPadding(0, 0, 0, 0);
+        btnSend.setMinWidth(0);
+        btnSend.setMinimumWidth(0);
+        btnSend.setGravity(Gravity.CENTER);
         btnSend.setTextColor(Color.WHITE);
         btnSend.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         btnSend.setTypeface(Typeface.DEFAULT_BOLD);

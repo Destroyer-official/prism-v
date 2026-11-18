@@ -216,6 +216,7 @@ public class DuoComparisonPlayerView extends LinearLayout {
         public int bitrateKbps = 0;
         public float fps = 30.0f;
         public String codec = "AVC / H.264";
+        public String audioCodec = "AAC";
         public String aspectLabel = "16:9 Cinema";
     }
 
@@ -458,6 +459,26 @@ public class DuoComparisonPlayerView extends LinearLayout {
         playerContainer
                 .setBackground(createRoundedDrawable(Color.BLACK, ThemeStyles.COLOR_BORDER_SUBTLE, dp(1), dp(18)));
         playerContainer.setClipToOutline(true);
+        playerContainer.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            int newW = r - l;
+            int newH = b - t;
+            int oldW = or - ol;
+            int oldH = ob - ot;
+            if (newW > 0 && newH > 0 && (newW != oldW || newH != oldH)) {
+                int targetX = (curtainPositionX > 0 && oldW > 0)
+                        ? Math.max(1, Math.min(newW - 1, (int) ((curtainPositionX / (float) oldW) * newW)))
+                        : (newW / 2);
+                post(() -> {
+                    if (currentMode == ComparisonMode.SIDE_BY_SIDE
+                            || currentMode == ComparisonMode.SPLIT_CURTAIN
+                            || currentMode == ComparisonMode.SPATIAL_6DOF_CURTAIN
+                            || currentMode == ComparisonMode.FRONTIER5_SILICON) {
+                        updateCurtainPosition(targetX);
+                    }
+                    applyUnifiedTransform();
+                });
+            }
+        });
 
         // Layer 1: Compressed Video (Bottom Base)
         containerCompressed = new FrameLayout(context);
@@ -637,8 +658,8 @@ public class DuoComparisonPlayerView extends LinearLayout {
                 createRoundedDrawable(Color.parseColor("#E6091020"), ThemeStyles.COLOR_BORDER_SUBTLE, dp(1), dp(10)));
         FrameLayout.LayoutParams badgeParams = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        badgeParams.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
-        badgeParams.setMargins(0, dp(10), 0, 0);
+        badgeParams.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+        badgeParams.setMargins(0, 0, 0, dp(8));
         badgeCenterSync.setLayoutParams(badgeParams);
         badgeCenterSync.setOnClickListener(v -> forceResync());
         playerContainer.addView(badgeCenterSync);
@@ -910,7 +931,7 @@ public class DuoComparisonPlayerView extends LinearLayout {
         actionRow.setPadding(0, dp(4), 0, 0);
 
         btnAudioToggle = new Button(context);
-        btnAudioToggle.setText("Audio: Compressed (Opus)");
+        btnAudioToggle.setText("Audio: Compressed (AAC)");
         btnAudioToggle.setTextColor(ThemeStyles.COLOR_CYAN_TEXT);
         btnAudioToggle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         btnAudioToggle.setTypeface(Typeface.DEFAULT_BOLD);
@@ -2298,7 +2319,7 @@ public class DuoComparisonPlayerView extends LinearLayout {
                     compPaused = true;
                 }
             } catch (Exception e) {
-                android.util.Log.w("DuoPlayer", "pause compressed failed: " + e.getMessage());
+                com.prismv.logging.PrismLogger.w("DuoPlayer", "pause compressed failed: " + e.getMessage());
             }
             try {
                 if (playerOriginal != null && isOriginalPrepared) {
@@ -2306,7 +2327,7 @@ public class DuoComparisonPlayerView extends LinearLayout {
                     origPaused = true;
                 }
             } catch (Exception e) {
-                android.util.Log.w("DuoPlayer", "pause original failed: " + e.getMessage());
+                com.prismv.logging.PrismLogger.w("DuoPlayer", "pause original failed: " + e.getMessage());
             }
 
             // SAFETY NET: verify both are actually paused — if not, force stop
@@ -2449,7 +2470,7 @@ public class DuoComparisonPlayerView extends LinearLayout {
         boolean compReady = (playerCompressed != null && isCompressedPrepared);
 
         if (!origReady && !compReady) {
-            android.util.Log.w("DuoPlayer", "startBothPlayers: no prepared players");
+            com.prismv.logging.PrismLogger.w("DuoPlayer", "startBothPlayers: no prepared players");
             return;
         }
 
@@ -2471,20 +2492,20 @@ public class DuoComparisonPlayerView extends LinearLayout {
             if (origReady)
                 playerOriginal.start();
         } catch (Exception e) {
-            android.util.Log.w("DuoPlayer", "start orig failed: " + e.getMessage());
+            com.prismv.logging.PrismLogger.w("DuoPlayer", "start orig failed: " + e.getMessage());
             origReady = false;
         }
         try {
             if (compReady)
                 playerCompressed.start();
         } catch (Exception e) {
-            android.util.Log.w("DuoPlayer", "start comp failed: " + e.getMessage());
+            com.prismv.logging.PrismLogger.w("DuoPlayer", "start comp failed: " + e.getMessage());
             compReady = false;
         }
 
         // If neither started successfully, abort
         if (!origReady && !compReady) {
-            android.util.Log.e("DuoPlayer", "Both players failed to start");
+            com.prismv.logging.PrismLogger.e("DuoPlayer", "Both players failed to start");
             return;
         }
 
@@ -2798,13 +2819,14 @@ public class DuoComparisonPlayerView extends LinearLayout {
                 }
                 PrismHud.showSuccess(act, "Listening to: Uncompressed Master Audio");
             } else {
-                btnAudioToggle.setText("Audio: Compressed (Opus)");
+                String aLabel = (compMeta != null && compMeta.audioCodec != null) ? compMeta.audioCodec : "AAC";
+                btnAudioToggle.setText("Audio: Compressed (" + aLabel + ")");
                 btnAudioToggle.setTextColor(ThemeStyles.COLOR_CYAN_TEXT);
                 if (btnCinemaAudio != null) {
-                    btnCinemaAudio.setText("Opus");
+                    btnCinemaAudio.setText(aLabel);
                     btnCinemaAudio.setTextColor(ThemeStyles.COLOR_CYAN_TEXT);
                 }
-                PrismHud.showInfo(act, "Listening to: Optimized Opus Audio");
+                PrismHud.showInfo(act, "Listening to: Optimized " + aLabel + " Audio");
             }
         }
     }
@@ -2922,6 +2944,12 @@ public class DuoComparisonPlayerView extends LinearLayout {
             case HOLD_TO_PEEK:
                 isSpatialActive = false;
                 if (spatialOverlay != null) spatialOverlay.setVisibility(GONE);
+                containerOriginal.setClipBounds(null);
+                containerOriginal.setTranslationX(0);
+                containerOriginal.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+                containerCompressed.setClipBounds(null);
+                containerCompressed.setTranslationX(0);
+                containerCompressed.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
                 containerCompressed.setVisibility(VISIBLE);
                 containerOriginal.setVisibility(INVISIBLE); // INVISIBLE preserves SurfaceTexture without recreating
                 dividerLine.setVisibility(GONE);
@@ -2962,6 +2990,10 @@ public class DuoComparisonPlayerView extends LinearLayout {
             case SOLO_OUTPUT:
                 isSpatialActive = false;
                 if (spatialOverlay != null) spatialOverlay.setVisibility(GONE);
+                containerOriginal.setClipBounds(null);
+                containerCompressed.setClipBounds(null);
+                containerCompressed.setTranslationX(0);
+                containerCompressed.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
                 containerCompressed.setVisibility(VISIBLE);
                 containerOriginal.setVisibility(INVISIBLE); // INVISIBLE preserves SurfaceTexture
                 dividerLine.setVisibility(GONE);
@@ -2982,6 +3014,9 @@ public class DuoComparisonPlayerView extends LinearLayout {
             case SOLO_ORIGINAL:
                 isSpatialActive = false;
                 if (spatialOverlay != null) spatialOverlay.setVisibility(GONE);
+                containerOriginal.setClipBounds(null);
+                containerOriginal.setTranslationX(0);
+                containerOriginal.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
                 containerOriginal.setVisibility(VISIBLE);
                 containerCompressed.setVisibility(INVISIBLE); // INVISIBLE preserves SurfaceTexture
                 dividerLine.setVisibility(GONE);
@@ -3128,32 +3163,47 @@ public class DuoComparisonPlayerView extends LinearLayout {
     }
 
     public void updateCurtainPosition(int x) {
-        curtainPositionX = x;
         int parentW = playerContainer.getWidth();
+        int parentH = playerContainer.getHeight();
         if (parentW <= 0 && getWidth() > 0)
             parentW = getWidth();
         if (parentW <= 0)
             parentW = (x > 0 ? x * 2 : 1000);
+        if (parentH <= 0)
+            parentH = dp(270);
+
+        int clampedX = Math.max(1, Math.min(parentW - 1, x));
+        curtainPositionX = clampedX;
 
         if (currentMode == ComparisonMode.SIDE_BY_SIDE) {
+            containerOriginal.setClipBounds(null);
+            containerCompressed.setClipBounds(null);
             int halfW = parentW / 2;
-            FrameLayout.LayoutParams origParams = new FrameLayout.LayoutParams(halfW,
-                    ViewGroup.LayoutParams.MATCH_PARENT);
-            containerOriginal.setLayoutParams(origParams);
+            ViewGroup.LayoutParams origLp = containerOriginal.getLayoutParams();
+            if (origLp == null || origLp.width != halfW) {
+                containerOriginal.setLayoutParams(new FrameLayout.LayoutParams(halfW,
+                        ViewGroup.LayoutParams.MATCH_PARENT));
+            }
             containerOriginal.setTranslationX(0);
 
-            FrameLayout.LayoutParams texOrigParams = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT);
-            textureOriginal.setLayoutParams(texOrigParams);
+            ViewGroup.LayoutParams texOrigLp = textureOriginal.getLayoutParams();
+            if (texOrigLp == null || texOrigLp.width != ViewGroup.LayoutParams.MATCH_PARENT) {
+                textureOriginal.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT));
+            }
 
-            FrameLayout.LayoutParams compParams = new FrameLayout.LayoutParams(halfW,
-                    ViewGroup.LayoutParams.MATCH_PARENT);
-            containerCompressed.setLayoutParams(compParams);
+            ViewGroup.LayoutParams compLp = containerCompressed.getLayoutParams();
+            if (compLp == null || compLp.width != (parentW - halfW)) {
+                containerCompressed.setLayoutParams(new FrameLayout.LayoutParams(parentW - halfW,
+                        ViewGroup.LayoutParams.MATCH_PARENT));
+            }
             containerCompressed.setTranslationX(halfW);
 
-            FrameLayout.LayoutParams texCompParams = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT);
-            textureCompressed.setLayoutParams(texCompParams);
+            ViewGroup.LayoutParams texCompLp = textureCompressed.getLayoutParams();
+            if (texCompLp == null || texCompLp.width != ViewGroup.LayoutParams.MATCH_PARENT) {
+                textureCompressed.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT));
+            }
 
             dividerLine.setVisibility(VISIBLE);
             dividerLine.setTranslationX(halfW);
@@ -3162,32 +3212,45 @@ public class DuoComparisonPlayerView extends LinearLayout {
             return;
         }
 
-        // Standard Split Curtain or other modes
+        // Split Curtain / Spatial / Frontier 5:
+        // Keep BOTH TextureView containers full-width (zero SurfaceTexture relayout churn)
+        // and use GPU scissor clipBounds to reveal Source on [0..clampedX] over Compressed [clampedX..parentW].
         containerCompressed.setTranslationX(0);
-        FrameLayout.LayoutParams compParams = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT);
-        containerCompressed.setLayoutParams(compParams);
-
-        FrameLayout.LayoutParams texCompParams = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT);
-        textureCompressed.setLayoutParams(texCompParams);
+        containerCompressed.setClipBounds(null);
+        ViewGroup.LayoutParams compLp = containerCompressed.getLayoutParams();
+        if (compLp == null || compLp.width != ViewGroup.LayoutParams.MATCH_PARENT) {
+            containerCompressed.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+        }
+        ViewGroup.LayoutParams texCompLp = textureCompressed.getLayoutParams();
+        if (texCompLp == null || texCompLp.width != ViewGroup.LayoutParams.MATCH_PARENT) {
+            textureCompressed.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+        }
 
         containerOriginal.setTranslationX(0);
-        FrameLayout.LayoutParams origParams = new FrameLayout.LayoutParams(x, ViewGroup.LayoutParams.MATCH_PARENT);
-        containerOriginal.setLayoutParams(origParams);
+        ViewGroup.LayoutParams origLp = containerOriginal.getLayoutParams();
+        if (origLp == null || origLp.width != ViewGroup.LayoutParams.MATCH_PARENT) {
+            containerOriginal.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+        }
+        ViewGroup.LayoutParams texOrigLp = textureOriginal.getLayoutParams();
+        if (texOrigLp == null || texOrigLp.width != ViewGroup.LayoutParams.MATCH_PARENT) {
+            textureOriginal.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+        }
+        containerOriginal.setClipBounds(new android.graphics.Rect(0, 0, clampedX, parentH));
+        containerOriginal.invalidate();
 
-        FrameLayout.LayoutParams texParams = new FrameLayout.LayoutParams(parentW, ViewGroup.LayoutParams.MATCH_PARENT);
-        textureOriginal.setLayoutParams(texParams);
-
-        dividerLine.setTranslationX(x);
-        dividerHandle.setTranslationX(x - (dividerHandle.getWidth() > 0 ? dividerHandle.getWidth() / 2 : dp(24)));
+        dividerLine.setTranslationX(clampedX);
+        dividerHandle.setTranslationX(clampedX - (dividerHandle.getWidth() > 0 ? dividerHandle.getWidth() / 2 : dp(24)));
         if (currentMode == ComparisonMode.SPLIT_CURTAIN || currentMode == ComparisonMode.SPATIAL_6DOF_CURTAIN || currentMode == ComparisonMode.FRONTIER5_SILICON) {
             dividerLine.setVisibility(VISIBLE);
             dividerHandle.setVisibility(VISIBLE);
         }
 
         if (tvSplitRatio != null && parentW > 0) {
-            int pct = (int) ((x / (float) parentW) * 100);
+            int pct = (int) ((clampedX / (float) parentW) * 100);
             if (currentMode == ComparisonMode.FRONTIER5_SILICON) {
                 tvSplitRatio.setText(String.format(Locale.US, "BASE TRACK %d%%  ◀━━━ ⚡ ━━━▶  F5 RESIDUAL %d%%", pct, 100 - pct));
             } else {
@@ -3210,6 +3273,15 @@ public class DuoComparisonPlayerView extends LinearLayout {
     // VIDEO LOADING & SAMPLES
     // ==========================================
     public void loadVideoPair(Uri origUri, Uri compUri, String origName, String compName) {
+        com.prismv.logging.PrismLogger.i("DuoPlayer", "loadVideoPair: orig=" + origUri + " (" + origName + ") comp=" + compUri + " (" + compName + ")");
+        // Guard: if source URI is missing, fall back to Solo Output instead of showing a black left side / fake Curtain bar
+        if (origUri == null && compUri != null) {
+            loadOutputVideoSolo(compUri, compName != null ? compName : "● PRISM-V OPTIMIZED");
+            if (getContext() instanceof Activity) {
+                PrismHud.showInfo((Activity) getContext(), "Source video unavailable; playing compressed output solo.");
+            }
+            return;
+        }
         pauseIfPlaying();
         hideEmptyOverlay();
         releasePlayers();
@@ -3250,6 +3322,7 @@ public class DuoComparisonPlayerView extends LinearLayout {
     }
 
     public void loadSourceVideoOnly(Uri origUri, String origName) {
+        com.prismv.logging.PrismLogger.i("DuoPlayer", "loadSourceVideoOnly: orig=" + origUri + " (" + origName + ")");
         pauseIfPlaying();
         hideEmptyOverlay();
         releasePlayers();
@@ -3281,6 +3354,7 @@ public class DuoComparisonPlayerView extends LinearLayout {
     }
 
     public void loadOutputVideoSolo(Uri compUri, String compName) {
+        com.prismv.logging.PrismLogger.i("DuoPlayer", "loadOutputVideoSolo: comp=" + compUri + " (" + compName + ")");
         pauseIfPlaying();
         hideEmptyOverlay();
         releasePlayers();
@@ -3495,7 +3569,38 @@ public class DuoComparisonPlayerView extends LinearLayout {
             if (bStr != null)
                 meta.bitrateKbps = (int) (Long.parseLong(bStr) / 1000);
             if (mime != null) {
-                meta.codec = (mime.contains("hevc") || mime.contains("h265")) ? "HEVC / H.265" : "AVC / H.264";
+                meta.codec = (mime.contains("hevc") || mime.contains("h265")) ? "HEVC / H.265"
+                        : (mime.contains("av01") || mime.contains("av1")) ? "AV1"
+                        : (mime.contains("vp9")) ? "VP9" : "AVC / H.264";
+            }
+
+            // Probe actual video & audio track codecs via MediaExtractor (MMR MIMETYPE returns container 'video/mp4')
+            android.media.MediaExtractor probeEx = null;
+            try {
+                probeEx = new android.media.MediaExtractor();
+                probeEx.setDataSource(getContext(), uri, null);
+                int tc = probeEx.getTrackCount();
+                for (int i = 0; i < tc; i++) {
+                    android.media.MediaFormat tf = probeEx.getTrackFormat(i);
+                    String tm = tf.getString(android.media.MediaFormat.KEY_MIME);
+                    if (tm == null) continue;
+                    if (tm.startsWith("video/")) {
+                        if (tm.contains("hevc") || tm.contains("h265")) meta.codec = "HEVC / H.265";
+                        else if (tm.contains("av01") || tm.contains("av1")) meta.codec = "AV1";
+                        else if (tm.contains("vp9")) meta.codec = "VP9";
+                        else if (tm.contains("avc") || tm.contains("h264")) meta.codec = "AVC / H.264";
+                    } else if (tm.startsWith("audio/")) {
+                        if (tm.contains("opus")) meta.audioCodec = "OPUS";
+                        else if (tm.contains("mp4a") || tm.contains("aac")) meta.audioCodec = "AAC";
+                        else if (tm.contains("flac")) meta.audioCodec = "FLAC";
+                        else meta.audioCodec = tm.replace("audio/", "").toUpperCase(Locale.US);
+                    }
+                }
+            } catch (Exception ignored) {
+            } finally {
+                if (probeEx != null) {
+                    try { probeEx.release(); } catch (Exception ignored) {}
+                }
             }
 
             FpsExtractor.FpsResult fpsRes = FpsExtractor.detectFps(getContext(), uri,
@@ -3589,7 +3694,11 @@ public class DuoComparisonPlayerView extends LinearLayout {
                         : 0.0;
                 String pctStr = (savedPct > 0) ? String.format(Locale.US, " • -%.0f%%", savedPct) : "";
                 tvCompBitrate
-                        .setText("" + sizeStr + pctStr + " • " + (compMeta.codec.contains("HEVC") ? "HEVC" : "AVC"));
+                        .setText("" + sizeStr + pctStr + " • " + (compMeta.codec.contains("HEVC") ? "HEVC"
+                                : (compMeta.codec.contains("AV1") ? "AV1" : "AVC")));
+            }
+            if (btnAudioToggle != null && !isAudioOriginal && compMeta.audioCodec != null) {
+                btnAudioToggle.setText("Audio: Compressed (" + compMeta.audioCodec + ")");
             }
         }
         updateBottomTelemetryCard();
@@ -3724,9 +3833,10 @@ public class DuoComparisonPlayerView extends LinearLayout {
         post(() -> {
             applyUnifiedTransform();
             updateTimeDisplay();
-            // Blit initial frame 0 to both SurfaceTextures so thumbnails appear immediately
+            // Blit initial frame to both SurfaceTextures (seekTo(1) forces NuPlayer to decode frame 0
+            // instead of treating seekTo(0) at pos 0 as a no-op and leaving a black TextureView).
             if (!isPlaying) {
-                performSyncSeek(0, true, false);
+                performSyncSeek(1, true, false);
             }
         });
     }
@@ -3747,7 +3857,7 @@ public class DuoComparisonPlayerView extends LinearLayout {
 
             playerOriginal = new MediaPlayer();
             playerOriginal.setOnErrorListener((mp, what, extra) -> {
-                android.util.Log.w("DuoPlayer", "playerOriginal error: what=" + what + ", extra=" + extra);
+                com.prismv.logging.PrismLogger.w("DuoPlayer", "playerOriginal error: what=" + what + ", extra=" + extra);
                 isOriginalPrepared = false;
                 if (origRetryCount < MAX_RECOVER_ATTEMPTS) {
                     origRetryCount++;
@@ -3803,7 +3913,7 @@ public class DuoComparisonPlayerView extends LinearLayout {
             });
             playerOriginal.prepareAsync();
         } catch (Exception e) {
-            android.util.Log.e("DuoPlayer", "Failed to init playerOriginal: " + e.getMessage());
+            com.prismv.logging.PrismLogger.e("DuoPlayer", "Failed to init playerOriginal: " + e.getMessage());
             isOriginalPrepared = false;
             if (playerOriginal != null) {
                 try { playerOriginal.release(); } catch (Exception ignored) {}
@@ -3834,7 +3944,7 @@ public class DuoComparisonPlayerView extends LinearLayout {
 
             playerCompressed = new MediaPlayer();
             playerCompressed.setOnErrorListener((mp, what, extra) -> {
-                android.util.Log.w("DuoPlayer", "playerCompressed error: what=" + what + ", extra=" + extra);
+                com.prismv.logging.PrismLogger.w("DuoPlayer", "playerCompressed error: what=" + what + ", extra=" + extra);
                 isCompressedPrepared = false;
                 if (compRetryCount < MAX_RECOVER_ATTEMPTS) {
                     compRetryCount++;
@@ -3902,6 +4012,14 @@ public class DuoComparisonPlayerView extends LinearLayout {
                 if (playerCompressed != null && isCompressedPrepared) {
                     try {
                         playerCompressed.setSurface(surfaceCompressed);
+                        if (!isPlaying) {
+                            int pos = Math.max(1, playerCompressed.getCurrentPosition());
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                playerCompressed.seekTo(pos, MediaPlayer.SEEK_CLOSEST);
+                            } else {
+                                playerCompressed.seekTo(pos);
+                            }
+                        }
                     } catch (Exception ignored) {
                     }
                 }
@@ -3953,6 +4071,14 @@ public class DuoComparisonPlayerView extends LinearLayout {
                 if (playerOriginal != null && isOriginalPrepared) {
                     try {
                         playerOriginal.setSurface(surfaceOriginal);
+                        if (!isPlaying) {
+                            int pos = Math.max(1, playerOriginal.getCurrentPosition());
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                playerOriginal.seekTo(pos, MediaPlayer.SEEK_CLOSEST);
+                            } else {
+                                playerOriginal.seekTo(pos);
+                            }
+                        }
                     } catch (Exception ignored) {
                     }
                 }
@@ -4377,6 +4503,7 @@ public class DuoComparisonPlayerView extends LinearLayout {
     }
 
     public void releasePlayers() {
+        com.prismv.logging.PrismLogger.d("DuoPlayer", "releasePlayers() invoked (hadOrig=" + (playerOriginal != null) + ", hadComp=" + (playerCompressed != null) + ")");
         isPlaying = false;
         isOriginalPrepared = false;
         isCompressedPrepared = false;

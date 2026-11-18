@@ -2,6 +2,7 @@ package com.prismv.transaction;
 
 import com.prismv.bbr.BbrCodec;
 import com.prismv.detint.DetInt;
+import com.prismv.logging.PrismLogger;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -45,8 +46,10 @@ public final class VerifiedReplacement {
 
     public static TransactionResult executeTransaction(File sourceFile, File targetDir) {
         if (!sourceFile.exists()) {
+            PrismLogger.w("VerifiedReplacement", "executeTransaction aborted: source does not exist: " + sourceFile);
             return new TransactionResult(false, Stage.STAGE_0_STAGED, null, null, null, "Source file does not exist");
         }
+        PrismLogger.i("VerifiedReplacement", "executeTransaction START: src=" + sourceFile.getName() + " (" + sourceFile.length() + " bytes)");
 
         File tempCompressed = new File(targetDir, sourceFile.getName() + ".pvloss.tmp");
         File finalCompressed = new File(targetDir, sourceFile.getName() + ".pvloss");
@@ -71,6 +74,7 @@ public final class VerifiedReplacement {
             verHash = DetInt.toHexString(DetInt.computeSha256(decompressed));
 
             if (!origHash.equals(verHash)) {
+                PrismLogger.e("VerifiedReplacement", "SHA-256 verification FAILED: orig=" + origHash + " ver=" + verHash);
                 tempCompressed.delete();
                 return new TransactionResult(false, currentStage, origHash, verHash, null, "Hash verification failed: Corruption detected");
             }
@@ -92,10 +96,12 @@ public final class VerifiedReplacement {
             writeFile(journalFile, journalEntry.getBytes());
             currentStage = Stage.STAGE_4_CLEANUP;
 
+            PrismLogger.i("VerifiedReplacement", "executeTransaction COMMITTED: " + finalCompressed.getName() + " sha256=" + verHash);
             // STAGE 4: CLEANUP - Verified state reached
             return new TransactionResult(true, currentStage, origHash, verHash, journalFile.getAbsolutePath(), "Transaction 100% committed and verified");
 
         } catch (Exception e) {
+            PrismLogger.e("VerifiedReplacement", "executeTransaction error at stage " + currentStage + ": " + e.getMessage(), e);
             if (tempCompressed.exists()) {
                 tempCompressed.delete();
             }

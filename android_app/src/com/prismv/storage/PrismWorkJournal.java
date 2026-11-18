@@ -7,6 +7,8 @@ import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.util.Log;
 
+import com.prismv.logging.PrismLogger;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -79,11 +81,12 @@ public final class PrismWorkJournal extends SQLiteOpenHelper {
                 COL_ERROR + " TEXT" +
                 ")";
         db.execSQL(createTable);
-        Log.i(TAG, "Created SQLite work_journal database table.");
+        PrismLogger.i(TAG, "Created SQLite work_journal database table.");
     }
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        PrismLogger.w(TAG, "Upgrading work_journal DB from v" + oldVersion + " to v" + newVersion);
         db.execSQL("DROP TABLE IF EXISTS " + TABLE_JOBS);
         onCreate(db);
     }
@@ -101,8 +104,9 @@ public final class PrismWorkJournal extends SQLiteOpenHelper {
             cv.put(COL_STATUS, STATUS_RUNNING);
             cv.put(COL_UPDATED_MS, System.currentTimeMillis());
             db.insertWithOnConflict(TABLE_JOBS, null, cv, SQLiteDatabase.CONFLICT_REPLACE);
+            PrismLogger.i(TAG, "recordJobStart: jobId=" + jobId + " in=" + inputPath + " out=" + outputPath);
         } catch (Exception e) {
-            Log.e(TAG, "recordJobStart failed: " + e.getMessage(), e);
+            PrismLogger.e(TAG, "recordJobStart failed: " + e.getMessage(), e);
         }
     }
 
@@ -116,8 +120,9 @@ public final class PrismWorkJournal extends SQLiteOpenHelper {
             cv.put(COL_STATUS, STATUS_RUNNING);
             cv.put(COL_UPDATED_MS, System.currentTimeMillis());
             db.update(TABLE_JOBS, cv, COL_JOB_ID + "=?", new String[]{jobId});
+            PrismLogger.v(TAG, "updateCheckpoint: jobId=" + jobId + " ptsUs=" + ptsUs + " gop=" + gopIndex + " pct=" + percent + "%");
         } catch (Exception e) {
-            Log.e(TAG, "updateCheckpoint failed: " + e.getMessage(), e);
+            PrismLogger.e(TAG, "updateCheckpoint failed: " + e.getMessage(), e);
         }
     }
 
@@ -129,8 +134,9 @@ public final class PrismWorkJournal extends SQLiteOpenHelper {
             cv.put(COL_STATUS, STATUS_COMPLETED);
             cv.put(COL_UPDATED_MS, System.currentTimeMillis());
             db.update(TABLE_JOBS, cv, COL_JOB_ID + "=?", new String[]{jobId});
+            PrismLogger.i(TAG, "recordJobCompleted: jobId=" + jobId);
         } catch (Exception e) {
-            Log.e(TAG, "recordJobCompleted failed: " + e.getMessage(), e);
+            PrismLogger.e(TAG, "recordJobCompleted failed: " + e.getMessage(), e);
         }
     }
 
@@ -141,8 +147,9 @@ public final class PrismWorkJournal extends SQLiteOpenHelper {
             cv.put(COL_STATUS, STATUS_TIMEOUT);
             cv.put(COL_UPDATED_MS, System.currentTimeMillis());
             db.update(TABLE_JOBS, cv, COL_JOB_ID + "=?", new String[]{jobId});
+            PrismLogger.w(TAG, "recordJobTimeout: jobId=" + jobId);
         } catch (Exception e) {
-            Log.e(TAG, "recordJobTimeout failed: " + e.getMessage(), e);
+            PrismLogger.e(TAG, "recordJobTimeout failed: " + e.getMessage(), e);
         }
     }
 
@@ -154,9 +161,39 @@ public final class PrismWorkJournal extends SQLiteOpenHelper {
             cv.put(COL_ERROR, errorMessage);
             cv.put(COL_UPDATED_MS, System.currentTimeMillis());
             db.update(TABLE_JOBS, cv, COL_JOB_ID + "=?", new String[]{jobId});
+            PrismLogger.e(TAG, "recordJobFailed: jobId=" + jobId + " error=" + errorMessage);
         } catch (Exception e) {
-            Log.e(TAG, "recordJobFailed failed: " + e.getMessage(), e);
+            PrismLogger.e(TAG, "recordJobFailed failed: " + e.getMessage(), e);
         }
+    }
+
+    public synchronized List<JournalEntry> getRecentJobs(int limit) {
+        List<JournalEntry> list = new ArrayList<>();
+        try {
+            SQLiteDatabase db = getReadableDatabase();
+            Cursor c = db.query(TABLE_JOBS, null, null, null, null, null,
+                    COL_UPDATED_MS + " DESC", limit > 0 ? String.valueOf(limit) : null);
+            if (c != null) {
+                while (c.moveToNext()) {
+                    JournalEntry e = new JournalEntry();
+                    e.jobId = c.getString(c.getColumnIndexOrThrow(COL_JOB_ID));
+                    e.inputPath = c.getString(c.getColumnIndexOrThrow(COL_INPUT_PATH));
+                    e.outputPath = c.getString(c.getColumnIndexOrThrow(COL_OUTPUT_PATH));
+                    e.ptsCheckpointUs = c.getLong(c.getColumnIndexOrThrow(COL_PTS_US));
+                    e.gopIndex = c.getInt(c.getColumnIndexOrThrow(COL_GOP_INDEX));
+                    e.percent = c.getInt(c.getColumnIndexOrThrow(COL_PERCENT));
+                    e.status = c.getString(c.getColumnIndexOrThrow(COL_STATUS));
+                    e.lastUpdatedMs = c.getLong(c.getColumnIndexOrThrow(COL_UPDATED_MS));
+                    int errIdx = c.getColumnIndex(COL_ERROR);
+                    e.errorMessage = errIdx >= 0 ? c.getString(errIdx) : null;
+                    list.add(e);
+                }
+                c.close();
+            }
+        } catch (Exception e) {
+            PrismLogger.e(TAG, "getRecentJobs failed: " + e.getMessage(), e);
+        }
+        return list;
     }
 
     public synchronized List<JournalEntry> getInterruptedJobs() {
@@ -179,12 +216,15 @@ public final class PrismWorkJournal extends SQLiteOpenHelper {
                     e.percent = c.getInt(c.getColumnIndexOrThrow(COL_PERCENT));
                     e.status = c.getString(c.getColumnIndexOrThrow(COL_STATUS));
                     e.lastUpdatedMs = c.getLong(c.getColumnIndexOrThrow(COL_UPDATED_MS));
+                    int errIdx = c.getColumnIndex(COL_ERROR);
+                    e.errorMessage = errIdx >= 0 ? c.getString(errIdx) : null;
                     list.add(e);
                 }
                 c.close();
             }
+            PrismLogger.d(TAG, "getInterruptedJobs returned " + list.size() + " entries.");
         } catch (Exception e) {
-            Log.e(TAG, "getInterruptedJobs failed: " + e.getMessage(), e);
+            PrismLogger.e(TAG, "getInterruptedJobs failed: " + e.getMessage(), e);
         }
         return list;
     }
@@ -192,9 +232,10 @@ public final class PrismWorkJournal extends SQLiteOpenHelper {
     public synchronized void purgeCompletedJobs() {
         try {
             SQLiteDatabase db = getWritableDatabase();
-            db.delete(TABLE_JOBS, COL_STATUS + "=?", new String[]{STATUS_COMPLETED});
+            int deleted = db.delete(TABLE_JOBS, COL_STATUS + "=?", new String[]{STATUS_COMPLETED});
+            PrismLogger.i(TAG, "purgeCompletedJobs removed " + deleted + " completed rows.");
         } catch (Exception e) {
-            Log.e(TAG, "purgeCompletedJobs failed: " + e.getMessage(), e);
+            PrismLogger.e(TAG, "purgeCompletedJobs failed: " + e.getMessage(), e);
         }
     }
 }

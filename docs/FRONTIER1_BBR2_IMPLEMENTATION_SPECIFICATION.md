@@ -76,22 +76,32 @@ Context-Adaptive Binary Arithmetic Coding (CABAC) was standardized under the har
 
 #### Mathematical Derivation of Boundary Phase Flux
 Let $B_A$ and $B_B$ be adjacent transform blocks sharing boundary $\partial_{AB}$ with boundary normal $\mathbf{n}$. Let the spatial residual signals be $r_A(x,y)$ and $r_B(x,y)$. When an encoder quantizes transform coefficients $\mathbf{C}_A = \mathcal{T}(r_A)$ with quantization parameter $QP$, the frequency-domain quantization error is:
-$$e_A(u,v) = \mathbf{C}_A(u,v) - Q_{\text{step}} \cdot \left\lfloor \frac{\mathbf{C}_A(u,v) + f}{Q_{\text{step}}} \right\rfloor$$
+$$
+e_A(u,v) = \mathbf{C}_A(u,v) - Q_{\text{step}} \cdot \left\lfloor \frac{\mathbf{C}_A(u,v) + f}{Q_{\text{step}}} \right\rfloor
+$$
 Because the Discrete Cosine Transform basis functions $\phi_{u,v}(x,y) = \cos\left(\frac{(2x+1)u\pi}{2N}\right)\cos\left(\frac{(2y+1)v\pi}{2N}\right)$ satisfy boundary derivatives:
-$$\left.\frac{\partial \phi_{u,v}}{\partial x}\right|_{x=N-1} \approx (-1)^u \left.\frac{\partial \phi_{u,v}}{\partial x}\right|_{x=0}$$
+$$
+\left.\frac{\partial \phi_{u,v}}{\partial x}\right|_{x=N-1} \approx (-1)^u \left.\frac{\partial \phi_{u,v}}{\partial x}\right|_{x=0}
+$$
 The high-frequency residual phase does not abruptly vanish at the block edge; it radiates across $\partial_{AB}$ along the directional intra-prediction vector $\vec{d}_{\theta} = (\cos \theta, \sin \theta)$.
 
 #### Attentive Spatial Syntax Graph (SSG) Definition
 The Attentive Spatial Syntax Graph is a directed attributed graph $\mathcal{G} = (\mathcal{V}, \mathcal{E}, \mathbf{W})$:
-1. **Nodes $v_i \in \mathcal{V}$**: Represent non-zero coefficient runs within causal blocks $\{B_{\text{left}}, B_{\text{above}}, B_{\text{above-left}}, B_{\text{curr}}\}$. Each node stores:
-   $$\mathbf{n}_i = \left[ \text{pos}_i, |\text{level}_i|, \text{sign}_i, \text{subband}_i \right]^T$$
+1. **Nodes $v_i \in \mathcal{V}$**: Represent non-zero coefficient runs within causal blocks $\lbrace B_{\text{left}}, B_{\text{above}}, B_{\text{above-left}}, B_{\text{curr}} \rbrace$. Each node stores:
+   $$
+   \mathbf{n}_i = \left[ \text{pos}_i, |\text{level}_i|, \text{sign}_i, \text{subband}_i \right]^T
+   $$
 2. **Directed Edges $e_{j \to i} \in \mathcal{E}$**: Direct causal dependencies from neighbor node $j$ to target node $i$ aligned with intra mode $\theta$.
 3. **Edge Weight $w_{j \to i}$**:
-   $$w_{j \to i} = \text{clamp}\left( \left\lfloor 128 \cdot \left( \frac{5}{8} \langle \vec{d}_{\theta}, \vec{r}_{ji} \rangle + \frac{3}{8} \delta(\text{subband}_j, \text{subband}_i) \right) \right\rfloor, 0, 255 \right)$$
+   $$
+   w_{j \to i} = \text{clamp}\left( \left\lfloor 128 \cdot \left( \frac{5}{8} \langle \vec{d}_{\theta}, \vec{r}_{ji} \rangle + \frac{3}{8} \delta(\text{subband}_j, \text{subband}_i) \right) \right\rfloor, 0, 255 \right)
+   $$
 
 #### 4-State Causal Recurrence (SSG-CR4)
 To eliminate graph neural network latency and fit strictly within L1 data cache (<32 KB), the spatial syntax graph is projected onto a 4-state causal linear recurrence:
-$$\mathbf{h}_t \in \mathbb{Z}^4 = \left[ h_t^{(0)}, h_t^{(1)}, h_t^{(2)}, h_t^{(3)} \right]^T$$
+$$
+\mathbf{h}_t \in \mathbb{Z}^4 = \left[ h_t^{(0)}, h_t^{(1)}, h_t^{(2)}, h_t^{(3)} \right]^T
+$$
 
 Where the 4 states correspond to orthogonal physical signals:
 - $h_t^{(0)}$: **Intra-Directional Phase Momentum** (phase continuity along angle $\theta$).
@@ -100,14 +110,22 @@ Where the 4 states correspond to orthogonal physical signals:
 - $h_t^{(3)}$: **Dead-Zone Quantization Offset Estimator**.
 
 The deterministic state update in integer dyadic arithmetic:
-$$\mathbf{h}_t = \left( \mathbf{A}_t \odot \mathbf{h}_{t-1} + \mathbf{B}_t \mathbf{x}_t + 128 \right) \gg 8$$
+$$
+\mathbf{h}_t = \left( \mathbf{A}_t \odot \mathbf{h}_{t-1} + \mathbf{B}_t \mathbf{x}_t + 128 \right) \gg 8
+$$
 
 Where:
-$$\mathbf{A}_t = \left[ \max(80, 210 - 2 \cdot |\theta_t - 45|), \ 128 + 64 \cdot \mathbb{I}(\text{edge}_h), \ 128 + 64 \cdot \mathbb{I}(\text{edge}_v), \ 230 \right]^T$$
-$$\mathbf{B}_t = \left[ 64, 48, 32, 16 \right]^T$$
-$$\mathbf{x}_t = \left[ \text{level}_t, \text{run}_t, \text{pos}_t, \Delta QP_t \right]^T$$
+$$
+\mathbf{A}_t = \left[ \max(80, 210 - 2 \cdot |\theta_t - 45|), \ 128 + 64 \cdot \mathbb{I}(\text{edge}_h), \ 128 + 64 \cdot \mathbb{I}(\text{edge}_v), \ 230 \right]^T
+$$
+$$
+\mathbf{B}_t = \left[ 64, 48, 32, 16 \right]^T
+$$
+$$
+\mathbf{x}_t = \left[ \text{level}_t, \text{run}_t, \text{pos}_t, \Delta QP_t \right]^T
+$$
 
-**Mathematical Stability Proof**: Since for all $i \in \{0, 1, 2, 3\}$, $|A_t^{(i)}| \le 230 < 256$, the spectral radius $\rho(\mathbf{A}_t) \le \frac{230}{256} \approx 0.898 < 1.0$. Hence the recurrence is strictly asymptotically stable and cannot overflow 16-bit integer bounds under unbounded sequence lengths.
+**Mathematical Stability Proof**: Since for all $i \in \lbrace 0, 1, 2, 3 \rbrace$, $|A_t^{(i)}| \le 230 < 256$, the spectral radius $\rho(\mathbf{A}_t) \le \frac{230}{256} \approx 0.898 < 1.0$. Hence the recurrence is strictly asymptotically stable and cannot overflow 16-bit integer bounds under unbounded sequence lengths.
 
 ---
 
@@ -143,8 +161,10 @@ The mapping between raw NAL unit byte sequences and Vector Context Tokens is str
 ### 3.3 16-Way Interleaved SIMD rANS with SME2 Stream Deserialization
 
 #### 16-Lane Interleaving Invariants
-Let the total symbol sequence be $\mathcal{S} = \{s_0, s_1, \dots, s_{N-1}\}$. We maintain 16 independent 32-bit rANS states:
-$$\mathbf{X} = [x_0, x_1, \dots, x_{15}]^T \in [L, b \cdot L - 1]^{16}$$
+Let the total symbol sequence be $\mathcal{S} = \lbrace s_0, s_1, \dots, s_{N-1} \rbrace$. We maintain 16 independent 32-bit rANS states:
+$$
+\mathbf{X} = [x_0, x_1, \dots, x_{15}]^T \in [L, b \cdot L - 1]^{16}
+$$
 where $M = 2^{15} = 32,768$, $L = 2^{16} = 65,536$.
 
 Symbol $s_i$ is mapped to lane $l = i \pmod{16}$.
@@ -153,26 +173,40 @@ Symbol $s_i$ is mapped to lane $l = i \pmod{16}$.
 For $i = N-1$ down to 0:
 1. $l = i \pmod{16}$
 2. Let $f = \text{freq}(s_i)$, $c = \text{start}(s_i)$
-3. Renormalization: While $x_l \ge 2 \cdot f \cdot 65536$, emit 16-bit word $x_l \ \& \ 0xFFFF$, $x_l \gg= 16$.
+3. Renormalization: While $x_l \ge 2 \cdot f \cdot 65536$, emit 16-bit word `x_l & 0xFFFF`, $x_l \gg= 16$.
 4. rANS state update:
-   $$x_l = \left\lfloor \frac{x_l}{f} \right\rfloor \cdot M + (x_l \bmod f) + c$$
+   $$
+   x_l = \left\lfloor \frac{x_l}{f} \right\rfloor \cdot M + (x_l \bmod f) + c
+   $$
 
 #### Vector SIMD Decoding (Forward Sequential Order)
 In forward order, symbols are decoded in blocks of 16 ($b = 0, \dots, \lfloor N/16 \rfloor - 1$):
 1. **Parallel Slot Lookup:**
-   $$\mathbf{m} = \mathbf{X} \ \& \ (M - 1)$$
+   $$
+   \mathbf{m} = \mathbf{X} \ \mathbin{\mathrm{AND}} \ (M - 1)
+   $$
 2. **Vector Gather (SVE2 `ld1w` / AVX-512 `_mm512_i32gather_epi32`):**
-   $$\mathbf{s} = \text{Gather}(\text{CDF\_LUT}, \mathbf{m})$$
-   $$\mathbf{f} = \text{Gather}(\text{FREQ}, \mathbf{s})$$
-   $$\mathbf{c} = \text{Gather}(\text{START}, \mathbf{s})$$
+   $$
+   \mathbf{s} = \text{Gather}(\text{CDF-LUT}, \mathbf{m})
+   $$
+   $$
+   \mathbf{f} = \text{Gather}(\text{FREQ}, \mathbf{s})
+   $$
+   $$
+   \mathbf{c} = \text{Gather}(\text{START}, \mathbf{s})
+   $$
 3. **Parallel State Inversion:**
-   $$\mathbf{X} = \mathbf{f} \odot (\mathbf{X} \gg 15) + (\mathbf{m} - \mathbf{c})$$
+   $$
+   \mathbf{X} = \mathbf{f} \odot (\mathbf{X} \gg 15) + (\mathbf{m} - \mathbf{c})
+   $$
 4. **Vectorized Renormalization:**
    For any lane where $x_l < L$, refill $x_l = (x_l \ll 16) \mid \text{word}_{l}$.
 
 #### ARMv9 SME2 `smopa` Acceleration
 In ARMv9 SME2 streaming mode (`smstart sm`), the probability distribution forward pass for 16 context tokens is accelerated via the Signed Matrix Outer-Product and Accumulate (`smopa`) instruction:
-$$\mathbf{ZA}[i, j] \leftarrow \mathbf{ZA}[i, j] + \sum_k \mathbf{Z}_{\text{feat}}[i, k] \cdot \mathbf{Z}_{\text{weight}}[k, j]$$
+$$
+\mathbf{ZA}[i, j] \leftarrow \mathbf{ZA}[i, j] + \sum_k \mathbf{Z}_{\text{feat}}[i, k] \cdot \mathbf{Z}_{\text{weight}}[k, j]
+$$
 Executing at **512 INT8 MACs per cycle**, context modeling runs in **2.4 ns**, completely saturating the CPU pipeline at >600 MB/s.
 
 ---
@@ -203,11 +237,15 @@ The benchmark test tool `tools/exp_1a_bbr2.cpp` evaluated BBR 1.0 vs BBR 2.0 on 
 
 ### Invariant 1: Zero-Expansion Bypass Invariant
 If a pathological bitstream chunk (e.g. encrypted noise or pre-compressed random data) yields a compressed size $\ge$ uncompressed size:
-$$\text{payload\_size}(\text{chunk}) \le \text{uncompressed\_size}$$
+$$
+\text{payload-size}(\text{chunk}) \le \text{uncompressed-size}
+$$
 `Bbr2Engine` automatically falls back to uncompressed bypass storage, strictly prohibiting file expansion.
 
 ### Invariant 2: Cryptographic Bit-Exactness
-$$\forall \ \text{bitstream} \ \mathcal{B}, \quad \text{SHA-256}(\text{Decompress}(\text{Compress}(\mathcal{B}))) = \text{SHA-256}(\mathcal{B})$$
+$$
+\forall \ \text{bitstream} \ \mathcal{B}, \quad \text{SHA-256}(\text{Decompress}(\text{Compress}(\mathcal{B}))) = \text{SHA-256}(\mathcal{B})
+$$
 Validated across all 48 unit tests in `prism_tests` without a single bit divergence.
 
 ### Invariant 3: Memory Footprint Boundedness

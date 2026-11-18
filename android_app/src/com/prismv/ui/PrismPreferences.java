@@ -4,6 +4,8 @@ import android.app.ActivityManager;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import com.prismv.logging.PrismLogger;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -45,6 +47,17 @@ public final class PrismPreferences {
     }
 
     private void notifyChanged(String key) {
+        try {
+            if ("ALL".equals(key)) {
+                PrismLogger.i("PrismPreferences", "Factory reset executed: all preferences cleared.");
+            } else if (KEY_GEMINI_API_KEY.equals(key)) {
+                String k = prefs.getString(KEY_GEMINI_API_KEY, "");
+                PrismLogger.i("PrismPreferences", "Setting changed: " + key + "=<REDACTED len=" + (k != null ? k.length() : 0) + ">");
+            } else {
+                Object val = prefs.getAll().get(key);
+                PrismLogger.i("PrismPreferences", "Setting changed: " + key + "=" + String.valueOf(val));
+            }
+        } catch (Throwable ignored) {}
         for (OnSettingChangedListener l : listeners) {
             l.onSettingChanged(key);
         }

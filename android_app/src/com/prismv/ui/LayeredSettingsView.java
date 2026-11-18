@@ -16,6 +16,8 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.*;
 
+import com.prismv.logging.PrismLogger;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
@@ -105,7 +107,7 @@ public class LayeredSettingsView extends LinearLayout {
         headerRow.addView(tvTitle);
 
         TextView tvCategoryCount = new TextView(context);
-        tvCategoryCount.setText("9 Categories • 52 Settings");
+        tvCategoryCount.setText("10 Categories • Full Logs");
         tvCategoryCount.setTextColor(ThemeStyles.COLOR_CYAN_TEXT);
         tvCategoryCount.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
         tvCategoryCount.setTypeface(Typeface.DEFAULT_BOLD);
@@ -115,7 +117,7 @@ public class LayeredSettingsView extends LinearLayout {
         addView(headerRow);
 
         // ==========================================
-        // 2. LIVE SEARCH BAR (FILTERS 52 SETTINGS)
+        // 2. LIVE SEARCH BAR (FILTERS ALL SETTINGS)
         // ==========================================
         LinearLayout searchBox = new LinearLayout(context);
         searchBox.setOrientation(HORIZONTAL);
@@ -133,7 +135,7 @@ public class LayeredSettingsView extends LinearLayout {
         searchBox.addView(tvSearchIcon);
 
         etSearch = new EditText(context);
-        etSearch.setHint("Search 52 settings (battery, audio, skin, trash...)");
+        etSearch.setHint("Search settings (logs, download, battery, audio, skin...)");
         etSearch.setHintTextColor(ThemeStyles.COLOR_TEXT_MUTED);
         etSearch.setTextColor(Color.WHITE);
         etSearch.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
@@ -152,12 +154,12 @@ public class LayeredSettingsView extends LinearLayout {
         searchBox.addView(etSearch);
         addView(searchBox);
 
-        // Container for all 9 categories
+        // Container for all 10 categories
         settingsContainer = new LinearLayout(context);
         settingsContainer.setOrientation(VERTICAL);
         addView(settingsContainer);
 
-        // Build All 9 Categories
+        // Build All Categories
         buildCategory1Appearance(context);
         buildCategory2VideoEngine(context);
         buildCategory3AudioPreferences(context);
@@ -167,6 +169,7 @@ public class LayeredSettingsView extends LinearLayout {
         buildCategory7AutomationButler(context);
         buildCategory8NotificationsHaptics(context);
         buildCategory9DeveloperLabs(context);
+        buildCategory10DiagnosticLogs(context);
     }
 
     // ==========================================
@@ -446,13 +449,17 @@ public class LayeredSettingsView extends LinearLayout {
                 new String[]{"Auto Detect", "Force SME2", "Force NEON DotProd", "Scalar"},
                 prefs.getForceSimdPath(), prefs::setForceSimdPath);
 
-        addPillSelectorSetting(context, sec, "Diagnostic Logging Verbosity", "Logcat verbosity for JNI & rANS throughput",
+        addPillSelectorSetting(context, sec, "Diagnostic Logging Verbosity", "Controls full-component persistent file log detail",
                 new String[]{"Standard", "Verbose", "Debug"},
-                prefs.getLoggingLevel(), prefs::setLoggingLevel);
+                prefs.getLoggingLevel(), (selected) -> {
+                    prefs.setLoggingLevel(selected);
+                    PrismLogger.setVerbosity(selected);
+                });
 
         addActionButton(context, sec, "Google Gemini AI Engine",
                 "Device Native Gemini & Neural Copilot Active • No API Key Required",
                 "LAUNCH DEVICE GEMINI", v -> {
+                    PrismLogger.event("Settings", "LAUNCH_GEMINI", "User launched Device Gemini from Settings");
                     com.prismv.ai.GeminiCopilot.openDeviceGemini(getContext(), new com.prismv.ai.GeminiCopilot.VideoContext(), null);
                 });
 
@@ -461,7 +468,10 @@ public class LayeredSettingsView extends LinearLayout {
                     long pageSize = 4096;
                     try {
                         pageSize = Os.sysconf(OsConstants._SC_PAGESIZE);
-                    } catch (Exception ignored) {}
+                    } catch (Exception e) {
+                        PrismLogger.w("Settings", "sysconf(_SC_PAGESIZE) failed: " + e.getMessage());
+                    }
+                    PrismLogger.i("Settings", "16 KB Page Alignment Check: pageSize=" + pageSize + " bytes");
                     if (getContext() instanceof Activity) {
                         PrismHud.showSuccess((Activity) getContext(),
                                 String.format(Locale.US, "16 KB Page Compliance: PASS (%d bytes max-page-size)", pageSize));
@@ -477,6 +487,7 @@ public class LayeredSettingsView extends LinearLayout {
                             "Restore Factory Settings?",
                             "This will reset all 52 configuration parameters to their initial specification defaults.",
                             "RESTORE", "CANCEL", () -> {
+                                PrismLogger.event("Settings", "FACTORY_RESET", "User confirmed factory reset");
                                 prefs.resetToDefaults();
                                 ThemeStyles.applyDesignSkin("Liquid Frost Glass");
                                 if (getContext() instanceof Activity) {
@@ -484,6 +495,60 @@ public class LayeredSettingsView extends LinearLayout {
                                 }
                             });
                 });
+    }
+
+    // ==========================================
+    // 10. DIAGNOSTIC LOGS & BUG SUPPORT
+    // ==========================================
+    private void buildCategory10DiagnosticLogs(Context context) {
+        CategorySection sec = createCategory(context,
+                "10. DIAGNOSTIC LOGS & BUG REPORTING",
+                "logs log download export share send bug crash error report diagnostic debug support fix problem troubleshoot");
+
+        PrismLogger.LogStats stats = PrismLogger.getStats(context);
+        String statsSummary = String.format(Locale.US,
+                "Captures ALL components (UI, MediaCodec, Audio, FGS, Storage, Thermal, AI, Crash dumps & Logcat). Stored: %.1f KB • %d entries • %d crash(es).",
+                stats.totalBytes / 1024.0, stats.sessionLines, stats.crashCount);
+
+        addAccentActionButton(context, sec,
+                "Download Full Diagnostic Logs",
+                statsSummary + " Saves complete report to Downloads/Prism-V/ so you can send it to the developer if any problem happens.",
+                "DOWNLOAD FULL LOGS (.TXT)",
+                Color.parseColor("#0284C7"), Color.parseColor("#06B6D4"),
+                v -> {
+                    PrismLogger.event("Settings", "DOWNLOAD_LOGS", "User tapped Download Full Logs in Settings");
+                    LogViewerDialog.triggerDownloadLogs(getContext(), false);
+                });
+
+        addAccentActionButton(context, sec,
+                "Share / Send Logs to Developer",
+                "Exports full diagnostic logs and opens Share Sheet (WhatsApp, Telegram, Gmail, Drive) to send directly.",
+                "SHARE / SEND FULL LOGS",
+                Color.parseColor("#059669"), Color.parseColor("#10B981"),
+                v -> {
+                    PrismLogger.event("Settings", "SHARE_LOGS", "User tapped Share / Send Full Logs in Settings");
+                    LogViewerDialog.triggerDownloadLogs(getContext(), true);
+                });
+
+        addActionButton(context, sec,
+                "Inspect Live Full Logs",
+                "View real-time component logs, filter errors/warnings, search, or copy directly in-app.",
+                "VIEW LIVE LOGS",
+                v -> LogViewerDialog.show(getContext()));
+
+        addActionButton(context, sec,
+                "Clear Stored Diagnostic Logs",
+                "Deletes archived session log files and previous crash reports from app storage.",
+                "CLEAR STORED LOGS",
+                v -> CustomDarkDialog.showConfirmation(getContext(),
+                        "Clear All Stored Logs?",
+                        "This deletes saved session logs and crash dumps from local storage. Already-downloaded files in Downloads/Prism-V/ are not touched.",
+                        "CLEAR LOGS", "CANCEL", () -> {
+                            PrismLogger.clearAllLogs(getContext());
+                            if (getContext() instanceof Activity) {
+                                PrismHud.showSuccess((Activity) getContext(), "Cleared stored diagnostic logs.");
+                            }
+                        }));
     }
 
     // ==========================================
@@ -630,6 +695,12 @@ public class LayeredSettingsView extends LinearLayout {
 
     private void addActionButton(Context context, CategorySection sec, String title, String sub,
                                  String btnText, OnClickListener onClickListener) {
+        addAccentActionButton(context, sec, title, sub, btnText,
+                Color.parseColor("#1E293B"), Color.parseColor("#334155"), onClickListener);
+    }
+
+    private void addAccentActionButton(Context context, CategorySection sec, String title, String sub,
+                                       String btnText, int startColor, int endColor, OnClickListener onClickListener) {
         LinearLayout row = new LinearLayout(context);
         row.setOrientation(VERTICAL);
         row.setPadding(0, dp(8), 0, dp(8));
@@ -658,7 +729,7 @@ public class LayeredSettingsView extends LinearLayout {
         btn.setPadding(dp(12), dp(6), dp(12), dp(6));
         LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(42));
         btn.setLayoutParams(bp);
-        btn.setBackground(ThemeStyles.createGradientButton(Color.parseColor("#1E293B"), Color.parseColor("#334155"), dp(10)));
+        btn.setBackground(ThemeStyles.createGradientButton(startColor, endColor, dp(10)));
         btn.setOnClickListener(onClickListener);
         row.addView(btn);
 
@@ -735,11 +806,13 @@ public class LayeredSettingsView extends LinearLayout {
             try (FileOutputStream fos = new FileOutputStream(jsonFile)) {
                 fos.write(json.getBytes(StandardCharsets.UTF_8));
             }
+            PrismLogger.i("Settings", "Exported telemetry JSON: " + jsonFile.getAbsolutePath());
 
             if (getContext() instanceof Activity) {
                 PrismHud.showSuccess((Activity) getContext(), "Exported: " + jsonFile.getName());
             }
         } catch (Exception e) {
+            PrismLogger.e("Settings", "Failed to export telemetry JSON: " + e.getMessage(), e);
             if (getContext() instanceof Activity) {
                 PrismHud.showWarning((Activity) getContext(), "Export error: " + e.getMessage());
             }

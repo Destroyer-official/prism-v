@@ -9,7 +9,7 @@ import android.content.Context;
 import android.os.Build;
 import android.os.Environment;
 import android.os.PowerManager;
-import android.util.Log;
+import com.prismv.logging.PrismLogger;
 
 import com.prismv.engine.VideoProcessingPipeline;
 import com.prismv.notification.PrismNotificationManager;
@@ -44,7 +44,7 @@ public class RabinMeshWorker extends JobService {
         try {
             JobScheduler js = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
             if (js == null) {
-                Log.w(TAG, "JobScheduler unavailable.");
+                PrismLogger.w(TAG, "JobScheduler unavailable.");
                 return;
             }
 
@@ -66,15 +66,15 @@ public class RabinMeshWorker extends JobService {
             } catch (Exception ignored) {}
 
             int result = js.schedule(builder.build());
-            Log.i(TAG, "[Rabin-Mesh] Scheduled overnight background deduplication job (result=" + result + ")");
+            PrismLogger.i(TAG, "[Rabin-Mesh] Scheduled overnight background deduplication job (result=" + result + ")");
         } catch (Exception e) {
-            Log.e(TAG, "[Rabin-Mesh] Failed to schedule RabinMesh job: " + e.getMessage(), e);
+            PrismLogger.e(TAG, "[Rabin-Mesh] Failed to schedule RabinMesh job: " + e.getMessage(), e);
         }
     }
 
     @Override
     public boolean onStartJob(final JobParameters params) {
-        Log.i(TAG, "[Rabin-Mesh] onStartJob triggered. Verifying battery, thermal, and idle states...");
+        PrismLogger.i(TAG, "[Rabin-Mesh] onStartJob triggered. Verifying battery, thermal, and idle states...");
         isCancelled.set(false);
 
         // Verify thermal headroom before starting
@@ -83,7 +83,7 @@ public class RabinMeshWorker extends JobService {
             if (pm != null) {
                 int thermal = pm.getCurrentThermalStatus();
                 if (thermal >= PowerManager.THERMAL_STATUS_MODERATE) {
-                    Log.w(TAG, "[Rabin-Mesh] Device thermal status is elevated (" + thermal + "). Rescheduling.");
+                    PrismLogger.w(TAG, "[Rabin-Mesh] Device thermal status is elevated (" + thermal + "). Rescheduling.");
                     return false;
                 }
             }
@@ -92,10 +92,10 @@ public class RabinMeshWorker extends JobService {
         workerThread = new Thread(() -> {
             boolean reschedule = false;
             try {
-                Log.i(TAG, "[Rabin-Mesh] Starting multi-resolution gallery burst scan...");
+                PrismLogger.i(TAG, "[Rabin-Mesh] Starting multi-resolution gallery burst scan...");
                 scanAndDeduplicateGallery(getApplicationContext());
             } catch (Exception e) {
-                Log.e(TAG, "[Rabin-Mesh] Deduplication worker failed: " + e.getMessage(), e);
+                PrismLogger.e(TAG, "[Rabin-Mesh] Deduplication worker failed: " + e.getMessage(), e);
                 reschedule = true;
             } finally {
                 jobFinished(params, reschedule);
@@ -109,7 +109,7 @@ public class RabinMeshWorker extends JobService {
 
     @Override
     public boolean onStopJob(JobParameters params) {
-        Log.i(TAG, "[Rabin-Mesh] onStopJob triggered (device unplugged or user active). Aborting gracefully.");
+        PrismLogger.i(TAG, "[Rabin-Mesh] onStopJob triggered (device unplugged or user active). Aborting gracefully.");
         isCancelled.set(true);
         if (workerThread != null) {
             workerThread.interrupt();
@@ -128,7 +128,7 @@ public class RabinMeshWorker extends JobService {
         collectVideos(movies, candidateFiles);
 
         if (candidateFiles.size() < 2) {
-            Log.i(TAG, "[Rabin-Mesh] Less than 2 videos found in gallery. Nothing to cluster.");
+            PrismLogger.i(TAG, "[Rabin-Mesh] Less than 2 videos found in gallery. Nothing to cluster.");
             return;
         }
 
@@ -138,20 +138,20 @@ public class RabinMeshWorker extends JobService {
         }
         String[] paths = pathList.toArray(new String[0]);
 
-        Log.i(TAG, "[Rabin-Mesh] Running Level 1 & 2 perceptual scan on " + paths.length + " gallery videos...");
+        PrismLogger.i(TAG, "[Rabin-Mesh] Running Level 1 & 2 perceptual scan on " + paths.length + " gallery videos...");
         long[] clusterResult = VideoProcessingPipeline.nativeScanMeshBurstCandidates(paths, 0.85f);
         if (clusterResult == null || clusterResult.length < 2) {
-            Log.i(TAG, "[Rabin-Mesh] No near-duplicate burst clusters detected.");
+            PrismLogger.i(TAG, "[Rabin-Mesh] No near-duplicate burst clusters detected.");
             return;
         }
 
         long clustersFound = clusterResult[0];
         long estimatedReclaimableBytes = clusterResult[1];
-        Log.i(TAG, "[Rabin-Mesh] Audit complete: " + clustersFound + " burst clusters detected (~"
+        PrismLogger.i(TAG, "[Rabin-Mesh] Audit complete: " + clustersFound + " burst clusters detected (~"
                 + (estimatedReclaimableBytes / (1024 * 1024)) + " MB reclaimable).");
 
         if (estimatedReclaimableBytes < 20 * 1024 * 1024) {
-            Log.i(TAG, "[Rabin-Mesh] Estimated savings under 20 MB threshold. Skipping automated ingestion.");
+            PrismLogger.i(TAG, "[Rabin-Mesh] Estimated savings under 20 MB threshold. Skipping automated ingestion.");
             return;
         }
 
@@ -177,7 +177,7 @@ public class RabinMeshWorker extends JobService {
                     clusterUuid
             );
 
-            Log.i(TAG, "[Rabin-Mesh] Cluster " + clusterUuid + " ingested! Reclaimed: " + (savedBytes / (1024 * 1024)) + " MB.");
+            PrismLogger.i(TAG, "[Rabin-Mesh] Cluster " + clusterUuid + " ingested! Reclaimed: " + (savedBytes / (1024 * 1024)) + " MB.");
         }
     }
 

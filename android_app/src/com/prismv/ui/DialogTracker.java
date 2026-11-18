@@ -1,7 +1,7 @@
 package com.prismv.ui;
 
 import android.app.Dialog;
-import android.util.Log;
+import com.prismv.logging.PrismLogger;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -20,27 +20,27 @@ public final class DialogTracker {
         if (dialog == null) return;
         activeDialogs.remove(dialog);
         activeDialogs.add(dialog);
-        Log.d(TAG, "[DIALOG] Registered dialog: " + dialog + " (active count: " + activeDialogs.size() + ")");
+        PrismLogger.d(TAG, "[DIALOG] Registered dialog: " + dialog + " (active count: " + activeDialogs.size() + ")");
     }
 
     public static synchronized void unregister(Dialog dialog) {
         if (dialog == null) return;
         activeDialogs.remove(dialog);
-        Log.d(TAG, "[DIALOG] Unregistered dialog: " + dialog + " (remaining count: " + activeDialogs.size() + ")");
+        PrismLogger.d(TAG, "[DIALOG] Unregistered dialog: " + dialog + " (remaining count: " + activeDialogs.size() + ")");
     }
 
     public static synchronized boolean dismissTopDialog() {
-        Log.d(TAG, "[DIALOG] dismissTopDialog called, active count=" + activeDialogs.size());
+        PrismLogger.d(TAG, "[DIALOG] dismissTopDialog called, active count=" + activeDialogs.size());
         for (int i = activeDialogs.size() - 1; i >= 0; i--) {
             Dialog d = activeDialogs.get(i);
             if (d != null && d.isShowing()) {
                 try {
-                    Log.d(TAG, "[DIALOG] Dismissing top dialog: " + d);
+                    PrismLogger.d(TAG, "[DIALOG] Dismissing top dialog: " + d);
                     activeDialogs.remove(i);
                     d.dismiss();
                     return true;
                 } catch (Exception e) {
-                    Log.w(TAG, "[DIALOG] Failed to dismiss dialog: " + e.getMessage());
+                    PrismLogger.w(TAG, "[DIALOG] Failed to dismiss dialog: " + e.getMessage());
                 }
             } else {
                 activeDialogs.remove(i);

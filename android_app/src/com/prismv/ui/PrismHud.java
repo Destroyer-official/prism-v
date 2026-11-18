@@ -15,6 +15,8 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import com.prismv.logging.PrismLogger;
+
 /**
  * PrismHud:
  * High-precision, cinema-grade floating HUD notification pills.
@@ -30,18 +32,22 @@ public final class PrismHud {
     }
 
     public static void showSuccess(Activity activity, String message) {
+        PrismLogger.i("PrismHud", "[SUCCESS] " + message);
         show(activity, "● " + message, ThemeStyles.COLOR_EMERALD_NEON, Color.parseColor("#062E22"), Color.parseColor("#059669"));
     }
 
     public static void showInfo(Activity activity, String message) {
+        PrismLogger.i("PrismHud", "[INFO] " + message);
         show(activity, "ℹ " + message, ThemeStyles.COLOR_CYAN_NEON, Color.parseColor("#0C2A4A"), Color.parseColor("#0284C7"));
     }
 
     public static void showWarning(Activity activity, String message) {
+        PrismLogger.w("PrismHud", "[WARNING] " + message);
         show(activity, "▲ " + message, ThemeStyles.COLOR_AMBER_SUNSET, Color.parseColor("#382305"), Color.parseColor("#D97706"));
     }
 
     public static void showError(Activity activity, String message) {
+        PrismLogger.e("PrismHud", "[ERROR] " + message);
         show(activity, "" + message, Color.parseColor("#FCA5A5"), Color.parseColor("#3B1219"), Color.parseColor("#EF4444"));
     }
 

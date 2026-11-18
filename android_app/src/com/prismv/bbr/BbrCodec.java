@@ -1,6 +1,7 @@
 package com.prismv.bbr;
 
 import com.prismv.detint.DetInt;
+import com.prismv.logging.PrismLogger;
 import com.prismv.rans.Rans8Codec;
 
 import java.io.ByteArrayOutputStream;
@@ -70,10 +71,12 @@ public final class BbrCodec {
         if ((long) entropyData.length + 9 < (long) rawData.length) {
             out.write(0); // Compressed
             out.write(entropyData, 0, entropyData.length);
+            PrismLogger.v("BbrCodec", "compressGop BBR1 compressed: " + rawData.length + " -> " + (entropyData.length + 9) + " bytes");
         } else {
             // Invariant 1: Bypass mode if compressed size >= raw size
             out.write(1); // Bypass
             out.write(rawData, 0, rawData.length);
+            PrismLogger.d("BbrCodec", "compressGop BBR1 bypass (Invariant 1): rawLen=" + rawData.length);
         }
 
         return out.toByteArray();
@@ -178,8 +181,8 @@ public final class BbrCodec {
                 out.write(nativeCompressed, 0, nativeCompressed.length);
                 return out.toByteArray();
             }
-        } catch (UnsatisfiedLinkError | NoClassDefFoundError ignored) {
-            // Fall back to Java implementation if native shared library is not loaded
+        } catch (UnsatisfiedLinkError | NoClassDefFoundError e) {
+            PrismLogger.d("BbrCodec", "compressGopBbr2 native unavailable (" + e.getMessage() + "), using Java fallback");
         }
 
         // Pure Java fallback: wrap standard BBR1 compressed payload with BBR2 header
@@ -227,8 +230,8 @@ public final class BbrCodec {
             if (nativeDecomp != null && nativeDecomp.length == origLen) {
                 return nativeDecomp;
             }
-        } catch (UnsatisfiedLinkError | NoClassDefFoundError ignored) {
-            // Fall back to Java path if native is unavailable
+        } catch (UnsatisfiedLinkError | NoClassDefFoundError e) {
+            PrismLogger.d("BbrCodec", "decompressGopBbr2 native unavailable (" + e.getMessage() + "), using Java fallback");
         }
 
         // Java fallback

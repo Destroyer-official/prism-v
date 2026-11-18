@@ -9,8 +9,8 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
-import android.util.Log;
 
+import com.prismv.logging.PrismLogger;
 import com.prismv.provider.PrismFileProvider;
 import com.prismv.storage.PrismStorageManager;
 import com.prismv.ui.MainActivity;
@@ -286,6 +286,8 @@ public final class PrismNotificationManager {
         }
 
         nm.notify(NOTIF_COMPLETE_ID, builder.build());
+        PrismLogger.i(TAG, "Posted completion notification: video=" + videoName
+                + " origBytes=" + origSize + " compBytes=" + compSize + " savedPct=" + String.format(Locale.US, "%.1f%%", percentSaved));
     }
 
     /**
@@ -381,6 +383,8 @@ public final class PrismNotificationManager {
         }
 
         nm.notify(NOTIF_COMPLETE_ID, builder.build());
+        PrismLogger.i(TAG, "Posted batch completion notification: count=" + videoCount
+                + " totalOrig=" + totalOriginalBytes + " totalSaved=" + totalSavedBytes);
     }
 
     public static int getPrismIconResId(Context context) {

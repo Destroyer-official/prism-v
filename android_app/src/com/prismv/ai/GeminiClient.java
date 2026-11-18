@@ -3,7 +3,7 @@ package com.prismv.ai;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
-import android.util.Log;
+import com.prismv.logging.PrismLogger;
 
 import com.prismv.ui.PrismPreferences;
 
@@ -204,7 +204,7 @@ public final class GeminiClient {
                         errReader.close();
                         errDetail = errSb.toString();
                     }
-                    Log.e(TAG, "Gemini API HTTP Error " + responseCode + ": " + errDetail);
+                    PrismLogger.e(TAG, "Gemini API HTTP Error " + responseCode + ": " + errDetail);
 
                     // Fallback to intelligent on-device engine on error
                     String fallback = generateOnDeviceHeuristicAdvice(userPrompt, videoContextInfo) +
@@ -216,7 +216,7 @@ public final class GeminiClient {
                 }
 
             } catch (Exception e) {
-                Log.e(TAG, "Gemini API Network Exception", e);
+                PrismLogger.e(TAG, "Gemini API Network Exception", e);
                 // Fallback to on-device engine
                 String fallback = generateOnDeviceHeuristicAdvice(userPrompt, videoContextInfo) +
                         "\n\n[Note: Network unreachable. Powered by Prism On-Device Local AI.]";

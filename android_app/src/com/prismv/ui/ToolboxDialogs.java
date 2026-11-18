@@ -29,7 +29,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.StatFs;
 import android.provider.MediaStore;
-import android.util.Log;
+import com.prismv.logging.PrismLogger;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -114,7 +114,7 @@ public class ToolboxDialogs {
         dialog.setOnDismissListener(d -> DialogTracker.unregister(dialog));
         dialog.setOnKeyListener((dialogInterface, keyCode, keyEvent) -> {
             if (keyCode == KeyEvent.KEYCODE_BACK && keyEvent.getAction() == KeyEvent.ACTION_UP) {
-                Log.d("ToolboxDialogs", "[BACK] Modal dialog dismissed via dialog onKey");
+                PrismLogger.d("ToolboxDialogs", "[BACK] Modal dialog dismissed via dialog onKey");
                 dialogInterface.dismiss();
                 return true;
             }
@@ -283,7 +283,7 @@ public class ToolboxDialogs {
                 videoView.seekTo(100);
             });
         } catch (Exception e) {
-            Log.w(TAG, "VideoView init error: " + e.getMessage());
+            PrismLogger.w(TAG, "VideoView init error: " + e.getMessage());
         }
 
         // 3. Frame-by-Frame Jog & Transport Deck
@@ -991,7 +991,7 @@ public class ToolboxDialogs {
                         }
                     });
                 } catch (Exception e) {
-                    Log.e(TAG, "Sanitize export error: " + e.getMessage(), e);
+                    PrismLogger.e(TAG, "Sanitize export error: " + e.getMessage(), e);
                 }
             }).start();
         });
@@ -1730,7 +1730,7 @@ public class ToolboxDialogs {
                         }
                     });
                 } catch (Exception e) {
-                    Log.e(TAG, "Merge error: " + e.getMessage(), e);
+                    PrismLogger.e(TAG, "Merge error: " + e.getMessage(), e);
                 }
             }).start();
         });
@@ -1909,7 +1909,7 @@ public class ToolboxDialogs {
                         });
                     }
                 } catch (Exception e) {
-                    Log.e(TAG, "Frame save error: " + e.getMessage(), e);
+                    PrismLogger.e(TAG, "Frame save error: " + e.getMessage(), e);
                 }
             }).start();
         });
@@ -2017,7 +2017,7 @@ public class ToolboxDialogs {
                         });
                     }
                 } catch (Exception e) {
-                    Log.e(TAG, "WebP Sticker error: " + e.getMessage(), e);
+                    PrismLogger.e(TAG, "WebP Sticker error: " + e.getMessage(), e);
                 }
             }).start();
         });
@@ -2214,7 +2214,7 @@ public class ToolboxDialogs {
                     new Thread(() -> handleHttpClient(context, socket)).start();
                 }
             } catch (Exception e) {
-                Log.d("PrismHttpServer", "Wi-Fi server socket notice: " + e.getMessage());
+                PrismLogger.d("PrismHttpServer", "Wi-Fi server socket notice: " + e.getMessage());
             }
         });
         sHttpThread.setDaemon(true);
@@ -3921,7 +3921,10 @@ public class ToolboxDialogs {
             b.setBackground(createRoundedDrawable(
                     i == 1 ? Color.parseColor("#0369A1") : Color.parseColor("#152438"),
                     ThemeStyles.COLOR_BORDER_SUBTLE, dp(context, 1), dp(context, 8)));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 38));
+            b.setPadding(dp(context, 10), dp(context, 8), dp(context, 10), dp(context, 8));
+            b.setMinHeight(dp(context, 42));
+            b.setMinimumHeight(dp(context, 42));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             lp.setMargins(0, 0, 0, dp(context, 6));
             b.setLayoutParams(lp);
             b.setOnClickListener(v -> {

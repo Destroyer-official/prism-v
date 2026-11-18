@@ -8,7 +8,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.os.Build;
 import android.os.PowerManager;
-import android.util.Log;
+import com.prismv.logging.PrismLogger;
 
 import com.prismv.engine.VideoProcessingPipeline;
 import com.prismv.scheduler.PrismScheduler;
@@ -42,7 +42,7 @@ public class PrismNeRVBackgroundWorker extends JobService {
         try {
             JobScheduler js = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
             if (js == null) {
-                Log.w(TAG, "JobScheduler unavailable.");
+                PrismLogger.w(TAG, "JobScheduler unavailable.");
                 return;
             }
 
@@ -64,15 +64,15 @@ public class PrismNeRVBackgroundWorker extends JobService {
             } catch (Exception ignored) {}
 
             int result = js.schedule(builder.build());
-            Log.i(TAG, "[NeRV-S] Scheduled overnight background overfit job (result=" + result + ")");
+            PrismLogger.i(TAG, "[NeRV-S] Scheduled overnight background overfit job (result=" + result + ")");
         } catch (Exception e) {
-            Log.e(TAG, "[NeRV-S] Failed to schedule NeRV job: " + e.getMessage(), e);
+            PrismLogger.e(TAG, "[NeRV-S] Failed to schedule NeRV job: " + e.getMessage(), e);
         }
     }
 
     @Override
     public boolean onStartJob(final JobParameters params) {
-        Log.i(TAG, "[NeRV-S] onStartJob triggered. Checking battery, thermal, and idle states...");
+        PrismLogger.i(TAG, "[NeRV-S] onStartJob triggered. Checking battery, thermal, and idle states...");
         isCancelled.set(false);
 
         // Verify thermal headroom before starting compute
@@ -81,7 +81,7 @@ public class PrismNeRVBackgroundWorker extends JobService {
             if (pm != null) {
                 int thermal = pm.getCurrentThermalStatus();
                 if (thermal >= PowerManager.THERMAL_STATUS_MODERATE) {
-                    Log.w(TAG, "[NeRV-S] Device thermal status is elevated (" + thermal + "). Rescheduling.");
+                    PrismLogger.w(TAG, "[NeRV-S] Device thermal status is elevated (" + thermal + "). Rescheduling.");
                     return false; // Do not start now; wait for device to cool
                 }
             }
@@ -90,7 +90,7 @@ public class PrismNeRVBackgroundWorker extends JobService {
         workerThread = new Thread(() -> {
             boolean reschedule = false;
             try {
-                Log.i(TAG, "[NeRV-S] Starting continuous coordinate field GOP optimization pass...");
+                PrismLogger.i(TAG, "[NeRV-S] Starting continuous coordinate field GOP optimization pass...");
 
                 // Perform sample coordinate synthesis verification to confirm native NPU/APU pipeline readiness
                 long startNs = System.nanoTime();
@@ -98,16 +98,16 @@ public class PrismNeRVBackgroundWorker extends JobService {
                 long elapsedMs = (System.nanoTime() - startNs) / 1_000_000;
                 int bytesRendered = (rendered != null) ? rendered.length : 0;
 
-                Log.i(TAG, "[NeRV-S] Native NeRV coordinate field render check: "
+                PrismLogger.i(TAG, "[NeRV-S] Native NeRV coordinate field render check: "
                         + bytesRendered + " bytes rendered in " + elapsedMs + " ms.");
 
                 // Check journal for pending archival candidates
                 PrismWorkJournal journal = PrismWorkJournal.get(getApplicationContext());
                 // In production, queries videos marked for deep implicit archival
-                Log.i(TAG, "[NeRV-S] Overnight coordinate optimization sweep complete. Device remained cool.");
+                PrismLogger.i(TAG, "[NeRV-S] Overnight coordinate optimization sweep complete. Device remained cool.");
 
             } catch (Throwable t) {
-                Log.e(TAG, "[NeRV-S] Background worker exception: " + t.getMessage(), t);
+                PrismLogger.e(TAG, "[NeRV-S] Background worker exception: " + t.getMessage(), t);
                 reschedule = true;
             } finally {
                 jobFinished(params, reschedule && !isCancelled.get());
@@ -120,7 +120,7 @@ public class PrismNeRVBackgroundWorker extends JobService {
 
     @Override
     public boolean onStopJob(JobParameters params) {
-        Log.i(TAG, "[NeRV-S] onStopJob received (charger unplugged or user picked up device). Halting immediately.");
+        PrismLogger.i(TAG, "[NeRV-S] onStopJob received (charger unplugged or user picked up device). Halting immediately.");
         isCancelled.set(true);
         if (workerThread != null && workerThread.isAlive()) {
             workerThread.interrupt();

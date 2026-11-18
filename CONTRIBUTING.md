@@ -29,6 +29,7 @@ To develop, build, and test Prism-V:
 ## 3. Building & Testing
 
 ### Native C++20 Core & CLI
+
 ```bash
 # Configure with CMake
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=20
@@ -44,7 +45,9 @@ ctest --test-dir build --output-on-failure -C Release
 ```
 
 ### Standalone Android APK
+
 Build the packaged Java application directly without Gradle:
+
 ```powershell
 # Using the root build script:
 .\build_apk.ps1
@@ -56,25 +59,30 @@ $env:PRISM_R8_JAR      = "C:\path\to\r8lib.jar"
 $env:PRISM_SIGNER_JAR  = "C:\path\to\uber-apk-signer.jar"
 .\scripts\build_apk.ps1
 ```
-The resulting signed, aligned APK is output to `release/prism-v-v1.0.0.apk` and `android_app/signed/`.
+
+The resulting signed, aligned APK is output to `release/prism-v-v1.1.2.apk` and `android_app/signed/`.
 
 ---
 
 ## 4. Coding Conventions
 
 ### C++ (`core/`, `tools/`, `tests/`)
+
 - Follow modern C++20 conventions: structured bindings, `std::span`, concepts, and RAII.
 - Use explicit fixed-width integers (`int32_t`, `uint64_t`, etc.) from `<cstdint>`.
 - Zero heap allocations inside critical per-frame processing loops; utilize `tile_pool` for memory budgeting.
 - Maintain 16 KiB page alignment compatibility (`-Wl,-z,max-page-size=16384`).
 
 ### Android Java (`android_app/`)
+
 - Target Java 17 bytecode compatibility (`--release 17`).
 - Keep UI operations thread-safe; offload transcoding, container writing, and heavy computations to background worker threads or `PrismMediaProcessingService`.
 - Follow Material 3 dark glassmorphic styling and design consistency.
 
 ### Git Commit Style
+
 We adhere to the [Conventional Commits](https://www.conventionalcommits.org/) specification:
+
 ```text
 feat(duo): add multi-touch curtain slider with parent intercept suppression
 fix(player): resolve pause drift using atomic SEEK_CLOSEST synchronization
@@ -87,6 +95,7 @@ test(rans): add bounds check for truncated bitstreams
 ## 5. Pull Request Checklist
 
 Before submitting a pull request, ensure:
+
 - [ ] `cmake --build build` succeeds without warnings or errors.
 - [ ] `ctest` passes 100% of unit tests.
 - [ ] Android application compiles cleanly with `javac --release 17` against `android.jar`.

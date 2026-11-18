@@ -3,7 +3,7 @@ package com.prismv.history;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.net.Uri;
-import android.util.Log;
+import com.prismv.logging.PrismLogger;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -165,7 +165,7 @@ public final class CompressionHistoryManager {
         list.add(0, record);
         saveRecords(list);
 
-        Log.i(TAG, String.format(Locale.US, "Recorded compression: '%s' -> '%s' (Saved %.1f MB, -%.1f%%)",
+        PrismLogger.i(TAG, String.format(Locale.US, "Recorded compression: '%s' -> '%s' (Saved %.1f MB, -%.1f%%)",
                 title, compressedPath, saved / (1024.0 * 1024.0), pct));
     }
 
@@ -207,7 +207,7 @@ public final class CompressionHistoryManager {
                 list.add(r);
             }
         } catch (Exception e) {
-            Log.e(TAG, "Error parsing history records", e);
+            PrismLogger.e(TAG, "Error parsing history records", e);
         }
         return list;
     }
@@ -303,7 +303,7 @@ public final class CompressionHistoryManager {
             }
             prefs.edit().putString(KEY_RECORDS, arr.toString()).apply();
         } catch (Exception e) {
-            Log.e(TAG, "Error saving history records", e);
+            PrismLogger.e(TAG, "Error saving history records", e);
         }
     }
 }

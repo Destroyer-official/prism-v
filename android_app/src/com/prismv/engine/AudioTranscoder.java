@@ -5,7 +5,7 @@ import android.media.MediaCodecInfo;
 import android.media.MediaExtractor;
 import android.media.MediaFormat;
 import android.media.MediaMuxer;
-import android.util.Log;
+import com.prismv.logging.PrismLogger;
 
 import java.io.File;
 import java.nio.ByteBuffer;
@@ -53,7 +53,7 @@ public final class AudioTranscoder {
 
             String inMime = inFormat.getString(MediaFormat.KEY_MIME);
             if (inMime == null || !inMime.startsWith("audio/")) {
-                Log.w(TAG, "Selected track is not audio: " + inMime);
+                PrismLogger.w(TAG, "Selected track is not audio: " + inMime);
                 return false;
             }
 
@@ -63,9 +63,13 @@ public final class AudioTranscoder {
                     ? inFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT) : 2;
             int outChannels = (targetChannels > 0) ? targetChannels : inChannels;
             int outBitrate = (targetBitrateKbps > 0) ? (targetBitrateKbps * 1000) : 128000;
+            PrismLogger.i(TAG, "Starting audio transcode: inMime=" + inMime + " sampleRate=" + sampleRate
+                    + " ch=" + inChannels + "->" + outChannels + " targetBitrate=" + outBitrate
+                    + " bps out=" + outputFile.getName());
 
             // 1. Initialize Audio Decoder
             decoder = MediaCodec.createDecoderByType(inMime);
+            PrismLogger.d(TAG, "Audio decoder created: " + decoder.getName());
             decoder.configure(inFormat, null, null, 0);
             decoder.start();
 
@@ -76,6 +80,7 @@ public final class AudioTranscoder {
             outFormat.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 64 * 1024);
 
             encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC);
+            PrismLogger.d(TAG, "Audio encoder created: " + encoder.getName());
             encoder.configure(outFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
             encoder.start();
 
@@ -101,12 +106,20 @@ public final class AudioTranscoder {
             long pendingPtsUs = 0;
             int pendingSize = 0;
             ByteBuffer pendingBuf = null;
+            long lastAudioActivityMs = android.os.SystemClock.elapsedRealtime();
 
             while (!encoderDone) {
+                if (HardwareVideoCompressor.isCancelRequested()) {
+                    PrismLogger.w(TAG, "Audio transcode aborted due to user cancellation.");
+                    return false;
+                }
+                boolean audioHadActivity = false;
+
                 // A. Feed extractor samples to decoder
                 if (!extractorDone) {
                     int inIndex = decoder.dequeueInputBuffer(TIMEOUT_US);
                     if (inIndex >= 0) {
+                        audioHadActivity = true;
                         ByteBuffer inBuf = decoder.getInputBuffer(inIndex);
                         if (inBuf != null) {
                             int sampleSize = extractor.readSampleData(inBuf, 0);
@@ -212,12 +225,14 @@ public final class AudioTranscoder {
                 // C. Drain compressed AAC from encoder and write to muxer
                 int encOutIndex = encoder.dequeueOutputBuffer(encInfo, TIMEOUT_US);
                 if (encOutIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    audioHadActivity = true;
                     if (muxerStarted) throw new RuntimeException("Muxer audio format changed unexpectedly!");
                     MediaFormat newFmt = encoder.getOutputFormat();
                     muxerAudioTrack = muxer.addTrack(newFmt);
                     muxer.start();
                     muxerStarted = true;
                 } else if (encOutIndex >= 0) {
+                    audioHadActivity = true;
                     ByteBuffer outBuf = encoder.getOutputBuffer(encOutIndex);
                     if (outBuf != null) {
                         if ((encInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
@@ -234,13 +249,20 @@ public final class AudioTranscoder {
                     }
                     encoder.releaseOutputBuffer(encOutIndex, false);
                 }
+
+                if (audioHadActivity) {
+                    lastAudioActivityMs = android.os.SystemClock.elapsedRealtime();
+                } else if (android.os.SystemClock.elapsedRealtime() - lastAudioActivityMs > 15_000L) {
+                    PrismLogger.e(TAG, "Audio transcode stalled for >15s; aborting cleanly.");
+                    return false;
+                }
             }
 
-            Log.i(TAG, "Audio transcode completed successfully: " + outBitrate + " bps, " + outChannels + " ch.");
+            PrismLogger.i(TAG, "Audio transcode completed successfully: " + outBitrate + " bps, " + outChannels + " ch, outSize=" + outputFile.length() + " bytes.");
             return true;
 
         } catch (Exception e) {
-            Log.e(TAG, "Audio transcode error: " + e.getMessage(), e);
+            PrismLogger.e(TAG, "Audio transcode error: " + e.getMessage(), e);
             return false;
         } finally {
             if (decoder != null) {

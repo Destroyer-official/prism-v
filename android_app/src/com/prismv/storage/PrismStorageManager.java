@@ -8,7 +8,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.provider.MediaStore;
-import android.util.Log;
+import com.prismv.logging.PrismLogger;
 
 import com.prismv.provider.PrismFileProvider;
 
@@ -44,7 +44,7 @@ public final class PrismStorageManager {
         if (!prismDir.exists()) {
             boolean created = prismDir.mkdirs();
             if (!created) {
-                Log.w(TAG, "Could not create public Movies/Prism-V, falling back to external files dir");
+                PrismLogger.w(TAG, "Could not create public Movies/Prism-V, falling back to external files dir");
                 prismDir = new File(context.getExternalFilesDir(Environment.DIRECTORY_MOVIES), FOLDER_NAME);
                 if (!prismDir.exists()) prismDir.mkdirs();
             }
@@ -57,12 +57,26 @@ public final class PrismStorageManager {
      */
     public static File getOutputFile(Context context, String baseName, String extension) {
         File folder = getOutputFolder(context);
-        String ext = (extension != null && extension.startsWith(".")) ? extension : ("." + extension);
-        String cleanBase = baseName != null ? baseName.replaceAll("[^a-zA-Z0-9._-]", "_") : "video";
-        if (cleanBase.toLowerCase().endsWith(ext.toLowerCase())) {
-            cleanBase = cleanBase.substring(0, cleanBase.length() - ext.length());
+        String normExt = (extension != null) ? extension.trim() : "";
+        if (normExt.isEmpty() || "default".equalsIgnoreCase(normExt) || ".default".equalsIgnoreCase(normExt)) {
+            normExt = ".mp4";
+        } else if (!normExt.startsWith(".")) {
+            normExt = "." + normExt.toLowerCase(java.util.Locale.US);
+        } else {
+            normExt = normExt.toLowerCase(java.util.Locale.US);
         }
-        return new File(folder, cleanBase + "_optimized" + ext);
+        String cleanBase = baseName != null ? baseName.replaceAll("[^a-zA-Z0-9._-]", "_") : "video";
+        // Strip common video extensions so we never produce "clip.mp4_optimized.mp4"
+        String lower = cleanBase.toLowerCase(java.util.Locale.US);
+        String[] knownExts = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".flv", ".3gp", ".m4v", ".ts"};
+        for (String k : knownExts) {
+            if (lower.endsWith(k)) {
+                cleanBase = cleanBase.substring(0, cleanBase.length() - k.length());
+                break;
+            }
+        }
+        if (cleanBase.isEmpty()) cleanBase = "video";
+        return new File(folder, cleanBase + "_optimized" + normExt);
     }
 
     /**
@@ -76,7 +90,7 @@ public final class PrismStorageManager {
                 context.getApplicationContext(),
                 new String[]{videoFile.getAbsolutePath()},
                 new String[]{"video/mp4"},
-                (path, uri) -> Log.i(TAG, "Indexed into MediaStore: " + path + " -> " + uri)
+                (path, uri) -> PrismLogger.i(TAG, "Indexed into MediaStore: " + path + " -> " + uri)
         );
 
         // 2. Direct MediaStore insert for Android 10+ (API 29+)
@@ -93,7 +107,7 @@ public final class PrismStorageManager {
             }
             context.getContentResolver().insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values);
         } catch (Exception e) {
-            Log.d(TAG, "MediaStore insert note: " + e.getMessage());
+            PrismLogger.d(TAG, "MediaStore insert note: " + e.getMessage());
         }
     }
 
@@ -109,7 +123,7 @@ public final class PrismStorageManager {
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
             context.startActivity(Intent.createChooser(intent, "Play in Gallery / Player"));
         } catch (Exception e) {
-            Log.e(TAG, "Failed to open video: " + e.getMessage());
+            PrismLogger.e(TAG, "Failed to open video: " + e.getMessage());
         }
     }
 
@@ -132,7 +146,7 @@ public final class PrismStorageManager {
                 fIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 context.startActivity(Intent.createChooser(fIntent, "Open Prism-V Output Folder"));
             } catch (Exception ex) {
-                Log.w(TAG, "Could not launch file manager: " + ex.getMessage());
+                PrismLogger.w(TAG, "Could not launch file manager: " + ex.getMessage());
             }
         }
     }
@@ -277,6 +291,7 @@ public final class PrismStorageManager {
             }
             if (ok) {
                 dest.setLastModified(System.currentTimeMillis());
+                PrismLogger.i(TAG, "Moved to 30-day Trash Vault: " + file.getName() + " -> " + dest.getAbsolutePath());
                 try {
                     MediaScannerConnection.scanFile(context.getApplicationContext(),
                             new String[]{file.getAbsolutePath()}, null, null);
@@ -284,7 +299,7 @@ public final class PrismStorageManager {
             }
             return ok;
         } catch (Exception e) {
-            Log.e(TAG, "Error moving to trash: " + e.getMessage(), e);
+            PrismLogger.e(TAG, "Error moving to trash: " + e.getMessage(), e);
             return false;
         }
     }
@@ -319,11 +334,12 @@ public final class PrismStorageManager {
                 ok = true;
             }
             if (ok) {
+                PrismLogger.i(TAG, "Restored from Trash Vault: " + trashedFile.getName() + " -> " + dest.getAbsolutePath());
                 indexVideoInMediaStore(context, dest);
             }
             return ok;
         } catch (Exception e) {
-            Log.e(TAG, "Error restoring from trash: " + e.getMessage(), e);
+            PrismLogger.e(TAG, "Error restoring from trash: " + e.getMessage(), e);
             return false;
         }
     }
@@ -340,6 +356,7 @@ public final class PrismStorageManager {
                 reclaimedBytes += len;
             }
         }
+        PrismLogger.i(TAG, "Purged Trash Vault: files=" + items.size() + " reclaimedBytes=" + reclaimedBytes);
         return reclaimedBytes;
     }
 
@@ -352,7 +369,7 @@ public final class PrismStorageManager {
             try {
                 return MediaStore.createTrashRequest(context.getContentResolver(), uris, isTrash);
             } catch (Exception e) {
-                Log.w(TAG, "createTrashRequest failed: " + e.getMessage());
+                PrismLogger.w(TAG, "createTrashRequest failed: " + e.getMessage());
             }
         }
         return null;
@@ -367,7 +384,7 @@ public final class PrismStorageManager {
             try {
                 return MediaStore.createWriteRequest(context.getContentResolver(), uris);
             } catch (Exception e) {
-                Log.w(TAG, "createWriteRequest failed: " + e.getMessage());
+                PrismLogger.w(TAG, "createWriteRequest failed: " + e.getMessage());
             }
         }
         return null;

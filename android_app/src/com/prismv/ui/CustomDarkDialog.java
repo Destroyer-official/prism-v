@@ -8,7 +8,7 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.text.InputType;
 import android.util.TypedValue;
-import android.util.Log;
+import com.prismv.logging.PrismLogger;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
@@ -42,7 +42,7 @@ public final class CustomDarkDialog {
         dialog.setOnDismissListener(d -> DialogTracker.unregister(dialog));
         dialog.setOnKeyListener((dialogInterface, keyCode, keyEvent) -> {
             if (keyCode == KeyEvent.KEYCODE_BACK && keyEvent.getAction() == KeyEvent.ACTION_UP) {
-                Log.d("CustomDarkDialog", "[BACK] Modal dialog dismissed via dark dialog onKey");
+                PrismLogger.d("CustomDarkDialog", "[BACK] Modal dialog dismissed via dark dialog onKey");
                 dialogInterface.dismiss();
                 return true;
             }
@@ -92,6 +92,7 @@ public final class CustomDarkDialog {
      * Display a dark glassmorphic single-choice selection dialog.
      */
     public static Dialog showSingleChoice(Context context, String title, String[] items, int selectedIndex, OnItemSelectedListener listener) {
+        PrismLogger.d("CustomDarkDialog", "showSingleChoice: title=" + title + " items=" + (items != null ? items.length : 0));
         Dialog dialog = createDarkBaseDialog(context);
 
         ScrollView scroll = new ScrollView(context);

@@ -15,7 +15,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.provider.OpenableColumns;
 import android.provider.MediaStore;
-import android.util.Log;
+import com.prismv.logging.PrismLogger;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -108,6 +108,9 @@ public class MainActivity extends Activity {
     private Uri selectedVideoUri = null;
     private String selectedVideoPath = null;
     private String selectedVideoCodec = null;
+    private Uri lastCompletedOrigUri = null;
+    private String lastCompletedOrigName = null;
+    private Button btnCancelCompress;
     private int trimStartSec = 0;
     private int trimEndSec = 0;
     private boolean trimCutOutSelected = false;
@@ -127,7 +130,7 @@ public class MainActivity extends Activity {
         public int width = 1920;
         public int height = 1080;
         public int fps = 30;
-        public int durationSec = 60;
+        public int durationSec = 0;
         public int bitrateKbps = 3800;
         public String audioInfo = "Stereo 48.0 kHz AAC";
         public String colorStandard = "BT.709 SDR";
@@ -253,6 +256,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        PrismLogger.init(this);
+        PrismLogger.i(TAG, "MainActivity.onCreate: intentAction=" + (getIntent() != null ? getIntent().getAction() : "null"));
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         if (getActionBar() != null) getActionBar().hide();
 
@@ -282,19 +287,39 @@ public class MainActivity extends Activity {
                 double ramMB = intent.getDoubleExtra(PrismMediaProcessingService.BROADCAST_RAM, 38.0);
                 String broadcastEta = intent.getStringExtra(PrismMediaProcessingService.BROADCAST_ETA_STRING);
                 boolean isDone = intent.getBooleanExtra(PrismMediaProcessingService.BROADCAST_IS_DONE, false);
+                boolean isCancelled = intent.getBooleanExtra(PrismMediaProcessingService.BROADCAST_CANCELLED, false);
+                String errorMsg = intent.getStringExtra(PrismMediaProcessingService.BROADCAST_ERROR);
 
                 mainHandler.post(() -> {
                     if (isDone) {
                         if (btnStartCompress != null) btnStartCompress.setEnabled(true);
-                        String savedPath = intent.getStringExtra(PrismMediaProcessingService.BROADCAST_SAVED_PATH);
-                        double freedMB = intent.getDoubleExtra(PrismMediaProcessingService.BROADCAST_FREED_MB, 0.0);
-                        double pctSaved = intent.getDoubleExtra(PrismMediaProcessingService.BROADCAST_PERCENT_SAVED, 0.0);
-
                         if (cardProcessVisual != null) {
                             cardProcessVisual.setVisibility(View.GONE);
                         }
 
+                        if (isCancelled) {
+                            appendLog("[CANCELLED] Compression stopped by user.");
+                            PrismHud.showInfo(MainActivity.this, "Compression cancelled");
+                            return;
+                        }
+                        if (errorMsg != null && !errorMsg.isEmpty()) {
+                            appendLog("[ERROR] " + errorMsg);
+                            PrismHud.showWarning(MainActivity.this, errorMsg);
+                            return;
+                        }
+
+                        String savedPath = intent.getStringExtra(PrismMediaProcessingService.BROADCAST_SAVED_PATH);
+                        double freedMB = intent.getDoubleExtra(PrismMediaProcessingService.BROADCAST_FREED_MB, 0.0);
+                        double pctSaved = intent.getDoubleExtra(PrismMediaProcessingService.BROADCAST_PERCENT_SAVED, 0.0);
+
                         if (savedPath != null) {
+                            // Preserve completed source info BEFORE resetSourceState() clears Studio!
+                            if (selectedVideoUri != null) {
+                                lastCompletedOrigUri = selectedVideoUri;
+                            }
+                            if (selectedVideoName != null) {
+                                lastCompletedOrigName = selectedVideoName;
+                            }
                             currentRestoredFile = new File(savedPath);
                             double outMB = currentRestoredFile.length() / (1024.0 * 1024.0);
                             double origMB = outMB + freedMB;
@@ -700,7 +725,7 @@ public class MainActivity extends Activity {
     }
 
     private void switchTab(int tabIndex, boolean addToHistory) {
-        Log.d(TAG, "[TAB] switchTab: " + currentTab + " -> " + tabIndex + " (addToHistory=" + addToHistory + ", stack=" + tabHistory + ")");
+        PrismLogger.d(TAG, "[TAB] switchTab: " + currentTab + " -> " + tabIndex + " (addToHistory=" + addToHistory + ", stack=" + tabHistory + ")");
         if (currentTab == tabIndex) {
             return;
         }
@@ -1895,7 +1920,29 @@ public class MainActivity extends Activity {
             return;
         }
 
-        Uri origUri = selectedVideoUri;
+        Uri origUri = (selectedVideoUri != null) ? selectedVideoUri : lastCompletedOrigUri;
+        String origName = (selectedVideoName != null) ? selectedVideoName : lastCompletedOrigName;
+
+        // Fallback to CompressionHistoryManager if Activity state was cleared
+        if (origUri == null) {
+            try {
+                CompressionHistoryManager.Record latest = CompressionHistoryManager.get(this).getLatestRecord();
+                if (latest != null) {
+                    origUri = latest.getOriginalUri();
+                    if (origUri == null && latest.originalPath != null && new File(latest.originalPath).exists()) {
+                        origUri = Uri.fromFile(new File(latest.originalPath));
+                    }
+                    if (origName == null && latest.title != null) {
+                        origName = latest.title;
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+        if (origName == null || origName.trim().isEmpty()) {
+            origName = (origUri != null && origUri.getLastPathSegment() != null)
+                    ? origUri.getLastPathSegment() : "Master Source";
+        }
+
         Uri compUri = Uri.fromFile(currentRestoredFile);
 
         switchTab(1);
@@ -1903,7 +1950,7 @@ public class MainActivity extends Activity {
             duoPlayerView.loadVideoPair(
                     origUri,
                     compUri,
-                    "● SOURCE: " + selectedVideoName,
+                    "● SOURCE: " + origName,
                     "● PRISM-V: " + currentRestoredFile.getName()
             );
         }
@@ -2586,10 +2633,36 @@ public class MainActivity extends Activity {
         tvProcessTelemetryStats.setTextColor(ThemeStyles.COLOR_CYAN_TEXT);
         tvProcessTelemetryStats.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
         tvProcessTelemetryStats.setTypeface(Typeface.MONOSPACE);
-        tvProcessTelemetryStats.setPadding(0, dp(2), 0, 0);
+        tvProcessTelemetryStats.setPadding(0, dp(2), 0, dp(8));
         cardProcessVisual.addView(tvProcessTelemetryStats);
 
+        btnCancelCompress = new Button(this);
+        btnCancelCompress.setText("✕  STOP / CANCEL COMPRESSION");
+        btnCancelCompress.setTextColor(Color.WHITE);
+        btnCancelCompress.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        btnCancelCompress.setTypeface(Typeface.DEFAULT_BOLD);
+        btnCancelCompress.setBackground(createRoundedDrawable(
+                Color.parseColor("#7F1D1D"), Color.parseColor("#EF4444"), dp(1), dp(12)));
+        LinearLayout.LayoutParams cancelLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(44));
+        cancelLp.setMargins(0, dp(4), 0, 0);
+        btnCancelCompress.setLayoutParams(cancelLp);
+        btnCancelCompress.setOnClickListener(v -> cancelActiveCompression());
+        cardProcessVisual.addView(btnCancelCompress);
+
         return cardProcessVisual;
+    }
+
+    private void cancelActiveCompression() {
+        PrismMediaProcessingService.cancelCompression(this);
+        if (cardProcessVisual != null) {
+            cardProcessVisual.setVisibility(View.GONE);
+        }
+        if (btnStartCompress != null) {
+            btnStartCompress.setEnabled(true);
+        }
+        appendLog("[CANCELLED] User tapped Stop / Cancel Compression.");
+        PrismHud.showInfo(this, "Compression stopped & cleaned up");
     }
 
     private LinearLayout createLiveMetricTile(String title, TextView targetValueView, int accentColor) {
@@ -3246,7 +3319,7 @@ public class MainActivity extends Activity {
                 startActivityForResult(pickerIntent, REQUEST_PICK_VIDEO);
                 return;
             } catch (Exception e) {
-                Log.d(TAG, "PhotoPicker fallback: " + e.getMessage());
+                PrismLogger.d(TAG, "PhotoPicker fallback: " + e.getMessage());
             }
         }
         // Fallback: ACTION_OPEN_DOCUMENT gives thumbnail grid on Samsung gallery
@@ -3261,6 +3334,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        PrismLogger.i(TAG, "onActivityResult: requestCode=" + requestCode + " resultCode=" + resultCode + " hasData=" + (data != null));
         if (requestCode == REQUEST_PICK_VIDEO && resultCode == RESULT_OK && data != null) {
             batchVideoList.clear();
             ClipData clipData = data.getClipData();
@@ -3362,10 +3436,10 @@ public class MainActivity extends Activity {
                     if (nativeMeta.fps > 0) item.fps = Math.round(nativeMeta.fps);
                     if (nativeMeta.bitrateBps > 0) item.bitrateKbps = (int) (nativeMeta.bitrateBps / 1000L);
                     if (nativeMeta.codec != null) item.codec = nativeMeta.codec;
-                    Log.i("PrismV", "Native Container Parser extracted exact duration: " + item.durationSec + "s for '" + item.name + "'");
+                    PrismLogger.i("PrismV", "Native Container Parser extracted exact duration: " + item.durationSec + "s for '" + item.name + "'");
                 }
             } catch (Exception e) {
-                Log.w("PrismV", "Native metadata probe warning: " + e.getMessage());
+                PrismLogger.w("PrismV", "Native metadata probe warning: " + e.getMessage());
             }
         }
 
@@ -3409,7 +3483,7 @@ public class MainActivity extends Activity {
 
             FpsExtractor.FpsResult fpsResult = FpsExtractor.detectFps(this, uri, item.filePath, mmr, durMs);
             item.fps = fpsResult.fps;
-            Log.i("PrismV", "Detected Video Framerate for '" + item.name + "': " + item.fps + " fps (exact: " + fpsResult.exactFps + ", tier: " + fpsResult.source + ")");
+            PrismLogger.i("PrismV", "Detected Video Framerate for '" + item.name + "': " + item.fps + " fps (exact: " + fpsResult.exactFps + ", tier: " + fpsResult.source + ")");
 
             if (mimeStr != null) item.codec = mimeStr.replace("video/", "").toUpperCase(Locale.US);
 
@@ -3434,7 +3508,7 @@ public class MainActivity extends Activity {
 
             mmr.release();
         } catch (Exception e) {
-            Log.w("PrismV", "Metadata retrieval fallback: " + e.getMessage());
+            PrismLogger.w("PrismV", "Metadata retrieval fallback: " + e.getMessage());
             item.width = 1920;
             item.height = 1080;
             item.durationSec = 61;
@@ -3699,13 +3773,27 @@ public class MainActivity extends Activity {
     }
 
     private String queryFileName(Uri uri) {
+        if (uri == null) return "video.mp4";
+        if ("file".equalsIgnoreCase(uri.getScheme()) && uri.getPath() != null) {
+            String name = new File(uri.getPath()).getName();
+            if (name != null && !name.trim().isEmpty()) return name;
+        }
         String result = "video.mp4";
         try (Cursor cursor = getContentResolver().query(uri, null, null, null, null)) {
             if (cursor != null && cursor.moveToFirst()) {
                 int nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
-                if (nameIdx >= 0) result = cursor.getString(nameIdx);
+                if (nameIdx >= 0) {
+                    String dn = cursor.getString(nameIdx);
+                    if (dn != null && !dn.trim().isEmpty()) result = dn;
+                }
             }
         } catch (Exception ignored) {}
+        if ("video.mp4".equals(result) && uri.getLastPathSegment() != null) {
+            String seg = uri.getLastPathSegment();
+            int slash = seg.lastIndexOf('/');
+            if (slash >= 0 && slash < seg.length() - 1) seg = seg.substring(slash + 1);
+            if (!seg.trim().isEmpty()) result = seg;
+        }
         return result;
     }
 
@@ -3857,6 +3945,12 @@ public class MainActivity extends Activity {
             return;
         }
 
+        HardwareVideoCompressor.resetCancel();
+        PrismLogger.i(TAG, String.format(Locale.US,
+                "executeCompression START: name=%s mode=%s src=%dx%d@%dfps (%d bytes) target=%dx%d@%dfps bitrate=%dkbps ar=%s fmt=%s audio=%s/%dkbps",
+                selectedVideoName, selectedMode, sourceWidth, sourceHeight, sourceFps, sourceSizeBytes,
+                customTargetWidth, customTargetHeight, customTargetFps, customTargetBitrateKbps,
+                selectedAspectRatio, selectedOutputFormat, customAudioChannel, customAudioBitrateKbps));
         studioTranscodeStartMs = System.currentTimeMillis();
         btnStartCompress.setEnabled(false);
         updateProcessVisualProgress(0, "Preparing hardware ASIC pipeline...");
@@ -3864,24 +3958,48 @@ public class MainActivity extends Activity {
             studioScrollView.post(() -> studioScrollView.smoothScrollTo(0, cardProcessVisual.getTop()));
         }
 
-        int finalWidth = (selectedResIndex == 5 || customTargetWidth == sourceWidth || customTargetWidth <= 0) ? 0 : customTargetWidth;
-        int finalHeight = (selectedResIndex == 5 || customTargetHeight == sourceHeight || customTargetHeight <= 0) ? 0 : customTargetHeight;
-        int finalFps = (customTargetFps == sourceFps || customTargetFps <= 0) ? 0 : customTargetFps;
+        final int finalWidth = (selectedResIndex == 5 || customTargetWidth == sourceWidth || customTargetWidth <= 0) ? 0 : customTargetWidth;
+        final int finalHeight = (selectedResIndex == 5 || customTargetHeight == sourceHeight || customTargetHeight <= 0) ? 0 : customTargetHeight;
+        final int finalFps = (customTargetFps == sourceFps || customTargetFps <= 0) ? 0 : customTargetFps;
 
         if (prefs != null && prefs.isBackgroundServiceEnabled()) {
-            String inputPath = resolvePathFromUri(selectedVideoUri, selectedVideoName);
-            if (inputPath != null) {
-                File outFile = PrismStorageManager.getOutputFile(this, selectedVideoName, selectedOutputFormat);
-                appendLog(String.format(Locale.US, "Starting Foreground Service for '%s' -> Movies/Prism-V/", selectedVideoName));
-                PrismMediaProcessingService.startCompression(
-                        this, inputPath, outFile.getAbsolutePath(),
-                        finalWidth, finalHeight,
-                        customTargetBitrateKbps,
-                        finalFps,
-                        selectedAspectRatio, selectedOutputFormat, selectedMode
-                );
-                return;
-            }
+            final Uri reqUri = selectedVideoUri;
+            final String reqName = selectedVideoName;
+            final int reqBitrate = customTargetBitrateKbps;
+            final String reqAspect = selectedAspectRatio;
+            final String reqFormat = selectedOutputFormat;
+            final String reqMode = selectedMode;
+            new Thread(() -> {
+                String inputPath = resolvePathFromUri(reqUri, reqName);
+                if (HardwareVideoCompressor.isCancelRequested()) {
+                    mainHandler.post(() -> {
+                        btnStartCompress.setEnabled(true);
+                        if (cardProcessVisual != null) cardProcessVisual.setVisibility(View.GONE);
+                    });
+                    return;
+                }
+                if (inputPath != null) {
+                    File outFile = PrismStorageManager.getOutputFile(MainActivity.this, reqName, reqFormat);
+                    mainHandler.post(() -> {
+                        appendLog(String.format(Locale.US, "Starting Foreground Service for '%s' -> Movies/Prism-V/%s", reqName, outFile.getName()));
+                        PrismMediaProcessingService.startCompression(
+                                MainActivity.this, inputPath, outFile.getAbsolutePath(),
+                                finalWidth, finalHeight,
+                                reqBitrate,
+                                finalFps,
+                                reqAspect, reqFormat, reqMode
+                        );
+                    });
+                } else {
+                    mainHandler.post(() -> {
+                        btnStartCompress.setEnabled(true);
+                        if (cardProcessVisual != null) cardProcessVisual.setVisibility(View.GONE);
+                        appendLog("[ERROR] Could not read selected video from storage.");
+                        PrismHud.showWarning(MainActivity.this, "Cannot access selected video file");
+                    });
+                }
+            }).start();
+            return;
         }
 
         HardwareVideoCompressor.CompressionOptions options = new HardwareVideoCompressor.CompressionOptions();
@@ -4234,6 +4352,13 @@ public class MainActivity extends Activity {
                 })
         );
 
+        if (selectedVideoUri != null) {
+            lastCompletedOrigUri = selectedVideoUri;
+        }
+        if (selectedVideoName != null) {
+            lastCompletedOrigName = selectedVideoName;
+        }
+
         // Reset VIDEO SOURCE to empty state — job is done, ready for next video
         resetSourceState();
     }
@@ -4312,7 +4437,7 @@ public class MainActivity extends Activity {
                 logTextView.append(line);
             }
         });
-        Log.i(TAG, message);
+        PrismLogger.i(TAG, message);
     }
 
     private void applyGeminiRecommendation(GeminiClient.Recommendation rec) {
@@ -4376,7 +4501,7 @@ public class MainActivity extends Activity {
                         this::handleBackNavigation
                 );
             } catch (Throwable t) {
-                Log.w(TAG, "Failed to register OnBackInvokedCallback: " + t.getMessage());
+                PrismLogger.w(TAG, "Failed to register OnBackInvokedCallback: " + t.getMessage());
             }
         }
     }
@@ -4384,29 +4509,29 @@ public class MainActivity extends Activity {
     public void handleBackNavigation() {
         long now = System.currentTimeMillis();
         if (now - lastBackHandledTimestamp < 250) {
-            Log.d(TAG, "[BACK] Debounced rapid duplicate event");
+            PrismLogger.d(TAG, "[BACK] Debounced rapid duplicate event");
             return; // Debounce rapid multi-events from key + dispatcher
         }
         lastBackHandledTimestamp = now;
 
-        Log.d(TAG, "[BACK] handleBackNavigation: currentTab=" + currentTab + ", history=" + tabHistory + ", hasDialog=" + DialogTracker.hasActiveDialog());
+        PrismLogger.d(TAG, "[BACK] handleBackNavigation: currentTab=" + currentTab + ", history=" + tabHistory + ", hasDialog=" + DialogTracker.hasActiveDialog());
 
         // 1. Dismiss active modal dialogs, sheets, or popups first
         if (DialogTracker.dismissTopDialog()) {
-            Log.d(TAG, "[BACK] Handled by dismissing active modal dialog");
+            PrismLogger.d(TAG, "[BACK] Handled by dismissing active modal dialog");
             return;
         }
 
         // 2. Exit Duo Player Fullscreen if active
         if (duoPlayerView != null && duoPlayerView.isFullscreen()) {
-            Log.d(TAG, "[BACK] Handled by exiting Duo Player fullscreen");
+            PrismLogger.d(TAG, "[BACK] Handled by exiting Duo Player fullscreen");
             duoPlayerView.exitFullscreen();
             return;
         }
 
         // 3. If in Studio and manual overrides controls are expanded, collapse them
         if (currentTab == 0 && isMoControlsExpanded) {
-            Log.d(TAG, "[BACK] Handled by collapsing Manual Overrides in Studio");
+            PrismLogger.d(TAG, "[BACK] Handled by collapsing Manual Overrides in Studio");
             isMoControlsExpanded = false;
             if (moContentLayout != null) moContentLayout.setVisibility(View.GONE);
             if (tvMoToggleBtn != null) tvMoToggleBtn.setText("▾ SHOW CONTROLS");
@@ -4416,7 +4541,7 @@ public class MainActivity extends Activity {
         // 4. Pop through Tab History stack
         while (!tabHistory.isEmpty()) {
             int previousTab = tabHistory.pop();
-            Log.d(TAG, "[BACK] Popping history tab: " + previousTab + " (currentTab=" + currentTab + ")");
+            PrismLogger.d(TAG, "[BACK] Popping history tab: " + previousTab + " (currentTab=" + currentTab + ")");
             if (previousTab != currentTab) {
                 if (previousTab == 0) {
                     lastBackToStudioTimestamp = System.currentTimeMillis();
@@ -4428,7 +4553,7 @@ public class MainActivity extends Activity {
 
         // 5. If we are on another tab without previous history, the last back goes to Studio
         if (currentTab != 0) {
-            Log.d(TAG, "[BACK] No history left, transitioning back to Studio (Tab 0)");
+            PrismLogger.d(TAG, "[BACK] No history left, transitioning back to Studio (Tab 0)");
             lastBackToStudioTimestamp = System.currentTimeMillis();
             switchTab(0, false);
             return;
@@ -4436,7 +4561,7 @@ public class MainActivity extends Activity {
 
         // 6. We are now on Studio (Tab 0) at the root level!
         // This is the "final back" — execute clean full APK exit!
-        Log.d(TAG, "[BACK] Final back on Studio root: performing clean full APK exit");
+        PrismLogger.d(TAG, "[BACK] Final back on Studio root: performing clean full APK exit");
         performCleanExit();
     }
 
@@ -4502,6 +4627,7 @@ public class MainActivity extends Activity {
     @Override
     public void onLowMemory() {
         super.onLowMemory();
+        PrismLogger.w(TAG, "MainActivity.onLowMemory() invoked! Pausing Duo player and requesting GC.");
         if (duoPlayerView != null) {
             duoPlayerView.pauseIfPlaying();
         }
@@ -4511,6 +4637,7 @@ public class MainActivity extends Activity {
     @Override
     public void onTrimMemory(int level) {
         super.onTrimMemory(level);
+        PrismLogger.w(TAG, "MainActivity.onTrimMemory(level=" + level + ")");
         if (level >= TRIM_MEMORY_MODERATE) {
             if (duoPlayerView != null) {
                 duoPlayerView.pauseIfPlaying();
@@ -4522,11 +4649,13 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        PrismLogger.i(TAG, "MainActivity.onDestroy() cleaning up receivers and players.");
         if (fgsReceiver != null) {
             try { unregisterReceiver(fgsReceiver); } catch (Exception ignored) {}
         }
         if (duoPlayerView != null) {
             duoPlayerView.releasePlayers();
         }
+        PrismLogger.flushSync();
     }
 }

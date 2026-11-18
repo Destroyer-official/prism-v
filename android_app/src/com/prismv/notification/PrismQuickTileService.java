@@ -4,7 +4,7 @@ import android.content.Intent;
 import android.os.Build;
 import android.service.quicksettings.Tile;
 import android.service.quicksettings.TileService;
-import android.util.Log;
+import com.prismv.logging.PrismLogger;
 
 import com.prismv.ui.MainActivity;
 import com.prismv.ui.PrismPreferences;
@@ -33,7 +33,7 @@ public class PrismQuickTileService extends TileService {
             intent.putExtra("TAB_TARGET", 0);
             startActivityAndCollapse(intent);
         } catch (Exception e) {
-            Log.e(TAG, "Failed to launch from Quick Tile: " + e.getMessage());
+            PrismLogger.e(TAG, "Failed to launch from Quick Tile: " + e.getMessage());
         }
     }
 

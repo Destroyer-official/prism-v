@@ -2,6 +2,7 @@ package com.prismv.vfs;
 
 import com.prismv.bbr.BbrCodec;
 import com.prismv.engine.VideoProcessingPipeline;
+import com.prismv.logging.PrismLogger;
 
 import java.io.File;
 import java.io.IOException;
@@ -64,6 +65,7 @@ public final class PrismVfsProxy {
         }
         this.cachedFullStream = restored;
         this.totalVirtualLength = restored != null ? restored.length : 0;
+        PrismLogger.d("PrismVfsProxy", "Mounted BBR VFS proxy: virtualLength=" + this.totalVirtualLength);
     }
 
     /**
@@ -78,6 +80,7 @@ public final class PrismVfsProxy {
         this.manifestPath = manifestPath;
         this.vaultDir = vaultDir;
         this.totalVirtualLength = virtualFileSize;
+        PrismLogger.i("PrismVfsProxy", "Mounted Rabin-Mesh VFS proxy: manifest=" + manifestPath + " virtualSize=" + virtualFileSize);
     }
 
     public long getTotalVirtualLength() {
