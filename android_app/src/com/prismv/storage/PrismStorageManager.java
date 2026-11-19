@@ -403,5 +403,133 @@ public final class PrismStorageManager {
         }
         return movedCount;
     }
+
+    /**
+     * Returns the primary public pictures output folder: Pictures/Prism-V/
+     */
+    public static File getPicturesFolder(Context context) {
+        File picDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
+        File prismDir = new File(picDir, FOLDER_NAME);
+        if (!prismDir.exists()) {
+            boolean created = prismDir.mkdirs();
+            if (!created) {
+                PrismLogger.w(TAG, "Could not create public Pictures/Prism-V, falling back to external files dir");
+                prismDir = new File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), FOLDER_NAME);
+                if (!prismDir.exists()) prismDir.mkdirs();
+            }
+        }
+        return prismDir;
+    }
+
+    /**
+     * Resolves target picture file in Pictures/Prism-V/.
+     */
+    public static File getOutputPictureFile(Context context, String baseName, String extension) {
+        File folder = getPicturesFolder(context);
+        String normExt = (extension != null) ? extension.trim().toLowerCase(java.util.Locale.US) : ".jpg";
+        if (!normExt.startsWith(".")) normExt = "." + normExt;
+        String cleanBase = baseName != null ? baseName.replaceAll("[^a-zA-Z0-9._-]", "_") : "photo";
+        return new File(folder, cleanBase + normExt);
+    }
+
+    /**
+     * Scans and indexes an exported picture/sticker into Android MediaStore.
+     */
+    public static void indexImageInMediaStore(Context context, File imageFile) {
+        if (imageFile == null || !imageFile.exists()) return;
+        String mime = "image/jpeg";
+        String name = imageFile.getName().toLowerCase(java.util.Locale.US);
+        if (name.endsWith(".png")) mime = "image/png";
+        else if (name.endsWith(".webp")) mime = "image/webp";
+
+        final String finalMime = mime;
+        MediaScannerConnection.scanFile(
+                context.getApplicationContext(),
+                new String[]{imageFile.getAbsolutePath()},
+                new String[]{finalMime},
+                (path, uri) -> PrismLogger.i(TAG, "Image indexed into MediaStore: " + path + " -> " + uri)
+        );
+
+        try {
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.Images.Media.TITLE, imageFile.getName());
+            values.put(MediaStore.Images.Media.DISPLAY_NAME, imageFile.getName());
+            values.put(MediaStore.Images.Media.MIME_TYPE, finalMime);
+            values.put(MediaStore.Images.Media.DATE_ADDED, System.currentTimeMillis() / 1000);
+            values.put(MediaStore.Images.Media.DATE_MODIFIED, System.currentTimeMillis() / 1000);
+            values.put(MediaStore.Images.Media.SIZE, imageFile.length());
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                values.put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/" + FOLDER_NAME);
+            }
+            context.getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+        } catch (Exception e) {
+            PrismLogger.d(TAG, "MediaStore image insert note: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Returns the primary public music/audio output folder: Music/Prism-V/
+     */
+    public static File getAudioFolder(Context context) {
+        File musicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC);
+        File prismDir = new File(musicDir, FOLDER_NAME);
+        if (!prismDir.exists()) {
+            boolean created = prismDir.mkdirs();
+            if (!created) {
+                PrismLogger.w(TAG, "Could not create public Music/Prism-V, falling back to external files dir");
+                prismDir = new File(context.getExternalFilesDir(Environment.DIRECTORY_MUSIC), FOLDER_NAME);
+                if (!prismDir.exists()) prismDir.mkdirs();
+            }
+        }
+        return prismDir;
+    }
+
+    /**
+     * Resolves target audio file in Music/Prism-V/.
+     */
+    public static File getOutputAudioFile(Context context, String baseName, String extension) {
+        File folder = getAudioFolder(context);
+        String normExt = (extension != null) ? extension.trim().toLowerCase(java.util.Locale.US) : ".m4a";
+        if (!normExt.startsWith(".")) normExt = "." + normExt;
+        String cleanBase = baseName != null ? baseName.replaceAll("[^a-zA-Z0-9._-]", "_") : "audio";
+        return new File(folder, cleanBase + normExt);
+    }
+
+    /**
+     * Scans and indexes an extracted audio track into Android MediaStore.
+     */
+    public static void indexAudioInMediaStore(Context context, File audioFile) {
+        if (audioFile == null || !audioFile.exists()) return;
+        String mime = "audio/mp4";
+        String name = audioFile.getName().toLowerCase(java.util.Locale.US);
+        if (name.endsWith(".aac")) mime = "audio/aac";
+        else if (name.endsWith(".opus")) mime = "audio/opus";
+        else if (name.endsWith(".flac")) mime = "audio/flac";
+        else if (name.endsWith(".mp3")) mime = "audio/mpeg";
+
+        final String finalMime = mime;
+        MediaScannerConnection.scanFile(
+                context.getApplicationContext(),
+                new String[]{audioFile.getAbsolutePath()},
+                new String[]{finalMime},
+                (path, uri) -> PrismLogger.i(TAG, "Audio indexed into MediaStore: " + path + " -> " + uri)
+        );
+
+        try {
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.Audio.Media.TITLE, audioFile.getName());
+            values.put(MediaStore.Audio.Media.DISPLAY_NAME, audioFile.getName());
+            values.put(MediaStore.Audio.Media.MIME_TYPE, finalMime);
+            values.put(MediaStore.Audio.Media.DATE_ADDED, System.currentTimeMillis() / 1000);
+            values.put(MediaStore.Audio.Media.DATE_MODIFIED, System.currentTimeMillis() / 1000);
+            values.put(MediaStore.Audio.Media.SIZE, audioFile.length());
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                values.put(MediaStore.Audio.Media.RELATIVE_PATH, Environment.DIRECTORY_MUSIC + "/" + FOLDER_NAME);
+            }
+            context.getContentResolver().insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values);
+        } catch (Exception e) {
+            PrismLogger.d(TAG, "MediaStore audio insert note: " + e.getMessage());
+        }
+    }
 }
 

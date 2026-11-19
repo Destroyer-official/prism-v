@@ -11,6 +11,7 @@ import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.OpenableColumns;
@@ -671,7 +672,11 @@ public class MainActivity extends Activity {
             case "enhancer":
             case "audio_enhancer":
                 switchTab(2);
-                ToolboxDialogs.showAudioEnhancerDialog(this, selectedVideoUri);
+                ToolboxDialogs.showAudioEnhancerDialog(this, selectedVideoUri, (std, gainIdx, targetBr) -> {
+                    customAudioBitrateKbps = targetBr;
+                    if (tvCustomAudioBitRate != null) tvCustomAudioBitRate.setText(String.valueOf(targetBr));
+                    appendLog("Audio Polish Applied: " + std + " (" + targetBr + " kbps)");
+                });
                 break;
             case "benchmark":
             case "silicon":
@@ -681,7 +686,13 @@ public class MainActivity extends Activity {
             case "presets":
             case "preset_manager":
                 switchTab(2);
-                ToolboxDialogs.showPresetManagerDialog(this);
+                ToolboxDialogs.showPresetManagerDialog(this, (name, w, h, fps, br) -> {
+                    if (w > 0) customTargetWidth = w;
+                    if (h > 0) customTargetHeight = h;
+                    if (br > 0) customTargetBitrateKbps = br;
+                    activeQualityPreset = name;
+                    appendLog("Preset Applied: " + name + " -> " + w + "x" + h + " @ " + br + "k");
+                });
                 break;
             case "telemetry":
             case "resources":
@@ -1663,7 +1674,13 @@ public class MainActivity extends Activity {
                 "CUSTOM WORKFLOW RECIPES & PRESETS",
                 "Save, load, and QR-share encoding presets for WhatsApp, Discord, YouTube, and Archival.",
                 "RECIPES", "#0284C7", "#38BDF8", "MANAGE PRESETS",
-                v -> ToolboxDialogs.showPresetManagerDialog(this));
+                v -> ToolboxDialogs.showPresetManagerDialog(this, (name, w, h, fps, br) -> {
+                    if (w > 0) customTargetWidth = w;
+                    if (h > 0) customTargetHeight = h;
+                    if (br > 0) customTargetBitrateKbps = br;
+                    activeQualityPreset = name;
+                    appendLog("Preset Applied: " + name + " -> " + w + "x" + h + " @ " + br + "k");
+                }));
 
         // 3. AUDIO & SUBTITLES
         addToolboxCategoryHeader(root, "AUDIO & SUBTITLES");
@@ -1678,7 +1695,11 @@ public class MainActivity extends Activity {
                 "EBU R128 AUDIO ENHANCER & BOOSTER",
                 "Standardized broadcast loudness (-14 LUFS), +6dB anti-clip volume boost, and vocal presence lift.",
                 "EBU R128", "#059669", "#10B981", "ENHANCE AUDIO",
-                v -> ToolboxDialogs.showAudioEnhancerDialog(this, selectedVideoUri));
+                v -> ToolboxDialogs.showAudioEnhancerDialog(this, selectedVideoUri, (std, gainIdx, targetBr) -> {
+                    customAudioBitrateKbps = targetBr;
+                    if (tvCustomAudioBitRate != null) tvCustomAudioBitRate.setText(String.valueOf(targetBr));
+                    appendLog("Audio Polish Applied: " + std + " (" + targetBr + " kbps)");
+                }));
 
         // 4. COLOR & PRIVACY PROTECTION
         addToolboxCategoryHeader(root, "COLOR & PRIVACY PROTECTION");
@@ -3797,8 +3818,18 @@ public class MainActivity extends Activity {
         return result;
     }
 
+    private File getSampleVideoDirectory() {
+        File dir1 = new File(Environment.getExternalStorageDirectory(), "sample_video");
+        if (dir1.exists() && dir1.isDirectory()) return dir1;
+        File dir2 = new File("/sdcard/sample_video");
+        if (dir2.exists() && dir2.isDirectory()) return dir2;
+        File dir3 = new File(getExternalFilesDir(null), "sample_video");
+        if (dir3.exists() && dir3.isDirectory()) return dir3;
+        return dir1;
+    }
+
     private void showSamplePickerChoice() {
-        File sampleDir = new File("/sdcard/sample_video");
+        File sampleDir = getSampleVideoDirectory();
         File[] files = sampleDir.exists() ? sampleDir.listFiles((dir, name) -> name.toLowerCase(Locale.US).endsWith(".mp4")) : null;
         if (files == null || files.length <= 1) {
             loadSampleVideos(false);
@@ -3864,7 +3895,7 @@ public class MainActivity extends Activity {
     }
 
     private void loadSampleVideos(boolean forceBatch) {
-        File sampleDir = new File("/sdcard/sample_video");
+        File sampleDir = getSampleVideoDirectory();
         File[] files = sampleDir.exists() ? sampleDir.listFiles((dir, name) -> name.toLowerCase(Locale.US).endsWith(".mp4")) : null;
 
         if (forceBatch && files != null && files.length > 1) {
@@ -4429,7 +4460,7 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void appendLog(String message) {
+    public void appendLog(String message) {
         String time = new SimpleDateFormat("HH:mm:ss", Locale.US).format(new Date());
         String line = "[" + time + "] " + message + "\n";
         mainHandler.post(() -> {

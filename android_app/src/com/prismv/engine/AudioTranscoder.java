@@ -42,12 +42,66 @@ public final class AudioTranscoder {
         if (inputPath == null || outputFile == null) return false;
 
         MediaExtractor extractor = new MediaExtractor();
+        try {
+            extractor.setDataSource(inputPath);
+            return transcodeAudioTrackInternal(extractor, trackIndex, targetBitrateKbps, targetChannels, outputFile);
+        } catch (Exception e) {
+            PrismLogger.e(TAG, "Audio transcode init error: " + e.getMessage(), e);
+            return false;
+        } finally {
+            try { extractor.release(); } catch (Exception ignored) {}
+        }
+    }
+
+    /**
+     * Extracts and transcodes the primary audio track from a content/file Uri into an optimized M4A audio file.
+     *
+     * @param context Android context for resolving content URIs
+     * @param inputUri Source video or audio Uri
+     * @param targetBitrateKbps Target audio bitrate in kbps (e.g. 128, 192, 320)
+     * @param targetChannels Target audio channels (1 = Mono, 2 = Stereo, 0 = keep source)
+     * @param outputFile Destination audio file
+     * @return true if extraction succeeded, false otherwise
+     */
+    public static boolean extractAudio(android.content.Context context, android.net.Uri inputUri,
+                                       int targetBitrateKbps, int targetChannels,
+                                       File outputFile) {
+        if (context == null || inputUri == null || outputFile == null) return false;
+
+        MediaExtractor extractor = new MediaExtractor();
+        try {
+            extractor.setDataSource(context, inputUri, null);
+            int audioTrack = -1;
+            int numTracks = extractor.getTrackCount();
+            for (int i = 0; i < numTracks; i++) {
+                MediaFormat fmt = extractor.getTrackFormat(i);
+                String mime = fmt.getString(MediaFormat.KEY_MIME);
+                if (mime != null && mime.startsWith("audio/")) {
+                    audioTrack = i;
+                    break;
+                }
+            }
+            if (audioTrack == -1) {
+                PrismLogger.w(TAG, "No audio track found in media URI: " + inputUri);
+                return false;
+            }
+            return transcodeAudioTrackInternal(extractor, audioTrack, targetBitrateKbps, targetChannels, outputFile);
+        } catch (Exception e) {
+            PrismLogger.e(TAG, "extractAudio init error: " + e.getMessage(), e);
+            return false;
+        } finally {
+            try { extractor.release(); } catch (Exception ignored) {}
+        }
+    }
+
+    private static boolean transcodeAudioTrackInternal(MediaExtractor extractor, int trackIndex,
+                                                       int targetBitrateKbps, int targetChannels,
+                                                       File outputFile) {
         MediaCodec decoder = null;
         MediaCodec encoder = null;
         MediaMuxer muxer = null;
 
         try {
-            extractor.setDataSource(inputPath);
             extractor.selectTrack(trackIndex);
             MediaFormat inFormat = extractor.getTrackFormat(trackIndex);
 

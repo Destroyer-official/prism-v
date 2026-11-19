@@ -3492,15 +3492,16 @@ public class DuoComparisonPlayerView extends LinearLayout {
         } catch (Exception ignored) {
         }
 
-        // Priority 2: Check standard sample reel pair in /sdcard/sample_video/
+        // Priority 2: Check standard sample reel pair
+        File moviesFolder = com.prismv.storage.PrismStorageManager.getOutputFolder(getContext());
         File actionReelOrig = new File("/sdcard/sample_video/sample_action_reel.mp4");
-        File actionReelComp = new File("/storage/emulated/0/Movies/Prism-V/sample_action_reel_compressed.mp4");
+        File actionReelComp = new File(moviesFolder, "sample_action_reel_compressed.mp4");
         if (!actionReelComp.exists() || actionReelComp.length() == 0) {
-            actionReelComp = new File("/storage/emulated/0/Movies/Prism-V/sample_action_reel_optimized.mp4");
+            actionReelComp = new File(moviesFolder, "sample_action_reel_optimized.mp4");
         }
         if (!actionReelOrig.exists()) {
             actionReelOrig = new File("/sdcard/sample_video/sample.mp4");
-            actionReelComp = new File("/storage/emulated/0/Movies/Prism-V/sample_optimized.mp4");
+            actionReelComp = new File(moviesFolder, "sample_optimized.mp4");
         }
         if (actionReelOrig.exists() && actionReelComp.exists() && actionReelComp.length() > 0) {
             double pct = (1.0 - (double) actionReelComp.length() / actionReelOrig.length()) * 100.0;
