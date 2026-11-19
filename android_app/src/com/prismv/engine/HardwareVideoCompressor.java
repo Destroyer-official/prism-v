@@ -8,6 +8,7 @@ import android.media.MediaFormat;
 import android.media.MediaMetadataRetriever;
 import android.media.MediaMuxer;
 import android.net.Uri;
+import android.os.Build;
 import android.os.SystemClock;
 import com.prismv.logging.PrismLogger;
 import android.view.Surface;
@@ -91,6 +92,9 @@ public final class HardwareVideoCompressor {
             onProgress(percent, currentPtsUs, durationUs);
         }
         void onLog(String message);
+        default void onError(PrismErrorCode code, String message) {
+            onLog("Error (" + code.name() + "): " + message);
+        }
     }
 
     private static volatile PrismErrorCode sLastErrorCode = PrismErrorCode.NONE;
@@ -413,16 +417,34 @@ public final class HardwareVideoCompressor {
                 outputFormat.setInteger(MediaFormat.KEY_OPERATING_RATE, safeOpRate);
             } catch (Exception ignored) {}
 
-            // Preserve input color metadata / HDR transfer characteristics if present
+            // Preserve input color metadata / HDR transfer characteristics if present (W3 / F09)
             try {
+                int colorTransfer = -1;
                 if (inputVideoFormat.containsKey(MediaFormat.KEY_COLOR_TRANSFER)) {
-                    outputFormat.setInteger(MediaFormat.KEY_COLOR_TRANSFER, inputVideoFormat.getInteger(MediaFormat.KEY_COLOR_TRANSFER));
+                    colorTransfer = inputVideoFormat.getInteger(MediaFormat.KEY_COLOR_TRANSFER);
+                    outputFormat.setInteger(MediaFormat.KEY_COLOR_TRANSFER, colorTransfer);
                 }
                 if (inputVideoFormat.containsKey(MediaFormat.KEY_COLOR_STANDARD)) {
                     outputFormat.setInteger(MediaFormat.KEY_COLOR_STANDARD, inputVideoFormat.getInteger(MediaFormat.KEY_COLOR_STANDARD));
                 }
                 if (inputVideoFormat.containsKey(MediaFormat.KEY_COLOR_RANGE)) {
                     outputFormat.setInteger(MediaFormat.KEY_COLOR_RANGE, inputVideoFormat.getInteger(MediaFormat.KEY_COLOR_RANGE));
+                }
+
+                // W3: HDR Policy - ST2084 (HDR10) or HLG
+                boolean isHdrInput = (colorTransfer == MediaFormat.COLOR_TRANSFER_ST2084 || colorTransfer == MediaFormat.COLOR_TRANSFER_HLG);
+                if (isHdrInput) {
+                    DeviceProfile profile = DeviceProfile.get();
+                    if (MediaFormat.MIMETYPE_VIDEO_HEVC.equalsIgnoreCase(targetMime)) {
+                        if (profile.hdr10Encode) {
+                            outputFormat.setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10);
+                            PrismLogger.i(TAG, "HDR input detected (transfer=" + colorTransfer + "). Configured HEVC Main10 HDR10 profile.");
+                        } else {
+                            PrismLogger.w(TAG, "HDR input detected but device HEVC encoder lacks 10-bit HDR profile; preserving metadata on baseline profile.");
+                        }
+                    } else {
+                        PrismLogger.i(TAG, "HDR input detected with target " + targetMime + "; preserving transfer/primaries metadata.");
+                    }
                 }
             } catch (Exception ignored) {}
 
@@ -533,8 +555,13 @@ public final class HardwareVideoCompressor {
             try {
                 encoder.configure(outputFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
             } catch (Exception cfgEx) {
-                PrismLogger.w(TAG, "Encoder configure retry with safe operating-rate: " + cfgEx.getMessage());
+                PrismLogger.w(TAG, "Encoder configure retry with safe fallback: " + cfgEx.getMessage());
                 outputFormat.setInteger(MediaFormat.KEY_OPERATING_RATE, Math.max(30, targetFps));
+                if (outputFormat.containsKey(MediaFormat.KEY_PROFILE)) {
+                    try {
+                        outputFormat.removeKey(MediaFormat.KEY_PROFILE);
+                    } catch (Throwable ignored) {}
+                }
                 encoder.configure(outputFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
             }
             inputSurface = encoder.createInputSurface();
@@ -544,10 +571,22 @@ public final class HardwareVideoCompressor {
             String decoderMime = inputVideoFormat.getString(MediaFormat.KEY_MIME);
             try {
                 inputVideoFormat.setInteger(MediaFormat.KEY_PRIORITY, 0);
-                inputVideoFormat.setInteger(MediaFormat.KEY_OPERATING_RATE, Short.MAX_VALUE);
+                int safeDecOpRate = Math.min(Math.max(origFps, 30), 120);
+                inputVideoFormat.setInteger(MediaFormat.KEY_OPERATING_RATE, safeDecOpRate);
             } catch (Exception ignored) {}
-            decoder = MediaCodec.createDecoderByType(decoderMime);
-            PrismLogger.i(TAG, "Video decoder created: name=" + decoder.getName() + " mime=" + decoderMime);
+
+            try {
+                decoder = MediaCodec.createDecoderByType(decoderMime);
+                PrismLogger.i(TAG, "Video decoder created: name=" + decoder.getName() + " mime=" + decoderMime);
+            } catch (Throwable decEx) {
+                sLastErrorCode = PrismErrorCode.E_UNSUPPORTED_INPUT;
+                PrismLogger.e(TAG, "Device cannot decode input format: " + decoderMime + " (" + decEx.getMessage() + ")");
+                if (listener != null) {
+                    listener.onError(PrismErrorCode.E_UNSUPPORTED_INPUT, "This device cannot decode " + decoderMime + " video stream.");
+                }
+                return false;
+            }
+
             try {
                 decoder.configure(inputVideoFormat, inputSurface, null, 0);
             } catch (Exception decCfgEx) {
@@ -567,7 +606,11 @@ public final class HardwareVideoCompressor {
             // Setup MediaMuxer
             File outFile = new File(outputPath);
             if (outFile.exists()) outFile.delete();
-            muxer = new MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+            int muxerFormat = MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4;
+            if (outputPath.toLowerCase(Locale.US).endsWith(".webm") && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                muxerFormat = MediaMuxer.OutputFormat.MUXER_OUTPUT_WEBM;
+            }
+            muxer = new MediaMuxer(outputPath, muxerFormat);
 
             if (rotation != 0) {
                 muxer.setOrientationHint(rotation);
@@ -985,6 +1028,12 @@ public final class HardwareVideoCompressor {
         } catch (Throwable e) {
             if (isCancelRequested()) {
                 sLastErrorCode = PrismErrorCode.E_CANCELLED;
+            } else if (e instanceof MediaCodec.CodecException) {
+                MediaCodec.CodecException ce = (MediaCodec.CodecException) e;
+                sLastErrorCode = PrismErrorCode.E_CODEC_EXCEPTION;
+                PrismLogger.e(TAG, "MediaCodec.CodecException (errorCode=" + ce.getErrorCode()
+                        + ", transient=" + ce.isTransient() + ", recoverable=" + ce.isRecoverable()
+                        + ", diag=" + ce.getDiagnosticInfo() + "): " + ce.getMessage());
             } else if (sLastErrorCode == PrismErrorCode.NONE) {
                 sLastErrorCode = PrismErrorCode.E_CODEC_EXCEPTION;
             }

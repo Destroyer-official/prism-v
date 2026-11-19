@@ -35,6 +35,8 @@ public final class DeviceProfile {
     public final boolean hasAv1HardwareEncoder;
     public final boolean hasAv1HardwareDecoder;
     public final boolean hasHevcHardwareDecoder;
+    public final boolean hdr10Encode;
+    public final boolean hlgEncode;
 
     public final String preferredEncoderName;
 
@@ -61,6 +63,8 @@ public final class DeviceProfile {
         boolean av1Enc = false;
         boolean av1Dec = false;
         boolean hevcDec = false;
+        boolean hdr10 = false;
+        boolean hlg = false;
         String bestEnc = "unknown";
 
         try {
@@ -75,10 +79,33 @@ public final class DeviceProfile {
                         if (MediaFormat.MIMETYPE_VIDEO_HEVC.equalsIgnoreCase(t) && isHw) {
                             hevcEnc = true;
                             if ("unknown".equals(bestEnc)) bestEnc = info.getName();
+                            try {
+                                MediaCodecInfo.CodecCapabilities caps = info.getCapabilitiesForType(t);
+                                if (caps != null && caps.profileLevels != null) {
+                                    for (MediaCodecInfo.CodecProfileLevel pl : caps.profileLevels) {
+                                        if (pl.profile == MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10
+                                                || pl.profile == MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10) {
+                                            hdr10 = true;
+                                            hlg = true;
+                                        }
+                                    }
+                                }
+                            } catch (Throwable ignored) {}
                         }
                         if (MediaFormat.MIMETYPE_VIDEO_AV1.equalsIgnoreCase(t) && isHw) {
                             av1Enc = true;
                             bestEnc = info.getName();
+                            try {
+                                MediaCodecInfo.CodecCapabilities caps = info.getCapabilitiesForType(t);
+                                if (caps != null && caps.profileLevels != null) {
+                                    for (MediaCodecInfo.CodecProfileLevel pl : caps.profileLevels) {
+                                        if (pl.profile >= 0x1000) { // AV1ProfileMain10HDR10
+                                            hdr10 = true;
+                                            hlg = true;
+                                        }
+                                    }
+                                }
+                            } catch (Throwable ignored) {}
                         }
                     }
                 } else {
@@ -97,12 +124,15 @@ public final class DeviceProfile {
         this.hasAv1HardwareEncoder = av1Enc;
         this.hasAv1HardwareDecoder = av1Dec;
         this.hasHevcHardwareDecoder = hevcDec;
+        this.hdr10Encode = hdr10;
+        this.hlgEncode = hlg;
         this.preferredEncoderName = bestEnc;
 
         PrismLogger.i(TAG, String.format(Locale.US,
-                "DeviceProfile cached: SoC=%s API=%d ABIs=%s HW_ENC[AV1=%b, HEVC=%b, AVC=%b] Primary=%s",
+                "DeviceProfile cached: SoC=%s API=%d ABIs=%s HW_ENC[AV1=%b, HEVC=%b, AVC=%b, HDR10=%b, HLG=%b] Primary=%s",
                 this.socModel, this.apiLevel, Arrays.toString(this.abis),
                 this.hasAv1HardwareEncoder, this.hasHevcHardwareEncoder, this.hasAvcHardwareEncoder,
+                this.hdr10Encode, this.hlgEncode,
                 this.preferredEncoderName));
     }
 
@@ -110,10 +140,14 @@ public final class DeviceProfile {
         if (sInstance == null) {
             synchronized (DeviceProfile.class) {
                 if (sInstance == null) {
-                    sInstance = new DeviceProfile(context.getApplicationContext());
+                    sInstance = new DeviceProfile(context != null ? context.getApplicationContext() : null);
                 }
             }
         }
         return sInstance;
+    }
+
+    public static DeviceProfile get() {
+        return get(null);
     }
 }
