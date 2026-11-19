@@ -2383,14 +2383,9 @@ public class DuoComparisonPlayerView extends LinearLayout {
             currentOriginalSteerSpeed = currentPlaybackSpeed;
 
             int dur = getDuration();
-            updateTimeDisplays(snapPos, snapPos, dur);
-
-            if (badgeCenterSync != null) {
-                float fps = compMeta != null && compMeta.fps > 0 ? compMeta.fps : 30.0f;
-                int frameIdx = Math.max(0, Math.round((snapPos * fps) / 1000.0f));
-                badgeCenterSync.setText("● LOCKSTEP Δ 0ms [F: " + frameIdx + "]");
-                badgeCenterSync.setTextColor(ThemeStyles.COLOR_EMERALD_NEON);
-            }
+            posOrig = (playerOriginal != null && isOriginalPrepared) ? playerOriginal.getCurrentPosition() : snapPos;
+            posComp = (playerCompressed != null && isCompressedPrepared) ? playerCompressed.getCurrentPosition() : snapPos;
+            updateTimeDisplays(posOrig, posComp, dur);
             isPauseInProgress = false;
 
         } else {
@@ -2730,37 +2725,41 @@ public class DuoComparisonPlayerView extends LinearLayout {
         if (cinemaTimeDisplay != null)
             cinemaTimeDisplay.setText(formatted);
 
-        float fps = 30.0f;
-        if (compMeta != null && compMeta.fps > 0) {
-            fps = compMeta.fps;
-        } else if (origMeta != null && origMeta.fps > 0) {
-            fps = origMeta.fps;
-        }
-        float frameDurationMs = 1000.0f / fps;
+        float origFps = (origMeta != null && origMeta.fps > 0) ? origMeta.fps : 30.0f;
+        float compFps = (compMeta != null && compMeta.fps > 0) ? compMeta.fps : origFps;
+        float frameDurationMs = 1000.0f / compFps;
         float halfFrame = frameDurationMs / 2.0f; // e.g. 16.6ms at 30fps
 
         int drift = posOrig - posComp;
         int absDrift = Math.abs(drift);
-        int frameIdx = Math.max(0, Math.round((posComp * fps) / 1000.0f));
+        int origFrameIdx = Math.max(0, Math.round((posOrig * origFps) / 1000.0f));
+        int compFrameIdx = Math.max(0, Math.round((posComp * compFps) / 1000.0f));
 
-        // When paused or within half-frame tolerance, both video decoders are
-        // physically rendering the exact same frame.
-        // Therefore, lock both displayed timestamps to posComp for true 0 ms delay!
-        int displayOrigPos = (!isPlaying || absDrift <= halfFrame) ? posComp : posOrig;
+        // When physically rendering within half-frame tolerance, lock original displayed
+        // timestamp to compressed for true 0 ms sub-frame parity.
+        int displayOrigPos = (absDrift <= halfFrame) ? posComp : posOrig;
         int displayCompPos = posComp;
 
-        // Update live dual millisecond timestamps with frame indices
+        // Check for timeline duration mismatch (e.g. legacy files where video duration was shrunken by 25%)
+        int durOrig = (playerOriginal != null && isOriginalPrepared) ? playerOriginal.getDuration() : 0;
+        int durComp = (playerCompressed != null && isCompressedPrepared) ? playerCompressed.getDuration() : 0;
+        boolean timelineMismatched = (durOrig > 2000 && durComp > 2000 && Math.abs(durOrig - durComp) > 1500);
+
+        // Update live dual millisecond timestamps with true frame indices
         if (tvOrigTime != null) {
-            tvOrigTime.setText("⏱ " + formatTimeMillis(displayOrigPos) + " [F:" + frameIdx + "]");
+            tvOrigTime.setText("⏱ " + formatTimeMillis(displayOrigPos) + " [F:" + origFrameIdx + "]");
         }
         if (tvCompTime != null) {
-            tvCompTime.setText("⏱ " + formatTimeMillis(displayCompPos) + " [F:" + frameIdx + "]");
+            tvCompTime.setText("⏱ " + formatTimeMillis(displayCompPos) + " [F:" + compFrameIdx + "]");
         }
 
         // Update live sync delta badge
         if (badgeCenterSync != null) {
-            if (!isPlaying || absDrift <= halfFrame) {
-                badgeCenterSync.setText("● LOCKSTEP Δ 0ms [F: " + frameIdx + "]");
+            if (timelineMismatched && absDrift > 1000) {
+                badgeCenterSync.setText(String.format(Locale.US, "⚠️ TIMELINE DESYNC Δ %+dms", drift));
+                badgeCenterSync.setTextColor(Color.parseColor("#F59E0B")); // Amber
+            } else if (absDrift <= halfFrame) {
+                badgeCenterSync.setText("● LOCKSTEP Δ 0ms [F: " + compFrameIdx + "]");
                 badgeCenterSync.setTextColor(ThemeStyles.COLOR_EMERALD_NEON);
             } else if (absDrift <= frameDurationMs * 2.0f) {
                 badgeCenterSync.setText(String.format(Locale.US, "● SYNC Δ %+dms", drift));

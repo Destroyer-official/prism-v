@@ -192,7 +192,7 @@ public final class HardwareVideoCompressor {
                 if (nativeMeta.height > 0) origHeight = nativeMeta.height;
                 PrismLogger.i(TAG, "Native Container Parser extracted ground-truth duration: " + (durationUs / 1000000.0) + "s, format: " + nativeMeta.container);
             }
-            int origFps = 30;
+            int origFps = 0;
             if (nativeMeta.fps > 0) {
                 origFps = Math.round(nativeMeta.fps);
             } else if (inputVideoFormat.containsKey(MediaFormat.KEY_FRAME_RATE)) {
@@ -206,7 +206,9 @@ public final class HardwareVideoCompressor {
             }
             if (origFps <= 0) {
                 FpsExtractor.FpsResult fr = FpsExtractor.detectFps(null, null, inputPath, null, durationUs / 1000);
-                origFps = fr.fps;
+                if (fr != null && fr.fps > 0) {
+                    origFps = fr.fps;
+                }
             }
             if (origFps <= 0) origFps = 30;
 
@@ -288,6 +290,15 @@ public final class HardwareVideoCompressor {
             // Compute Target Frame Rate
             int targetFps = (options.targetFps > 0) ? options.targetFps : origFps;
             if (targetFps <= 0) targetFps = 30;
+            // Never upsample: this pipeline re-encodes decoded frames and cannot synthesize
+            // new ones. A target above the source cadence would only relabel existing frames
+            // at a faster rate (e.g. 24 fps source -> 30 fps track = 25% speed-up), which also
+            // desynchronizes the bit-exact copied audio. Keep native cadence instead.
+            if (origFps > 0 && targetFps > origFps) {
+                PrismLogger.i(TAG, "Target " + targetFps + " fps exceeds source " + origFps
+                        + " fps; clamping to source cadence " + origFps + " fps (no frame synthesis).");
+                targetFps = origFps;
+            }
 
             // Compute Target Bitrate (kbps -> bps)
             int targetBitrateBps;
@@ -639,7 +650,9 @@ public final class HardwareVideoCompressor {
             MediaCodec.BufferInfo audioInfo = new MediaCodec.BufferInfo();
 
             long currentVideoPtsUs = 0;
-            long lastRenderedPtsUs = -1;
+            long lastRenderedPtsUs = -1;      // normalized output PTS of the last rendered frame
+            long lastRenderedSrcPtsUs = -1;   // source PTS of the last rendered frame (for FPS decimation)
+            long lastCfrSlot = -1;            // last occupied slot on the target CFR time grid
             long firstVideoPtsUs = -1;
             long firstAudioPtsUs = -1;
             long minFrameIntervalUs = (targetFps < origFps) ? (1000000L / targetFps) : 0;
@@ -725,29 +738,43 @@ public final class HardwareVideoCompressor {
                         boolean isEos = (bufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0;
                         if (bufferInfo.size > 0 || isEos) {
                             // Check if we need frame decimation for reduced FPS
-                            if (!isEos && minFrameIntervalUs > 0 && lastRenderedPtsUs >= 0
-                                    && (bufferInfo.presentationTimeUs - lastRenderedPtsUs) < (minFrameIntervalUs * 0.85)) {
+                            if (!isEos && minFrameIntervalUs > 0 && lastRenderedSrcPtsUs >= 0
+                                    && (bufferInfo.presentationTimeUs - lastRenderedSrcPtsUs) < (minFrameIntervalUs * 0.85)) {
                                 decoder.releaseOutputBuffer(decIndex, false); // drop frame for lower fps
                             } else {
-                                // VFR -> CFR Sanitizer & Monotonic Timestamp Normalization
+                                // VFR -> CFR Sanitizer & Monotonic Timestamp Normalization.
+                                // Quantize the *source* timestamp onto the target CFR grid instead of
+                                // stamping frames by a running counter. A counter-based stamp
+                                // (frameIndex / targetFps) shrinks the whole timeline whenever the
+                                // source cadence differs from targetFps - e.g. a 24 fps source
+                                // transcoded at 30 fps played 25% too fast, ran out of video ~53 s
+                                // before the copied audio ended, and could never lockstep with the
+                                // original in the Duo comparison player.
                                 long renderPtsUs;
                                 if (!isEos && firstVideoPtsUs < 0) {
                                     firstVideoPtsUs = bufferInfo.presentationTimeUs;
                                 }
-                                if (options != null && options.enableCfrNormalization) {
-                                    long targetIntervalUs = 1000000L / (targetFps > 0 ? targetFps : 30);
-                                    renderPtsUs = framesRenderedCount * targetIntervalUs;
-                                    framesRenderedCount++;
-                                } else {
-                                    renderPtsUs = (firstVideoPtsUs >= 0)
-                                            ? Math.max(0, bufferInfo.presentationTimeUs - firstVideoPtsUs)
-                                            : bufferInfo.presentationTimeUs;
-                                }
+                                long srcRelPtsUs = (firstVideoPtsUs >= 0)
+                                        ? Math.max(0, bufferInfo.presentationTimeUs - firstVideoPtsUs)
+                                        : Math.max(0, bufferInfo.presentationTimeUs);
                                 if (options != null && options.speedMultiplier > 0.05f && Math.abs(options.speedMultiplier - 1.0f) > 0.05f) {
-                                    renderPtsUs = (long) (renderPtsUs / options.speedMultiplier);
+                                    srcRelPtsUs = (long) (srcRelPtsUs / options.speedMultiplier);
+                                }
+                                if (options != null && options.enableCfrNormalization) {
+                                    long targetIntervalUs = Math.max(1L, 1000000L / (targetFps > 0 ? targetFps : 30));
+                                    long slot = (srcRelPtsUs + targetIntervalUs / 2) / targetIntervalUs;
+                                    if (slot <= lastCfrSlot) slot = lastCfrSlot + 1; // keep PTS strictly increasing
+                                    lastCfrSlot = slot;
+                                    renderPtsUs = slot * targetIntervalUs;
+                                    framesRenderedCount = slot + 1;
+                                } else {
+                                    renderPtsUs = srcRelPtsUs;
                                 }
                                 if (renderPtsUs < 0) renderPtsUs = 0;
-                                if (!isEos) lastRenderedPtsUs = renderPtsUs;
+                                if (!isEos) {
+                                    lastRenderedPtsUs = renderPtsUs;
+                                    lastRenderedSrcPtsUs = bufferInfo.presentationTimeUs;
+                                }
                                 decoder.releaseOutputBuffer(decIndex, renderPtsUs * 1000L);
                             }
                         } else {

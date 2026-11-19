@@ -57,7 +57,9 @@ public class TestRunnerReceiver extends BroadcastReceiver {
                 } else if ("com.prismv.ACTION_TEST_TX".equals(action)) {
                     checkVerifiedReplacement(context);
                 } else if ("com.prismv.ACTION_COMPRESS_SAMPLE".equals(action)) {
-                    runSampleCompression(context);
+                    runSampleCompression(context,
+                            intent != null ? intent.getStringExtra("path") : null,
+                            intent != null ? intent.getLongExtra("trimEndUs", 0L) : 0L);
                 } else if ("com.prismv.ACTION_COMPRESS_F5_SILICON".equals(action)) {
                     runSiliconSampleCompression(context);
                 } else if ("com.prismv.ACTION_START_SERVICE".equals(action)) {
@@ -262,9 +264,11 @@ public class TestRunnerReceiver extends BroadcastReceiver {
         }
     }
 
-    private void runSampleCompression(Context context) {
+    private void runSampleCompression(Context context, String overridePath, long trimEndUs) {
         try {
-            File inFile = new File("/sdcard/sample_video/sample_action_reel.mp4");
+            boolean customInput = overridePath != null && !overridePath.trim().isEmpty();
+            File inFile = customInput ? new File(overridePath.trim())
+                    : new File("/sdcard/sample_video/sample_action_reel.mp4");
             if (!inFile.exists() || inFile.length() == 0) {
                 inFile = new File("/sdcard/sample_video/sample.mp4");
             }
@@ -282,7 +286,7 @@ public class TestRunnerReceiver extends BroadcastReceiver {
 
             File outDir = new File("/storage/emulated/0/Movies/Prism-V");
             if (!outDir.exists()) outDir.mkdirs();
-            File outFile = new File(outDir, "sample_action_reel_compressed.mp4");
+            File outFile = new File(outDir, customInput ? "cfr_pts_test_compressed.mp4" : "sample_action_reel_compressed.mp4");
             if (outFile.exists()) outFile.delete();
 
             PrismLogger.i(TAG, "[SAMPLE-COMPRESS] Ingesting " + inFile.getAbsolutePath() + " (" + (inFile.length() / (1024 * 1024)) + " MB)");
@@ -296,6 +300,9 @@ public class TestRunnerReceiver extends BroadcastReceiver {
             options.outputFormat = "MP4";
             options.audioChannel = "Stereo";
             options.audioBitrateKbps = 320;
+            if (trimEndUs > 0) {
+                options.trimEndUs = trimEndUs;
+            }
 
             boolean ok = HardwareVideoCompressor.compress(
                     inFile.getAbsolutePath(),

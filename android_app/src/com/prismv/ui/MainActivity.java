@@ -1369,6 +1369,9 @@ public class MainActivity extends Activity {
                     int w = resDimensions[idx][0];
                     int h = resDimensions[idx][1];
                     int fps = (idx == 5 && sourceFps > 0) ? sourceFps : resDimensions[idx][2];
+                    if (sourceFps > 0 && fps > sourceFps) {
+                        fps = sourceFps; // Never upsample beyond source fps
+                    }
                     int kbps = resDimensions[idx][3];
 
                     if (w > 0 && h > 0) {
@@ -1397,6 +1400,9 @@ public class MainActivity extends Activity {
                         tvCustomResolution.setText(sourceWidth + " X " + sourceHeight);
                     }
                     customTargetFps = (idx == 5 && sourceFps > 0) ? sourceFps : fps;
+                    if (sourceFps > 0 && customTargetFps > sourceFps) {
+                        customTargetFps = sourceFps;
+                    }
                     customTargetBitrateKbps = kbps;
                     tvCustomFrameRate.setText(String.valueOf(customTargetFps));
                     tvCustomBitRate.setText(String.valueOf(kbps));
