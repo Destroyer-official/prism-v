@@ -1,7 +1,9 @@
 package com.prismv.ui;
 
 import android.app.Activity;
+import android.content.ContentUris;
 import android.content.Context;
+import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.SurfaceTexture;
@@ -15,6 +17,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.provider.MediaStore;
 import android.util.AttributeSet;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -3272,13 +3275,165 @@ public class DuoComparisonPlayerView extends LinearLayout {
     // ==========================================
     // VIDEO LOADING & SAMPLES
     // ==========================================
+    public static boolean isSameMedia(Uri u1, Uri u2) {
+        if (u1 == null || u2 == null) return false;
+        if (u1.equals(u2)) return true;
+        String s1 = u1.toString();
+        String s2 = u2.toString();
+        if (s1.equalsIgnoreCase(s2)) return true;
+
+        String p1 = "file".equalsIgnoreCase(u1.getScheme()) ? u1.getPath() : ("content".equalsIgnoreCase(u1.getScheme()) ? null : s1);
+        String p2 = "file".equalsIgnoreCase(u2.getScheme()) ? u2.getPath() : ("content".equalsIgnoreCase(u2.getScheme()) ? null : s2);
+
+        if (p1 != null && p2 != null) {
+            try {
+                File f1 = new File(p1).getCanonicalFile();
+                File f2 = new File(p2).getCanonicalFile();
+                if (f1.equals(f2)) return true;
+            } catch (Exception ignored) {
+                if (p1.equalsIgnoreCase(p2)) return true;
+            }
+        }
+        return false;
+    }
+
+    public static Uri resolveSourceVideoUri(Context context, CompressionHistoryManager.Record r) {
+        if (context == null || r == null) return null;
+        Uri compUri = r.getCompressedUri();
+
+        // 1. Direct originalUri check
+        Uri origUri = r.getOriginalUri();
+        if (origUri != null && !isSameMedia(origUri, compUri)) {
+            String compId = CompressionHistoryManager.extractNumericId(r.compressedPath);
+            String origId = CompressionHistoryManager.extractNumericId(origUri.toString());
+            boolean idContradiction = (compId != null && origId != null && !compId.equals(origId));
+
+            if (!idContradiction) {
+                if ("file".equalsIgnoreCase(origUri.getScheme())) {
+                    File f = new File(origUri.getPath());
+                    if (f.exists() && f.length() > 0) return origUri;
+                } else if ("content".equalsIgnoreCase(origUri.getScheme())) {
+                    try (android.content.res.AssetFileDescriptor afd = context.getContentResolver()
+                            .openAssetFileDescriptor(origUri, "r")) {
+                        if (afd != null && afd.getLength() != 0) {
+                            return origUri;
+                        }
+                    } catch (Exception ignored) {}
+                }
+            }
+        }
+
+        // 2. Direct originalPath check
+        if (r.originalPath != null && !r.originalPath.trim().isEmpty()) {
+            String compId = CompressionHistoryManager.extractNumericId(r.compressedPath);
+            String pathId = CompressionHistoryManager.extractNumericId(r.originalPath);
+            boolean idContradiction = (compId != null && pathId != null && !compId.equals(pathId));
+
+            if (!idContradiction) {
+                File f = new File(r.originalPath);
+                if (f.exists() && f.length() > 0) {
+                    Uri u = Uri.fromFile(f);
+                    if (!isSameMedia(u, compUri)) return u;
+                }
+            }
+        }
+
+        // 3. Resolve via MediaStore using numeric ID from compressedPath filename
+        String compId = CompressionHistoryManager.extractNumericId(r.compressedPath);
+        if (compId != null) {
+            try {
+                long mediaId = Long.parseLong(compId);
+                Uri msUri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, mediaId);
+                try (android.content.res.AssetFileDescriptor afd = context.getContentResolver()
+                        .openAssetFileDescriptor(msUri, "r")) {
+                    if (afd != null && afd.getLength() != 0 && !isSameMedia(msUri, compUri)) {
+                        return msUri;
+                    }
+                } catch (Exception ignored) {}
+            } catch (Exception ignored) {}
+        }
+
+        // 4. Resolve via MediaStore using ID from originalUriStr (e.g. photopicker URI)
+        if (r.originalUriStr != null && !r.originalUriStr.isEmpty()) {
+            String uriId = CompressionHistoryManager.extractNumericId(r.originalUriStr);
+            if (uriId != null) {
+                try {
+                    long mediaId = Long.parseLong(uriId);
+                    Uri msUri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, mediaId);
+                    try (android.content.res.AssetFileDescriptor afd = context.getContentResolver()
+                            .openAssetFileDescriptor(msUri, "r")) {
+                        if (afd != null && afd.getLength() != 0 && !isSameMedia(msUri, compUri)) {
+                            return msUri;
+                        }
+                    } catch (Exception ignored) {}
+                } catch (Exception ignored) {}
+            }
+        }
+
+        // 5. Query MediaStore by title
+        if (r.title != null && !r.title.trim().isEmpty()) {
+            String searchTitle = r.title.trim();
+            if (searchTitle.startsWith("input_")) searchTitle = searchTitle.substring(6);
+            Uri queryUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI;
+            String[] projection = {MediaStore.Video.Media._ID, MediaStore.Video.Media.SIZE};
+            String selection = MediaStore.Video.Media.DISPLAY_NAME + " = ? OR " + MediaStore.Video.Media.TITLE + " = ?";
+            String[] selectionArgs = {searchTitle, searchTitle};
+            try (Cursor cursor = context.getContentResolver().query(queryUri, projection, selection, selectionArgs, null)) {
+                if (cursor != null && cursor.moveToFirst()) {
+                    int idCol = cursor.getColumnIndex(MediaStore.Video.Media._ID);
+                    if (idCol >= 0) {
+                        long mediaId = cursor.getLong(idCol);
+                        Uri msUri = ContentUris.withAppendedId(queryUri, mediaId);
+                        if (!isSameMedia(msUri, compUri)) return msUri;
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
+        // 6. Search local file directories
+        if (r.title != null) {
+            File sf = CompressedVideosView.findPossibleSourceFile(r.title);
+            if (sf != null && sf.exists() && sf.length() > 0) {
+                Uri u = Uri.fromFile(sf);
+                if (!isSameMedia(u, compUri)) return u;
+            }
+        }
+        if (r.compressedPath != null) {
+            File sf = CompressedVideosView.findPossibleSourceFile(new File(r.compressedPath).getName());
+            if (sf != null && sf.exists() && sf.length() > 0) {
+                Uri u = Uri.fromFile(sf);
+                if (!isSameMedia(u, compUri)) return u;
+            }
+        }
+
+        return null;
+    }
+
     public void loadVideoPair(Uri origUri, Uri compUri, String origName, String compName) {
         com.prismv.logging.PrismLogger.i("DuoPlayer", "loadVideoPair: orig=" + origUri + " (" + origName + ") comp=" + compUri + " (" + compName + ")");
-        // Guard: if source URI is missing, fall back to Solo Output instead of showing a black left side / fake Curtain bar
-        if (origUri == null && compUri != null) {
+        if (origUri == null && compUri == null) {
+            showEmptyOverlay();
+            return;
+        }
+        // Guard 1: if source URI is missing, fall back to Solo Output instead of showing a black left side / fake Curtain bar
+        if (origUri == null) {
             loadOutputVideoSolo(compUri, compName != null ? compName : "● PRISM-V OPTIMIZED");
             if (getContext() instanceof Activity) {
                 PrismHud.showInfo((Activity) getContext(), "Source video unavailable; playing compressed output solo.");
+            }
+            return;
+        }
+        // Guard 2: if compressed URI is missing, fall back to Solo Original
+        if (compUri == null) {
+            loadSourceVideoOnly(origUri, origName != null ? origName : "● SOURCE MASTER");
+            return;
+        }
+        // Guard 3: if source and compressed point to the exact same video, play Solo Output
+        if (isSameMedia(origUri, compUri)) {
+            com.prismv.logging.PrismLogger.w("DuoPlayer", "Identical video provided for both source and compressed (" + compUri + "); playing in Solo Output mode.");
+            loadOutputVideoSolo(compUri, compName != null ? compName : "● PRISM-V OPTIMIZED");
+            if (getContext() instanceof Activity) {
+                PrismHud.showInfo((Activity) getContext(), "Source and compressed are identical; playing solo.");
             }
             return;
         }
@@ -3391,7 +3546,6 @@ public class DuoComparisonPlayerView extends LinearLayout {
     public void loadFromHistoryRecord(CompressionHistoryManager.Record r) {
         if (r == null)
             return;
-        Uri origUri = r.getOriginalUri();
         Uri compUri = r.getCompressedUri();
         if (compUri == null || !r.isCompressedFileExisting()) {
             if (getContext() instanceof Activity) {
@@ -3400,48 +3554,15 @@ public class DuoComparisonPlayerView extends LinearLayout {
             return;
         }
 
-        boolean origAccessible = false;
-        if (origUri != null) {
-            if ("file".equals(origUri.getScheme())) {
-                File f = new File(origUri.getPath());
-                origAccessible = f.exists() && f.length() > 0;
-            } else if ("content".equals(origUri.getScheme())) {
-                try (android.content.res.AssetFileDescriptor afd = getContext().getContentResolver()
-                        .openAssetFileDescriptor(origUri, "r")) {
-                    origAccessible = (afd != null);
-                } catch (Exception ignored) {
-                }
-            }
-        }
-        if (!origAccessible && r.originalPath != null && !r.originalPath.isEmpty()) {
-            File f = new File(r.originalPath);
-            if (f.exists() && f.length() > 0) {
-                origUri = Uri.fromFile(f);
-                origAccessible = true;
-            }
-        }
-        if (!origAccessible && r.title != null) {
-            File possibleSource = CompressedVideosView.findPossibleSourceFile(r.title);
-            if (possibleSource != null && possibleSource.exists() && possibleSource.length() > 0) {
-                origUri = Uri.fromFile(possibleSource);
-                origAccessible = true;
-            }
-        }
-        if (!origAccessible && r.compressedPath != null) {
-            File possibleSource = CompressedVideosView.findPossibleSourceFile(new File(r.compressedPath).getName());
-            if (possibleSource != null && possibleSource.exists() && possibleSource.length() > 0) {
-                origUri = Uri.fromFile(possibleSource);
-                origAccessible = true;
-            }
-        }
+        Uri origUri = resolveSourceVideoUri(getContext(), r);
 
-        if (!origAccessible) {
+        if (origUri == null || isSameMedia(origUri, compUri)) {
             String compTitle = String.format(Locale.US, "● PRISM-V: %s (%.1f MB)",
                     r.title != null ? r.title : "Compressed",
                     r.compressedSizeBytes / (1024.0 * 1024.0));
             loadOutputVideoSolo(compUri, compTitle);
             if (getContext() instanceof Activity) {
-                PrismHud.showInfo((Activity) getContext(), "Master source not on storage; playing compressed output.");
+                PrismHud.showInfo((Activity) getContext(), "Master source not available; playing compressed output.");
             }
             return;
         }
@@ -3462,85 +3583,40 @@ public class DuoComparisonPlayerView extends LinearLayout {
             CompressionHistoryManager history = CompressionHistoryManager.get(getContext());
             CompressionHistoryManager.Record latest = history.getLatestRecord();
             if (latest != null && latest.isCompressedFileExisting()) {
-                boolean origValid = false;
-                if (latest.getOriginalUri() != null) {
-                    if ("file".equals(latest.getOriginalUri().getScheme())) {
-                        origValid = new File(latest.getOriginalUri().getPath()).exists();
-                    } else if ("content".equals(latest.getOriginalUri().getScheme())) {
-                        try (android.content.res.AssetFileDescriptor afd = getContext().getContentResolver()
-                                .openAssetFileDescriptor(latest.getOriginalUri(), "r")) {
-                            origValid = (afd != null);
-                        } catch (Exception ignored) {
-                        }
-                    }
-                }
-                if (!origValid && latest.title != null) {
-                    File possibleSource = new File("/sdcard/sample_video/" + latest.title);
-                    if (possibleSource.exists())
-                        origValid = true;
-                    else {
-                        File camSource = new File("/sdcard/DCIM/Camera/" + latest.title);
-                        if (camSource.exists())
-                            origValid = true;
-                    }
-                }
-                if (origValid) {
-                    loadFromHistoryRecord(latest);
-                    return;
-                }
+                loadFromHistoryRecord(latest);
+                return;
             }
         } catch (Exception ignored) {
         }
 
-        // Priority 2: Check standard sample reel pair
+        // Priority 2: Check standard sample reel pair if present in app-accessible storage
         File moviesFolder = com.prismv.storage.PrismStorageManager.getOutputFolder(getContext());
-        File actionReelOrig = new File("/sdcard/sample_video/sample_action_reel.mp4");
+        File appFiles = getContext().getExternalFilesDir(null);
+
+        File actionReelOrig = new File(appFiles, "sample_action_reel.mp4");
         File actionReelComp = new File(moviesFolder, "sample_action_reel_compressed.mp4");
-        if (!actionReelComp.exists() || actionReelComp.length() == 0) {
-            actionReelComp = new File(moviesFolder, "sample_action_reel_optimized.mp4");
-        }
         if (!actionReelOrig.exists()) {
-            actionReelOrig = new File("/sdcard/sample_video/sample.mp4");
+            actionReelOrig = new File(appFiles, "sample.mp4");
             actionReelComp = new File(moviesFolder, "sample_optimized.mp4");
         }
-        if (actionReelOrig.exists() && actionReelComp.exists() && actionReelComp.length() > 0) {
-            double pct = (1.0 - (double) actionReelComp.length() / actionReelOrig.length()) * 100.0;
-            loadVideoPair(
-                    Uri.fromFile(actionReelOrig),
-                    Uri.fromFile(actionReelComp),
-                    String.format(Locale.US, "● SOURCE: %s (%.1f MB)", actionReelOrig.getName(),
-                            actionReelOrig.length() / (1024.0 * 1024.0)),
-                    String.format(Locale.US, "● PRISM-V (%.1f MB • -%.1f%%)",
-                            actionReelComp.length() / (1024.0 * 1024.0), pct));
-            return;
+        if (actionReelOrig.exists() && actionReelComp.exists() && actionReelOrig.length() > 0 && actionReelComp.length() > 0) {
+            Uri origU = Uri.fromFile(actionReelOrig);
+            Uri compU = Uri.fromFile(actionReelComp);
+            if (!isSameMedia(origU, compU)) {
+                double pct = (1.0 - (double) actionReelComp.length() / actionReelOrig.length()) * 100.0;
+                loadVideoPair(
+                        origU,
+                        compU,
+                        String.format(Locale.US, "● SOURCE: %s (%.1f MB)", actionReelOrig.getName(),
+                                actionReelOrig.length() / (1024.0 * 1024.0)),
+                        String.format(Locale.US, "● PRISM-V (%.1f MB • -%.1f%%)",
+                                actionReelComp.length() / (1024.0 * 1024.0), Math.max(0, pct)));
+                return;
+            }
         }
 
-        // Priority 2: Look for compressed_sample.mp4 and sample.mp4 in external files
-        // or sdcard
-        File origFile = new File("/sdcard/Android/data/com.prismv/files/sample.mp4");
-        File compFile = new File("/sdcard/Android/data/com.prismv/files/compressed_sample.mp4");
-
-        if (!compFile.exists()) {
-            compFile = new File("/sdcard/Android/data/com.prismv/files/compressed_sample.mp4.mp4");
-        }
-        if (!origFile.exists()) {
-            origFile = new File(getContext().getExternalFilesDir(null), "sample.mp4");
-        }
-        if (!compFile.exists()) {
-            compFile = new File(getContext().getExternalFilesDir(null), "compressed_sample.mp4");
-        }
-
-        if (origFile.exists() && compFile.exists()) {
-            double pct = (origFile.length() > 0)
-                    ? (1.0 - (double) compFile.length() / (double) origFile.length()) * 100.0
-                    : 0.0;
-            loadVideoPair(
-                    Uri.fromFile(origFile),
-                    Uri.fromFile(compFile),
-                    String.format(Locale.US, "● SOURCE (%.1f MB)", origFile.length() / (1024.0 * 1024.0)),
-                    String.format(Locale.US, "● PRISM-V (%.1f MB • -%.1f%%)", compFile.length() / (1024.0 * 1024.0),
-                            Math.max(0, pct)));
-        }
+        // If no valid pair is found anywhere, show empty overlay
+        showEmptyOverlay();
     }
 
     private VideoMeta extractVideoMeta(Uri uri) {

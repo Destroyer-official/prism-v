@@ -421,15 +421,15 @@ public class CompressedVideosView extends LinearLayout {
         if (r == null) return null;
         if (r.originalPath != null && !r.originalPath.isEmpty()) {
             File f = new File(r.originalPath);
-            if (f.exists() && f.length() > 0) return f;
+            if (f.exists() && f.length() > 0 && (r.compressedPath == null || !f.getAbsolutePath().equals(r.compressedPath))) return f;
         }
         if (r.title != null) {
             File f = findPossibleSourceFile(r.title);
-            if (f != null && f.exists() && f.length() > 0) return f;
+            if (f != null && f.exists() && f.length() > 0 && (r.compressedPath == null || !f.getAbsolutePath().equals(r.compressedPath))) return f;
         }
         if (r.compressedPath != null) {
             File f = findPossibleSourceFile(new File(r.compressedPath).getName());
-            if (f != null && f.exists() && f.length() > 0) return f;
+            if (f != null && f.exists() && f.length() > 0 && !f.getAbsolutePath().equals(r.compressedPath)) return f;
         }
         return null;
     }

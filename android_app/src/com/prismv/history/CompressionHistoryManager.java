@@ -1,8 +1,11 @@
 package com.prismv.history;
 
+import android.content.ContentUris;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.database.Cursor;
 import android.net.Uri;
+import android.provider.MediaStore;
 import com.prismv.logging.PrismLogger;
 
 import org.json.JSONArray;
@@ -34,6 +37,21 @@ public final class CompressionHistoryManager {
     private final SharedPreferences prefs;
     private final Context context;
 
+    public static String extractNumericId(String str) {
+        if (str == null) return null;
+        String s = str;
+        int lastSlash = s.lastIndexOf('/');
+        if (lastSlash >= 0) s = s.substring(lastSlash + 1);
+        if (s.endsWith("_optimized.mp4")) s = s.substring(0, s.length() - "_optimized.mp4".length());
+        else if (s.endsWith("_compressed.mp4")) s = s.substring(0, s.length() - "_compressed.mp4".length());
+        else if (s.endsWith(".mp4")) s = s.substring(0, s.length() - 4);
+        if (s.startsWith("input_")) s = s.substring(6);
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\b(\\d{5,})\\b").matcher(s);
+        if (m.find()) return m.group(1);
+        if (s.matches("\\d+")) return s;
+        return null;
+    }
+
     public static class Record {
         public String id;
         public String title;
@@ -56,11 +74,35 @@ public final class CompressionHistoryManager {
         public String trashedSourcePath;
 
         public Uri getOriginalUri() {
+            String compId = extractNumericId(compressedPath);
+            String origUriId = extractNumericId(originalUriStr);
+            String origPathId = extractNumericId(originalPath);
+
+            // Guard against mismatched IDs
+            if (compId != null && origUriId != null && !compId.equals(origUriId)) {
+                try {
+                    return ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, Long.parseLong(compId));
+                } catch (Exception ignored) {}
+            }
+
             if (originalUriStr != null && !originalUriStr.isEmpty()) {
                 return Uri.parse(originalUriStr);
             }
+
+            if (compId != null && origPathId != null && !compId.equals(origPathId)) {
+                try {
+                    return ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, Long.parseLong(compId));
+                } catch (Exception ignored) {}
+            }
+
             if (originalPath != null && !originalPath.isEmpty()) {
                 return Uri.fromFile(new File(originalPath));
+            }
+
+            if (compId != null) {
+                try {
+                    return ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, Long.parseLong(compId));
+                } catch (Exception ignored) {}
             }
             return null;
         }
@@ -172,6 +214,7 @@ public final class CompressionHistoryManager {
     public synchronized List<Record> getRecords() {
         List<Record> list = new ArrayList<>();
         java.util.HashSet<String> seenPaths = new java.util.HashSet<>();
+        boolean dirty = false;
         String json = prefs.getString(KEY_RECORDS, "[]");
         try {
             JSONArray arr = new JSONArray(json);
@@ -204,7 +247,56 @@ public final class CompressionHistoryManager {
                     }
                     seenPaths.add(r.compressedPath);
                 }
+
+                // Self-Healing 1: Clean up identical orig and comp paths
+                if (r.originalPath != null && r.compressedPath != null && r.originalPath.equals(r.compressedPath)) {
+                    r.originalPath = "";
+                    dirty = true;
+                }
+                if (r.originalUriStr != null && r.compressedPath != null && r.originalUriStr.equals(Uri.fromFile(new File(r.compressedPath)).toString())) {
+                    r.originalUriStr = "";
+                    dirty = true;
+                }
+
+                // Self-Healing 2: Heal mismatched numeric media IDs
+                if (r.compressedPath != null) {
+                    String compId = extractNumericId(r.compressedPath);
+                    if (compId != null) {
+                        String origId = extractNumericId(r.originalUriStr);
+                        if (origId == null) origId = extractNumericId(r.originalPath);
+
+                        boolean needsHeal = (origId == null || !origId.equals(compId));
+                        if (needsHeal) {
+                            try {
+                                long mediaId = Long.parseLong(compId);
+                                Uri trueUri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, mediaId);
+                                try (Cursor c = context.getContentResolver().query(trueUri, new String[]{MediaStore.Video.Media._ID, MediaStore.Video.Media.DISPLAY_NAME, MediaStore.Video.Media.SIZE}, null, null, null)) {
+                                    if (c != null && c.moveToFirst()) {
+                                        int nameCol = c.getColumnIndex(MediaStore.Video.Media.DISPLAY_NAME);
+                                        int sizeCol = c.getColumnIndex(MediaStore.Video.Media.SIZE);
+                                        String trueName = (nameCol >= 0) ? c.getString(nameCol) : null;
+                                        long trueSize = (sizeCol >= 0) ? c.getLong(sizeCol) : 0;
+                                        r.originalUriStr = trueUri.toString();
+                                        r.originalPath = "";
+                                        if (trueName != null) r.title = trueName;
+                                        if (trueSize > 0) {
+                                            r.originalSizeBytes = trueSize;
+                                            r.spaceSavedBytes = Math.max(0, r.originalSizeBytes - r.compressedSizeBytes);
+                                            r.percentReduction = (r.originalSizeBytes > 0) ? ((double) r.spaceSavedBytes / r.originalSizeBytes) * 100.0 : 0.0;
+                                        }
+                                        dirty = true;
+                                        PrismLogger.i(TAG, "Healed history record: " + new File(r.compressedPath).getName() + " -> " + trueName + " (" + trueUri + ")");
+                                    }
+                                }
+                            } catch (Exception ignored) {}
+                        }
+                    }
+                }
+
                 list.add(r);
+            }
+            if (dirty) {
+                saveRecords(list);
             }
         } catch (Exception e) {
             PrismLogger.e(TAG, "Error parsing history records", e);

@@ -315,10 +315,10 @@ public class MainActivity extends Activity {
 
                         if (savedPath != null) {
                             // Preserve completed source info BEFORE resetSourceState() clears Studio!
-                            if (selectedVideoUri != null) {
+                            if (lastCompletedOrigUri == null && selectedVideoUri != null) {
                                 lastCompletedOrigUri = selectedVideoUri;
                             }
-                            if (selectedVideoName != null) {
+                            if (lastCompletedOrigName == null && selectedVideoName != null) {
                                 lastCompletedOrigName = selectedVideoName;
                             }
                             currentRestoredFile = new File(savedPath);
@@ -334,17 +334,23 @@ public class MainActivity extends Activity {
                                 if (tvAfterSize != null) tvAfterSize.setText(String.format(Locale.US, "%.1f MB", outMB));
                                 tvDossierDetails.setText(String.format(Locale.US, "Output: %s (%.1f MB) • VMAF > 95 Gold • Public Storage", currentRestoredFile.getName(), outMB));
                             }
+                            Uri origForDuo = (lastCompletedOrigUri != null) ? lastCompletedOrigUri : selectedVideoUri;
+                            String origNameForDuo = (lastCompletedOrigName != null) ? lastCompletedOrigName : (selectedVideoName != null ? selectedVideoName : "source.mp4");
                             if (duoPlayerView != null) {
-                                duoPlayerView.loadVideoPair(selectedVideoUri, Uri.fromFile(currentRestoredFile), selectedVideoName != null ? selectedVideoName : "source.mp4", currentRestoredFile.getName());
+                                if (origForDuo != null && !DuoComparisonPlayerView.isSameMedia(origForDuo, Uri.fromFile(currentRestoredFile))) {
+                                    duoPlayerView.loadVideoPair(origForDuo, Uri.fromFile(currentRestoredFile), "● SOURCE: " + origNameForDuo, currentRestoredFile.getName());
+                                } else {
+                                    duoPlayerView.loadOutputVideoSolo(Uri.fromFile(currentRestoredFile), "● PRISM-V: " + currentRestoredFile.getName());
+                                }
                             }
 
                             // Record in CompressionHistoryManager
                             try {
                                 String resolvedOrigPath = (selectedVideoPath != null) ? selectedVideoPath :
-                                        ((selectedVideoUri != null && "file".equalsIgnoreCase(selectedVideoUri.getScheme())) ? selectedVideoUri.getPath() : null);
+                                        ((origForDuo != null && "file".equalsIgnoreCase(origForDuo.getScheme())) ? origForDuo.getPath() : null);
                                 CompressionHistoryManager.get(MainActivity.this).recordCompression(
-                                        selectedVideoName != null ? selectedVideoName : currentRestoredFile.getName(),
-                                        selectedVideoUri,
+                                        origNameForDuo,
+                                        origForDuo,
                                         resolvedOrigPath,
                                         (long) (origMB * 1024L * 1024L),
                                         currentRestoredFile.getAbsolutePath(),
@@ -490,11 +496,23 @@ public class MainActivity extends Activity {
 
         // Ready in clean empty state (no auto-selected video)
 
-        // Request POST_NOTIFICATIONS runtime permission on Android 13+ (API 33+)
+        // Request runtime permissions: POST_NOTIFICATIONS & READ_MEDIA_VIDEO on Android 13+ (API 33+),
+        // or READ_EXTERNAL_STORAGE on Android 10-12 (API 29-32)
+        List<String> neededPermissions = new ArrayList<>();
         if (Build.VERSION.SDK_INT >= 33) {
             if (checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 101);
+                neededPermissions.add("android.permission.POST_NOTIFICATIONS");
             }
+            if (checkSelfPermission("android.permission.READ_MEDIA_VIDEO") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                neededPermissions.add("android.permission.READ_MEDIA_VIDEO");
+            }
+        } else {
+            if (checkSelfPermission("android.permission.READ_EXTERNAL_STORAGE") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                neededPermissions.add("android.permission.READ_EXTERNAL_STORAGE");
+            }
+        }
+        if (!neededPermissions.isEmpty()) {
+            requestPermissions(neededPermissions.toArray(new String[0]), 101);
         }
 
         if (prefs != null && prefs.isFirstRun()) {
@@ -502,6 +520,30 @@ public class MainActivity extends Activity {
         }
 
         handleIncomingIntent(getIntent());
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == 101) {
+            boolean hasStorageOrMedia = false;
+            for (int i = 0; i < permissions.length; i++) {
+                if (("android.permission.READ_MEDIA_VIDEO".equals(permissions[i]) ||
+                     "android.permission.READ_EXTERNAL_STORAGE".equals(permissions[i])) &&
+                     grantResults[i] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    hasStorageOrMedia = true;
+                }
+            }
+            if (hasStorageOrMedia) {
+                appendLog("Media permissions granted: Initializing media caches & libraries.");
+                if (duoPlayerView != null && duoPlayerView.getCompressedUri() == null) {
+                    duoPlayerView.loadDefaultSampleFiles();
+                }
+                if (duoCompressedVideosView != null) {
+                    duoCompressedVideosView.refreshRecords("");
+                }
+            }
+        }
     }
 
     @Override
@@ -538,15 +580,29 @@ public class MainActivity extends Activity {
                 if (duoPlayerView != null && restoredPath != null) {
                     File rf = new File(restoredPath);
                     if (rf.exists()) {
-                        Uri origUri = (origUriStr != null && !origUriStr.isEmpty()) ? Uri.parse(origUriStr) : selectedVideoUri;
-                        if (origUri == null) origUri = Uri.fromFile(rf);
+                        Uri origUri = (origUriStr != null && !origUriStr.isEmpty()) ? Uri.parse(origUriStr) : null;
+                        if (origUri == null) {
+                            try {
+                                CompressionHistoryManager.Record latest = CompressionHistoryManager.get(this).getLatestRecord();
+                                if (latest != null && latest.compressedPath != null && latest.compressedPath.equals(rf.getAbsolutePath())) {
+                                    origUri = DuoComparisonPlayerView.resolveSourceVideoUri(this, latest);
+                                }
+                            } catch (Exception ignored) {}
+                        }
                         String name = displayName != null ? displayName : rf.getName();
-                        duoPlayerView.loadVideoPair(
-                                origUri,
-                                Uri.fromFile(rf),
-                                "● SOURCE: " + name,
-                                "● PRISM-V: " + rf.getName() + " (" + formatFileSize(rf.length()) + ")"
-                        );
+                        if (origUri != null && !DuoComparisonPlayerView.isSameMedia(origUri, Uri.fromFile(rf))) {
+                            duoPlayerView.loadVideoPair(
+                                    origUri,
+                                    Uri.fromFile(rf),
+                                    "● SOURCE: " + name,
+                                    "● PRISM-V: " + rf.getName() + " (" + formatFileSize(rf.length()) + ")"
+                            );
+                        } else {
+                            duoPlayerView.loadOutputVideoSolo(
+                                    Uri.fromFile(rf),
+                                    "● PRISM-V: " + rf.getName() + " (" + formatFileSize(rf.length()) + ")"
+                            );
+                        }
                         PrismHud.showSuccess(this, "Loaded Duo Comparison from Notification");
                     }
                 }
@@ -792,16 +848,7 @@ public class MainActivity extends Activity {
             }
             if (duoPlayerView != null) {
                 duoPlayerView.updateLibraryCountBadge();
-                if (currentRestoredFile != null && currentRestoredFile.exists() && selectedVideoUri != null) {
-                    if (duoPlayerView.getCompressedUri() == null || !duoPlayerView.getCompressedUri().equals(Uri.fromFile(currentRestoredFile))) {
-                        duoPlayerView.loadVideoPair(
-                                selectedVideoUri,
-                                Uri.fromFile(currentRestoredFile),
-                                "● SOURCE: " + (selectedVideoName != null ? selectedVideoName : "source.mp4"),
-                                String.format(Locale.US, "● PRISM-V: %s (%.1f MB)", currentRestoredFile.getName(), currentRestoredFile.length() / (1024.0 * 1024.0))
-                        );
-                    }
-                } else if (duoPlayerView.getCompressedUri() == null) {
+                if (duoPlayerView.getCompressedUri() == null) {
                     duoPlayerView.loadDefaultSampleFiles();
                 }
             }
@@ -1959,18 +2006,15 @@ public class MainActivity extends Activity {
             return;
         }
 
-        Uri origUri = (selectedVideoUri != null) ? selectedVideoUri : lastCompletedOrigUri;
-        String origName = (selectedVideoName != null) ? selectedVideoName : lastCompletedOrigName;
+        Uri origUri = lastCompletedOrigUri;
+        String origName = lastCompletedOrigName;
 
         // Fallback to CompressionHistoryManager if Activity state was cleared
         if (origUri == null) {
             try {
                 CompressionHistoryManager.Record latest = CompressionHistoryManager.get(this).getLatestRecord();
                 if (latest != null) {
-                    origUri = latest.getOriginalUri();
-                    if (origUri == null && latest.originalPath != null && new File(latest.originalPath).exists()) {
-                        origUri = Uri.fromFile(new File(latest.originalPath));
-                    }
+                    origUri = DuoComparisonPlayerView.resolveSourceVideoUri(this, latest);
                     if (origName == null && latest.title != null) {
                         origName = latest.title;
                     }
@@ -1986,12 +2030,19 @@ public class MainActivity extends Activity {
 
         switchTab(1);
         if (duoPlayerView != null) {
-            duoPlayerView.loadVideoPair(
-                    origUri,
-                    compUri,
-                    "● SOURCE: " + origName,
-                    "● PRISM-V: " + currentRestoredFile.getName()
-            );
+            if (origUri != null && !DuoComparisonPlayerView.isSameMedia(origUri, compUri)) {
+                duoPlayerView.loadVideoPair(
+                        origUri,
+                        compUri,
+                        "● SOURCE: " + origName,
+                        "● PRISM-V: " + currentRestoredFile.getName()
+                );
+            } else {
+                duoPlayerView.loadOutputVideoSolo(
+                        compUri,
+                        "● PRISM-V: " + currentRestoredFile.getName()
+                );
+            }
         }
         appendLog("Opened video pair in Duo Comparison Player!");
     }
@@ -4034,6 +4085,12 @@ public class MainActivity extends Activity {
                 customTargetWidth, customTargetHeight, customTargetFps, customTargetBitrateKbps,
                 selectedAspectRatio, selectedOutputFormat, customAudioChannel, customAudioBitrateKbps));
         studioTranscodeStartMs = System.currentTimeMillis();
+        if (selectedVideoUri != null) {
+            lastCompletedOrigUri = selectedVideoUri;
+        }
+        if (selectedVideoName != null) {
+            lastCompletedOrigName = selectedVideoName;
+        }
         btnStartCompress.setEnabled(false);
         updateProcessVisualProgress(0, "Preparing hardware ASIC pipeline...");
         if (studioScrollView != null && cardProcessVisual != null) {
@@ -4166,6 +4223,12 @@ public class MainActivity extends Activity {
 
     private void executeBatchCompression() {
         studioTranscodeStartMs = System.currentTimeMillis();
+        if (selectedVideoUri != null) {
+            lastCompletedOrigUri = selectedVideoUri;
+        }
+        if (selectedVideoName != null) {
+            lastCompletedOrigName = selectedVideoName;
+        }
         btnStartCompress.setEnabled(false);
         updateProcessVisualProgress(0, "Starting batch execution (" + batchVideoList.size() + " videos)...");
         if (studioScrollView != null && cardProcessVisual != null) {
@@ -4409,14 +4472,32 @@ public class MainActivity extends Activity {
         appendLog(String.format(Locale.US, "[SUCCESS] %s Complete! Space saved: %.1f%% (%.1f MB freed). File: %s",
                 d.modeName, d.percentReduction, d.spaceSavedBytes / (1024.0 * 1024.0), currentRestoredFile.getName()));
 
+        if (selectedVideoUri != null) {
+            lastCompletedOrigUri = selectedVideoUri;
+        }
+        if (selectedVideoName != null) {
+            lastCompletedOrigName = selectedVideoName;
+        }
+
+        Uri compSourceUri = (lastCompletedOrigUri != null) ? lastCompletedOrigUri : selectedVideoUri;
+        String compSourceName = (lastCompletedOrigName != null) ? lastCompletedOrigName : (selectedVideoName != null ? selectedVideoName : "source.mp4");
+
         if (duoPlayerView != null) {
-            duoPlayerView.loadVideoPair(
-                    selectedVideoUri,
-                    Uri.fromFile(currentRestoredFile),
-                    "● SOURCE: " + selectedVideoName + " (" + formatFileSize(d.originalSizeBytes) + ")",
-                    String.format(Locale.US, "● PRISM-V (%.1f MB • -%.1f%%)",
-                            d.compressedSizeBytes / (1024.0 * 1024.0), d.percentReduction)
-            );
+            if (compSourceUri != null && !DuoComparisonPlayerView.isSameMedia(compSourceUri, Uri.fromFile(currentRestoredFile))) {
+                duoPlayerView.loadVideoPair(
+                        compSourceUri,
+                        Uri.fromFile(currentRestoredFile),
+                        "● SOURCE: " + compSourceName + " (" + formatFileSize(d.originalSizeBytes) + ")",
+                        String.format(Locale.US, "● PRISM-V (%.1f MB • -%.1f%%)",
+                                d.compressedSizeBytes / (1024.0 * 1024.0), d.percentReduction)
+                );
+            } else {
+                duoPlayerView.loadOutputVideoSolo(
+                        Uri.fromFile(currentRestoredFile),
+                        String.format(Locale.US, "● PRISM-V (%.1f MB • -%.1f%%)",
+                                d.compressedSizeBytes / (1024.0 * 1024.0), d.percentReduction)
+                );
+            }
         }
 
         // Immediately launch Completion Dossier modal dialog
@@ -4433,13 +4514,6 @@ public class MainActivity extends Activity {
                     }
                 })
         );
-
-        if (selectedVideoUri != null) {
-            lastCompletedOrigUri = selectedVideoUri;
-        }
-        if (selectedVideoName != null) {
-            lastCompletedOrigName = selectedVideoName;
-        }
 
         // Reset VIDEO SOURCE to empty state — job is done, ready for next video
         resetSourceState();
