@@ -335,7 +335,19 @@ public final class HardwareVideoCompressor {
                         listener.onLog("⚡ [Never-Worse Invariant] Source video is already hyper-efficient (" + (sourceBitrateBps / 1000)
                                 + " kbps). Automatically redirecting to Mode L-Remux to guarantee zero expansion & bit-exact master quality!");
                     }
-                    boolean remuxOk = VideoProcessingPipeline.nativeRemuxContainer(inputPath, outputPath);
+                    boolean remuxOk = false;
+                    if (VideoProcessingPipeline.isNativeLoaded()) {
+                        try {
+                            remuxOk = VideoProcessingPipeline.nativeRemuxContainer(inputPath, outputPath);
+                        } catch (Throwable t) {
+                            PrismLogger.w(TAG, "Native remux threw: " + t.getMessage() + ", falling back to Java stream copy");
+                            remuxOk = false;
+                        }
+                    }
+                    if (!remuxOk) {
+                        // Resilient Pure-Java stream-copy fallback using MediaExtractor & MediaMuxer
+                        remuxOk = fastLosslessTrim(null, Uri.fromFile(new File(inputPath)), new File(outputPath), 0, durationUs, false, listener);
+                    }
                     if (remuxOk) {
                         long finalRemuxSize = new File(outputPath).length();
                         if (listener != null) {
@@ -348,7 +360,7 @@ public final class HardwareVideoCompressor {
                 }
             }
 
-            // Target MIME based on optimization profile
+            // Target MIME based on optimization profile with intelligent hardware encoder discovery
             String targetMime;
             if ("E-LOW".equals(options.mode)) {
                 targetMime = MediaFormat.MIMETYPE_VIDEO_AVC;
@@ -357,6 +369,14 @@ public final class HardwareVideoCompressor {
             } else {
                 // H-ARCH (Hybrid Neural / HEVC)
                 targetMime = MediaFormat.MIMETYPE_VIDEO_HEVC;
+            }
+
+            // Probe hardware encoder capabilities via EncoderSelector
+            EncoderSelector.CodecSelectionResult selectedEncoder = EncoderSelector.selectBestEncoder(targetMime, targetWidth, targetHeight);
+            targetMime = selectedEncoder.mimeType;
+            if (selectedEncoder.isFallback) {
+                PrismLogger.i(TAG, "Hardware encoder fallback active: " + selectedEncoder.rationale + " -> " + selectedEncoder.codecName);
+                if (listener != null) listener.onLog("Encoder: " + selectedEncoder.codecName + " (" + selectedEncoder.rationale + ")");
             }
 
             if (listener != null) {
@@ -370,7 +390,7 @@ public final class HardwareVideoCompressor {
                         options.audioChannel, options.audioBitrateKbps));
             }
 
-            // Configure MediaCodec Encoder with Max ASIC GPU throughput & VBR rate control
+            // Configure MediaCodec Encoder with Max ASIC throughput & VBR rate control
             MediaFormat outputFormat = MediaFormat.createVideoFormat(targetMime, targetWidth, targetHeight);
             outputFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
             outputFormat.setInteger(MediaFormat.KEY_BIT_RATE, targetBitrateBps);
@@ -379,22 +399,45 @@ public final class HardwareVideoCompressor {
             try {
                 outputFormat.setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR);
                 outputFormat.setInteger(MediaFormat.KEY_PRIORITY, 0); // Realtime encoder priority
-                outputFormat.setInteger(MediaFormat.KEY_OPERATING_RATE, Short.MAX_VALUE); // Maximum GPU clock & hardware throughput
+                // Clamped operating rate: prevents MediaTek/Snapdragon thermal throttle panic and configure failures
+                int safeOpRate = Math.min(Math.max(targetFps, 30), 120);
+                outputFormat.setInteger(MediaFormat.KEY_OPERATING_RATE, safeOpRate);
+            } catch (Exception ignored) {}
+
+            // Preserve input color metadata / HDR transfer characteristics if present
+            try {
+                if (inputVideoFormat.containsKey(MediaFormat.KEY_COLOR_TRANSFER)) {
+                    outputFormat.setInteger(MediaFormat.KEY_COLOR_TRANSFER, inputVideoFormat.getInteger(MediaFormat.KEY_COLOR_TRANSFER));
+                }
+                if (inputVideoFormat.containsKey(MediaFormat.KEY_COLOR_STANDARD)) {
+                    outputFormat.setInteger(MediaFormat.KEY_COLOR_STANDARD, inputVideoFormat.getInteger(MediaFormat.KEY_COLOR_STANDARD));
+                }
+                if (inputVideoFormat.containsKey(MediaFormat.KEY_COLOR_RANGE)) {
+                    outputFormat.setInteger(MediaFormat.KEY_COLOR_RANGE, inputVideoFormat.getInteger(MediaFormat.KEY_COLOR_RANGE));
+                }
             } catch (Exception ignored) {}
 
             try {
-                encoder = MediaCodec.createEncoderByType(targetMime);
+                if (!"default".equals(selectedEncoder.codecName) && !"fallback".equals(selectedEncoder.codecName)) {
+                    encoder = MediaCodec.createByCodecName(selectedEncoder.codecName);
+                } else {
+                    encoder = MediaCodec.createEncoderByType(targetMime);
+                }
                 PrismLogger.i(TAG, "Video encoder created: name=" + encoder.getName() + " mime=" + targetMime
                         + " " + targetWidth + "x" + targetHeight + " @" + targetFps + "fps bitrate=" + (targetBitrateBps / 1000) + "kbps");
-            } catch (Exception e) {
+            } catch (Throwable e) {
                 // Fallback to AVC if HEVC encoder is not available on this chipset
                 PrismLogger.w(TAG, "Encoder creation failed for " + targetMime + " (" + e.getMessage() + "), falling back to AVC");
                 targetMime = MediaFormat.MIMETYPE_VIDEO_AVC;
                 outputFormat.setString(MediaFormat.KEY_MIME, targetMime);
                 targetBitrateBps = (int) (targetBitrateBps * 1.25);
                 outputFormat.setInteger(MediaFormat.KEY_BIT_RATE, targetBitrateBps);
-                encoder = MediaCodec.createEncoderByType(targetMime);
-                PrismLogger.i(TAG, "Fallback video encoder created: name=" + encoder.getName() + " mime=" + targetMime);
+                try {
+                    encoder = MediaCodec.createEncoderByType(targetMime);
+                    PrismLogger.i(TAG, "Fallback video encoder created: name=" + encoder.getName() + " mime=" + targetMime);
+                } catch (Throwable e2) {
+                    throw new RuntimeException("No hardware video encoder could be initialized: " + e2.getMessage(), e2);
+                }
             }
 
             try {
@@ -864,7 +907,18 @@ public final class HardwareVideoCompressor {
                 try { new File(outputPath).delete(); } catch (Exception ignored) {}
 
                 if (listener != null) listener.onLog("⚡ Executing Mode L-Remux clean packet stream-copy fallback...");
-                boolean remuxOk = VideoProcessingPipeline.nativeRemuxContainer(inputPath, outputPath);
+                boolean remuxOk = false;
+                if (VideoProcessingPipeline.isNativeLoaded()) {
+                    try {
+                        remuxOk = VideoProcessingPipeline.nativeRemuxContainer(inputPath, outputPath);
+                    } catch (Throwable t) {
+                        PrismLogger.w(TAG, "Native remux threw (" + t.getMessage() + "), falling back to Java stream copy");
+                        remuxOk = false;
+                    }
+                }
+                if (!remuxOk) {
+                    remuxOk = fastLosslessTrim(null, Uri.fromFile(new File(inputPath)), new File(outputPath), 0, durationUs, false, listener);
+                }
                 if (remuxOk) {
                     long finalRemuxSize = new File(outputPath).length();
                     if (listener != null) {
@@ -874,8 +928,7 @@ public final class HardwareVideoCompressor {
                     }
                     return true;
                 } else {
-                    boolean copyOk = fastLosslessTrim(null, Uri.fromFile(new File(inputPath)), new File(outputPath), 0, durationUs, false, listener);
-                    return copyOk;
+                    return false;
                 }
             }
 
@@ -914,7 +967,7 @@ public final class HardwareVideoCompressor {
             }
             return true;
 
-        } catch (Exception e) {
+        } catch (Throwable e) {
             PrismLogger.e(TAG, "Hardware transcode error: " + e.getMessage(), e);
             if (listener != null) listener.onLog("Transcode error: " + e.getMessage());
             return false;
@@ -1012,7 +1065,7 @@ public final class HardwareVideoCompressor {
 
             if (listener != null) listener.onProgress(100, 100, 100);
             return true;
-        } catch (Exception e) {
+        } catch (Throwable e) {
             PrismLogger.e(TAG, "Lossless trim error: " + e.getMessage(), e);
             if (listener != null) listener.onLog("Lossless trim error: " + e.getMessage());
             return false;
@@ -1154,7 +1207,7 @@ public final class HardwareVideoCompressor {
 
             if (listener != null) listener.onProgress(100, 100, 100);
             return true;
-        } catch (Exception e) {
+        } catch (Throwable e) {
             PrismLogger.e(TAG, "Metadata strip error: " + e.getMessage(), e);
             return false;
         } finally {
@@ -1292,7 +1345,7 @@ public final class HardwareVideoCompressor {
 
             if (listener != null) listener.onProgress(100, 100, 100);
             return true;
-        } catch (Exception e) {
+        } catch (Throwable e) {
             PrismLogger.e(TAG, "Concat error: " + e.getMessage(), e);
             return false;
         } finally {

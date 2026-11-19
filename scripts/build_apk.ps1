@@ -106,7 +106,15 @@ if (-not $signed) { throw "No signed APK was produced in $SignedDir" }
 
 $ReleaseDir = Join-Path $RepoRoot "release"
 New-Item -ItemType Directory -Force -Path $ReleaseDir | Out-Null
-$ReleaseApk = Join-Path $ReleaseDir "prism-v-v1.1.3.apk"
+$versionName = "1.1.4"
+$ymlFile = Join-Path $ApkRoot "apktool.yml"
+if (Test-Path $ymlFile) {
+    $yml = Get-Content $ymlFile -Raw
+    if ($yml -match "versionName:\s*['""]?([^'""]+)['""]?") {
+        $versionName = $matches[1].Trim()
+    }
+}
+$ReleaseApk = Join-Path $ReleaseDir "prism-v-v$versionName.apk"
 Copy-Item -Force $signed.FullName $ReleaseApk
 
 Write-Host "Build complete: $($signed.FullName)"

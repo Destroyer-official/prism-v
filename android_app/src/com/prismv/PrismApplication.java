@@ -30,6 +30,16 @@ public class PrismApplication extends Application {
         PrismLogger.init(this);
         PrismLogger.i(TAG, "Application.onCreate() initialized. Process started.");
 
+        // Centralized native library initialization with safe exception isolation
+        com.prismv.engine.NativeBridge.init();
+
+        // Warm up and cache device hardware capabilities profile
+        try {
+            com.prismv.engine.DeviceProfile.get(this);
+        } catch (Throwable t) {
+            PrismLogger.w(TAG, "Failed to initialize DeviceProfile: " + t.getMessage());
+        }
+
         // Keep verbosity synced with user preference changes
         try {
             PrismPreferences prefs = PrismPreferences.get(this);

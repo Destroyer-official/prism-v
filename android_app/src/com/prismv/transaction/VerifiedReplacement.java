@@ -130,25 +130,37 @@ public final class VerifiedReplacement {
             byte[] sourceBytes = readFile(sourceFile);
             origHash = DetInt.toHexString(DetInt.computeSha256(sourceBytes));
 
-            // Ingest source into Rabin-Mesh Vault
+            // Ingest source into Rabin-Mesh Vault if native engine is available
+            if (!com.prismv.engine.VideoProcessingPipeline.isNativeLoaded()) {
+                return new TransactionResult(false, currentStage, origHash, null, null, "Native mesh engine unavailable");
+            }
             if (!vaultDir.exists()) {
                 vaultDir.mkdirs();
             }
-            com.prismv.engine.VideoProcessingPipeline.nativeIngestMeshCluster(
-                    sourceFile.getAbsolutePath(),
-                    new String[0],
-                    vaultDir.getAbsolutePath(),
-                    clusterUuid
-            );
+            try {
+                com.prismv.engine.VideoProcessingPipeline.nativeIngestMeshCluster(
+                        sourceFile.getAbsolutePath(),
+                        new String[0],
+                        vaultDir.getAbsolutePath(),
+                        clusterUuid
+                );
+            } catch (Throwable t) {
+                return new TransactionResult(false, currentStage, origHash, null, null, "Native ingest error: " + t.getMessage());
+            }
             currentStage = Stage.STAGE_1_VERIFY_BIT_EXACT;
 
             // STAGE 1: VERIFY BIT-EXACT - Test full inverse reconstruction from vault
             File tempRestored = new File(targetDir, sourceFile.getName() + ".restored.tmp");
-            boolean restored = com.prismv.engine.VideoProcessingPipeline.nativeRestoreMeshVideo(
-                    sourceFile.getAbsolutePath() + ".pvmesh",
-                    vaultDir.getAbsolutePath(),
-                    tempRestored.getAbsolutePath()
-            );
+            boolean restored = false;
+            try {
+                restored = com.prismv.engine.VideoProcessingPipeline.nativeRestoreMeshVideo(
+                        sourceFile.getAbsolutePath() + ".pvmesh",
+                        vaultDir.getAbsolutePath(),
+                        tempRestored.getAbsolutePath()
+                );
+            } catch (Throwable t) {
+                restored = false;
+            }
 
             if (!restored || !tempRestored.exists()) {
                 if (tempRestored.exists()) tempRestored.delete();

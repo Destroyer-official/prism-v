@@ -29,15 +29,10 @@ import java.util.Locale;
 public final class VideoProcessingPipeline {
     private static final String TAG = "PrismV";
 
-    public static boolean isNativeLoaded = false;
-    static {
-        try {
-            System.loadLibrary("prism_jni");
-            isNativeLoaded = true;
-        } catch (Throwable e) {
-            isNativeLoaded = false;
-            PrismLogger.w(TAG, "Native library prism_jni not available: " + e.getMessage());
-        }
+    public static boolean isNativeLoaded = NativeBridge.isAvailable();
+
+    public static boolean isNativeLoaded() {
+        return NativeBridge.isAvailable();
     }
 
     public static class ParsedVideoMetadata {

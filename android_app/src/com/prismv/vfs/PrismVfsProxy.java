@@ -97,9 +97,16 @@ public final class PrismVfsProxy {
         }
 
         if (isMeshVault) {
-            // Forward directly to native SIMD VectorCDC vault reader
-            byte[] chunkData = VideoProcessingPipeline.nativeReadVirtualMeshRange(
-                    manifestPath, vaultDir, offset, available);
+            // Forward directly to native SIMD VectorCDC vault reader if available
+            byte[] chunkData = null;
+            if (VideoProcessingPipeline.isNativeLoaded()) {
+                try {
+                    chunkData = VideoProcessingPipeline.nativeReadVirtualMeshRange(
+                            manifestPath, vaultDir, offset, available);
+                } catch (Throwable t) {
+                    com.prismv.logging.PrismLogger.w("PrismVfsProxy", "nativeReadVirtualMeshRange failed: " + t.getMessage());
+                }
+            }
             if (chunkData == null || chunkData.length == 0) {
                 return -1;
             }

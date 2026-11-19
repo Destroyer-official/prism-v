@@ -139,7 +139,18 @@ public class RabinMeshWorker extends JobService {
         String[] paths = pathList.toArray(new String[0]);
 
         PrismLogger.i(TAG, "[Rabin-Mesh] Running Level 1 & 2 perceptual scan on " + paths.length + " gallery videos...");
-        long[] clusterResult = VideoProcessingPipeline.nativeScanMeshBurstCandidates(paths, 0.85f);
+        if (!VideoProcessingPipeline.isNativeLoaded()) {
+            PrismLogger.i(TAG, "[Rabin-Mesh] Native mesh engine unavailable; skipping background scan.");
+            return;
+        }
+
+        long[] clusterResult = null;
+        try {
+            clusterResult = VideoProcessingPipeline.nativeScanMeshBurstCandidates(paths, 0.85f);
+        } catch (Throwable t) {
+            PrismLogger.w(TAG, "[Rabin-Mesh] nativeScanMeshBurstCandidates failed: " + t.getMessage());
+            return;
+        }
         if (clusterResult == null || clusterResult.length < 2) {
             PrismLogger.i(TAG, "[Rabin-Mesh] No near-duplicate burst clusters detected.");
             return;
@@ -170,12 +181,17 @@ public class RabinMeshWorker extends JobService {
             }
 
             String clusterUuid = "cluster_" + UUID.randomUUID().toString().substring(0, 8);
-            long savedBytes = VideoProcessingPipeline.nativeIngestMeshCluster(
-                    masterPath,
-                    deltas.toArray(new String[0]),
-                    vaultDir.getAbsolutePath(),
-                    clusterUuid
-            );
+            long savedBytes = 0;
+            try {
+                savedBytes = VideoProcessingPipeline.nativeIngestMeshCluster(
+                        masterPath,
+                        deltas.toArray(new String[0]),
+                        vaultDir.getAbsolutePath(),
+                        clusterUuid
+                );
+            } catch (Throwable t) {
+                PrismLogger.w(TAG, "[Rabin-Mesh] nativeIngestMeshCluster failed: " + t.getMessage());
+            }
 
             PrismLogger.i(TAG, "[Rabin-Mesh] Cluster " + clusterUuid + " ingested! Reclaimed: " + (savedBytes / (1024 * 1024)) + " MB.");
         }
