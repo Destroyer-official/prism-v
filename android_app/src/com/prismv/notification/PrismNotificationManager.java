@@ -23,7 +23,7 @@ import java.util.Locale;
  * 100% Production-Grade Android Notification Engine for Prism-V.
  *
  * Implements:
- * 1. Ongoing Transcoding Progress Notifications (IMPORTANCE_DEFAULT, silent, unminimized in Samsung One UI).
+ * 1. Ongoing Transcoding Progress Notifications (IMPORTANCE_DEFAULT, silent, unminimized in system notification drawer).
  *    - Real-time progress bar.
  *    - Transcode FPS, Device Temperature (°C), RSS RAM.
  *    - 1-Tap [Cancel] Action.
@@ -31,7 +31,7 @@ import java.util.Locale;
  *    - Exact Storage Reclaimed (+MB, -%).
  *    - Exact Public Save Location (Movies/Prism-V/).
  *    - Action 1: [Compare in Duo] -> Launches Duo Lockstep Player directly.
- *    - Action 2: [Play in Gallery] -> Launches Samsung Gallery / Video Player.
+ *    - Action 2: [Play in Gallery] -> Launches System Gallery / Video Player.
  *    - Action 3: [↗ Share Video] -> Shares via secure PrismFileProvider.
  */
 public final class PrismNotificationManager {

@@ -4,7 +4,7 @@ This document records the official verification receipts, hardware test results,
 
 **Target Release:** `v1.1.2` (Production Gold)  
 **Latest Verification Date:** 2026-11-17  
-**Verification Scope:** Native C++20 Core (156/156 Tests, 100% Passed), CTest Suites (7/7 Suites), Java JNI Interop (11/11 Checkpoints Verified), Physical Hardware Android 16 (Samsung SM-E156B) Live Execution & Screen Proofs.
+**Verification Scope:** Native C++20 Core (156/156 Tests, 100% Passed), CTest Suites (7/7 Suites), Java JNI Interop (11/11 Checkpoints Verified), Physical Android Hardware Live Execution & Screen Proofs.
 
 ---
 
@@ -25,28 +25,26 @@ This document records the official verification receipts, hardware test results,
 
 | Parameter | Device Specification |
 | --- | --- |
-| Device Model | Samsung Galaxy SM-E156B (Galaxy F15 / M15 5G class) |
-| Serial ID | `RZCX80CEE7M` |
+| Device Model | Android Reference Device (MediaTek ARM64) |
 | Android Version | Android 16 Preview (API Level 36, Build Baklava) |
-| Linux Kernel | 6.1.109-android16-11-29497911-abE156BXXU3BXL2 |
-| SoC Platform | MediaTek Dimensity 6100+ (MT6835), 8 Cores (2× Cortex-A76 @ 2.2 GHz + 6× Cortex-A55 @ 2.0 GHz) |
-| GPU Subsystem | ARM Mali-G57 MC2 (Vulkan 1.3 / OpenCL 3.0 / OpenGL ES 3.2) |
+| Linux Kernel | 6.1.109-android16 |
+| SoC Platform | MediaTek Dimensity (8 Cores: 2× Cortex-A76 @ 2.2 GHz + 6× Cortex-A55 @ 2.0 GHz) |
+| Video Encoder | Fixed-Function Hardware ASIC (MediaCodec) |
 | Memory / RAM | 5.4 GB Available LPDDR4X (16 KiB Memory Page Enabled) |
 | Display Output | 1080 × 2340 FHD+, 90 Hz AMOLED, SurfaceFlinger RGBA_8888 Hardware Composition |
-| Installed Package | `com.prismv` (`/data/app/~~.../com.prismv-1/base.apk`) |
+| Installed Package | `com.prismv` |
 
 ### Physical Device Target 2 (Live Android 11 Verification)
 
 | Parameter | Device Specification |
 | --- | --- |
-| Device Model | Samsung Galaxy SM-A507FN (Galaxy A50s class) |
-| Serial ID | `RZ8M92FQHVA` |
+| Device Model | Android Reference Device (Exynos ARM64) |
 | Android Version | Android 11 (API Level 30) |
-| SoC Platform | Samsung Exynos 9611 (8 cores: 4× Cortex-A73 @ 2.3 GHz + 4× Cortex-A53 @ 1.7 GHz) |
-| GPU Subsystem | ARM Mali-G72 MP3 |
+| SoC Platform | Samsung Exynos (8 cores: 4× Cortex-A73 @ 2.3 GHz + 4× Cortex-A53 @ 1.7 GHz) |
+| Video Encoder | Fixed-Function Hardware ASIC (MediaCodec) |
 | Memory / RAM | 4.0 GB LPDDR4X |
 | Display Output | 1080 × 2340 FHD+ Super AMOLED |
-| Installed Package | `com.prismv` (`/data/local/tmp/app.apk` verified release build) |
+| Installed Package | `com.prismv` |
 
 ---
 
@@ -348,13 +346,13 @@ Total Test time (real) = 2.41 sec
 
 ---
 
-## 4. Live On-Device Diagnostics (Samsung SM-E156B / Android 16)
+## 4. Live On-Device Diagnostics (Android 16 Reference Hardware)
 
 Executed via on-device automated self-test framework (`com.prismv.ACTION_RUN_TESTS`):
 
 ```text
 DIAGNOSTIC TEST REPORT [com.prismv]
-Device: Samsung SM-E156B | OS: Android 16 (API 36) | SoC: MT6835 (8 cores)
+Device: Android Reference Hardware | OS: Android 16 (API 36) | SoC: MT6835 (8 cores)
 
 [1/6] BBR Lossless Round-Trip:
       Ratio: 16.13x | Residual Noise: 4,105 B | Bit-Exact SHA-256 Parity: YES -> PASS
@@ -372,13 +370,13 @@ Device: Samsung SM-E156B | OS: Android 16 (API 36) | SoC: MT6835 (8 cores)
 Result: 6/6 Device Checks PASSED (100%)
 ```
 
-### Physical Device Target 2 (Samsung SM-A507FN, Android 11 API 30)
+### Physical Device Target 2 (Android 11 Reference Hardware)
 
 Executed via in-app Developer Matrix diagnostic verification suite (`DeveloperMatrixView.executeSelfTests()`):
 
 ```text
 DIAGNOSTIC TEST REPORT [com.prismv - Invariant Self-Tests]
-Device: Samsung SM-A507FN | OS: Android 11 (API 30) | SoC: Exynos 9611 (8 cores)
+Device: Android Reference Hardware | OS: Android 11 (API 30) | SoC: Exynos 9611 (8 cores)
 
 [1/7] BBR round-trip, 16 KiB structured input:
       Bit-Exact Match: YES -> PASS
@@ -402,7 +400,7 @@ Result: 7 of 7 checks passed (100%)
 
 ## 5. Physical Device Proof Screenshots
 
-All screenshots captured via direct ADB framebuffer read on physical target hardware (`SM-E156B` and `SM-A507FN`):
+All screenshots captured via direct ADB framebuffer read on physical target hardware:
 
 | Identifier | Screen Flow | Link | File Size | Description |
 | --- | --- | --- | --- | --- |
@@ -415,8 +413,8 @@ All screenshots captured via direct ADB framebuffer read on physical target hard
 | **SC-07** | Prism-Spatial 6-DoF Deck | [docs/assets/screenshots/09_spatial_6dof_deck.png](file:///c:/Users/des/OneDrive/Desktop/video_compression/docs/assets/screenshots/09_spatial_6dof_deck.png) | 416.3 KB | Duo Comparison Deck in Spatial 6-DoF mode with live attitude HUD, touch orbit, and 4DGS splat telemetry. |
 | **SC-08** | Prism-Spatial Studio | [docs/assets/screenshots/10_spatial_studio.png](file:///c:/Users/des/OneDrive/Desktop/video_compression/docs/assets/screenshots/10_spatial_studio.png) | 275.4 KB | Spatial 4DGS Studio dialog with multi-lens camera radar, hyper-lattice VQ, and direct Duo Deck launcher. |
 | **SC-09** | XR Stereoscopic 3D Mode | [screenshot_spatial_xr_stereo.png](file:///c:/Users/des/OneDrive/Desktop/video_compression/screenshot_spatial_xr_stereo.png) | 410.0 KB | Binocular stereoscopic VR/XR eye-pair rendering with inter-pupillary offset in Duo Deck. |
-| **SC-10** | Duo Silicon HUD Deck | [docs/assets/screenshots/11_silicon_hud_deck.png](file:///c:/Users/des/OneDrive/Desktop/video_compression/docs/assets/screenshots/11_silicon_hud_deck.png) | 339.4 KB | Duo Comparison Deck with live Frontier 5 Silicon Sub-1.0W Zero-Copy HUD overlay on SM-A507FN. |
-| **SC-11** | Matrix 7/7 Self-Tests Passed | [docs/assets/screenshots/12_matrix_7of7_checks.png](file:///c:/Users/des/OneDrive/Desktop/video_compression/docs/assets/screenshots/12_matrix_7of7_checks.png) | 245.2 KB | Developer Matrix running on physical SM-A507FN hardware showing all 7 invariant checks PASSED (including BBR 2.0). |
+| **SC-10** | Duo Silicon HUD Deck | [docs/assets/screenshots/11_silicon_hud_deck.png](file:///c:/Users/des/OneDrive/Desktop/video_compression/docs/assets/screenshots/11_silicon_hud_deck.png) | 339.4 KB | Duo Comparison Deck with live Frontier 5 Silicon Sub-1.0W Zero-Copy HUD overlay on reference hardware. |
+| **SC-11** | Matrix 7/7 Self-Tests Passed | [docs/assets/screenshots/12_matrix_7of7_checks.png](file:///c:/Users/des/OneDrive/Desktop/video_compression/docs/assets/screenshots/12_matrix_7of7_checks.png) | 245.2 KB | Developer Matrix running on physical reference hardware showing all 7 invariant checks PASSED (including BBR 2.0). |
 | **SC-12** | Gallery Dedup Radar Live | [docs/assets/screenshots/13_dedup_radar_scan.png](file:///c:/Users/des/OneDrive/Desktop/video_compression/docs/assets/screenshots/13_dedup_radar_scan.png) | 235.3 KB | Gallery Deduplication Radar dialog open on physical device with Rabin content-defined chunk engine. |
 
 ---

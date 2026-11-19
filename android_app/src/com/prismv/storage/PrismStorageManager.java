@@ -24,7 +24,7 @@ import java.util.List;
  * - /sdcard/Movies/Prism-V/
  *
  * Implements:
- * 1. Automatic MediaStore indexing so videos appear instantly in Samsung Gallery / Google Photos.
+ * 1. Automatic MediaStore indexing so videos appear instantly in System Gallery / Photos.
  * 2. MediaScannerConnection broadcast triggers.
  * 3. Safe fallback to external files dir if scoped storage or permissions restrict public Movies.
  * 4. System gallery playback and file manager folder launching.
@@ -80,7 +80,7 @@ public final class PrismStorageManager {
     }
 
     /**
-     * Scans and indexes the newly compressed video into Android's MediaStore so it appears in Samsung Gallery immediately.
+     * Scans and indexes the newly compressed video into Android's MediaStore so it appears in System Gallery immediately.
      */
     public static void indexVideoInMediaStore(Context context, File videoFile) {
         if (videoFile == null || !videoFile.exists()) return;
@@ -112,7 +112,7 @@ public final class PrismStorageManager {
     }
 
     /**
-     * Launches external Samsung Gallery or system video player for the video file.
+     * Launches external system gallery or system video player for the video file.
      */
     public static void openVideoInGallery(Context context, File videoFile) {
         if (videoFile == null || !videoFile.exists()) return;

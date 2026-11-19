@@ -313,7 +313,7 @@ public final class VideoProcessingPipeline {
                         stripExifGpsMetadata(compVideoFile.getAbsolutePath());
                     }
 
-                    // Register with Android MediaStore and Samsung Gallery
+                    // Register with Android MediaStore and System Gallery
                     PrismStorageManager.indexVideoInMediaStore(context, compVideoFile);
 
                     long compSizeBytes = compVideoFile.length();

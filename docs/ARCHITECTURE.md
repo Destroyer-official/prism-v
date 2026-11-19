@@ -360,6 +360,6 @@ All creator workflows are consolidated in `com.prismv.ui.ToolboxDialogs` with di
 | **CTest Regression** | All 7 native test & benchmark suites | **7 / 7 suites passed** (2.41 s total) | **PASSED** |
 | **`prism audit`** | 10 core mathematical & hardware invariants | **10 / 10 invariants passed** | **PASSED** |
 | **JniVerificationTest** | Java $\leftrightarrow$ C++20 JNI bridge | **11 / 11 checkpoints passed** | **PASSED** |
-| **Samsung SM-E156B (Android 16)** | Live on-device diagnostics & UI proof | **6 / 6 device checks passed** | **PASSED** |
-| **Samsung SM-A507FN (Android 11)** | Live Matrix self-tests & Silicon HUD | **7 / 7 invariant checks passed** | **PASSED** |
+| **Android Reference Hardware (Android 16)** | Live on-device diagnostics & UI proof | **6 / 6 device checks passed** | **PASSED** |
+| **Android Reference Hardware (Android 11)** | Live Matrix self-tests & Silicon HUD | **7 / 7 invariant checks passed** | **PASSED** |
 | **Release Artifact** | `release/prism-v-v1.1.2.apk` (Version Code 4) | **648,527 B**, v2/v3 signed, 4-byte zipaligned | **VERIFIED** |

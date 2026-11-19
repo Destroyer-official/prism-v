@@ -331,5 +331,5 @@ Each invariant is documented with its **exact mathematical formulation**, **hard
 
 ## Verification Scope & Boundaries
 
-- **Verified Automatically**: All 10 invariants above are executed continuously by `prism audit` (10/10 PASS), `AllPrismTests` (156/156 PASS), `ctest` (7/7 PASS), `JniVerificationTest` (11/11 PASS), and live Android physical hardware self-tests (`SM-E156B` Android 16: 6/6 PASS; `SM-A507FN` Android 11: 7/7 PASS).
+- **Verified Automatically**: All 10 invariants above are executed continuously by `prism audit` (10/10 PASS), `AllPrismTests` (156/156 PASS), `ctest` (7/7 PASS), `JniVerificationTest` (11/11 PASS), and live Android physical hardware self-tests (Android 16: 6/6 PASS; Android 11: 7/7 PASS).
 - **Explicit Out-of-Scope Boundaries for Unit Harness**: While `DetInt` and `BisRfsq` are architecturally designed for zero-ULP cross-architecture determinism across ARM64/x86_64/RISC-V, the MSVC x64 host unit test binary validates single-ISA host determinism while on-device Android ARM64 self-tests independently verify ARM64 execution parity. Arbitrary non-standard third-party fragmented MP4 edit lists and kernel-level power-cut disk controller failures lie outside the unit harness scope.

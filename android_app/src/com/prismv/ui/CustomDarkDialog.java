@@ -680,7 +680,7 @@ public final class CustomDarkDialog {
         TextView tvPath = new TextView(context);
         File f = (outPath != null) ? new File(outPath) : null;
         String name = (f != null) ? f.getName() : videoName;
-        tvPath.setText("Saved to Movies/Prism-V/" + name + "\nIndexed in Android MediaStore & Samsung Gallery");
+        tvPath.setText("Saved to Movies/Prism-V/" + name + "\nIndexed in Android MediaStore & System Gallery");
         tvPath.setTextColor(ThemeStyles.COLOR_CYAN_TEXT);
         tvPath.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         tvPath.setTypeface(Typeface.MONOSPACE);

@@ -112,7 +112,7 @@ When the primary video file of a cluster is marked for deletion:
 
 ## 4. Empirical Benchmarks & Hardware Telemetry
 
-Results gathered across real camera roll burst captures on the Samsung Galaxy SM-E156B (Android 16 API 36):
+Results gathered across real camera roll burst captures on Android reference hardware (Android 16 API 36):
 
 | Metric | Uncompressed Video Roll | Traditional Transcoding | Prism-V Rabin-Mesh Vault |
 | :--- | :---: | :---: | :---: |

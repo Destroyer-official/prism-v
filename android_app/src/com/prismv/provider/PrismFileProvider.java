@@ -16,7 +16,7 @@ import java.io.FileNotFoundException;
 
 /**
  * Clean-room ContentProvider for sharing videos, compressed containers, and diagnostic logs
- * with external apps (Samsung Gallery, VLC, WhatsApp, Telegram, Gmail, Google Photos, etc.)
+ * with external apps (System Gallery, VLC, WhatsApp, Telegram, Gmail, Google Photos, etc.)
  */
 public class PrismFileProvider extends ContentProvider {
     private static final String TAG = "PrismFileProvider";

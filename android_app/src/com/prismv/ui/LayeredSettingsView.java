@@ -274,7 +274,7 @@ public class LayeredSettingsView extends LinearLayout {
                 new String[]{"Movies/Prism-V (Public)", "DCIM/Prism-V", "App Private Storage"},
                 prefs.getOutputDirectory(), prefs::setOutputDirectory);
 
-        addActionButton(context, sec, "Public Save Folder: Movies/Prism-V", "Browse all compressed videos in Samsung My Files",
+        addActionButton(context, sec, "Public Save Folder: Movies/Prism-V", "Browse all compressed videos in device file manager",
                 "OPEN MOVIES/PRISM-V IN FILES", v -> com.prismv.storage.PrismStorageManager.openFolder(context));
 
         addPillSelectorSetting(context, sec, "Original Replacement Policy", "Safety behavior when replacing source videos",
@@ -388,7 +388,7 @@ public class LayeredSettingsView extends LinearLayout {
                     }
                 });
 
-        addSwitchSetting(context, sec, "GPU & ASIC Hardware Turbo (Max Throughput)", "Bypasses real-time 30fps clock (Short.MAX_VALUE operating rate) for maximum GPU speed",
+        addSwitchSetting(context, sec, "Hardware ASIC Turbo (Max Throughput)", "Unlocks hardware encoder operating rate clock for maximum transcoding throughput",
                 prefs.isGpuTurboEnabled(), prefs::setGpuTurboEnabled);
 
         addPillSelectorSetting(context, sec, "Silicon Power & Thermal Profile", "Governs thermal throttle step-down policy",

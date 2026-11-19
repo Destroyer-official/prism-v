@@ -184,7 +184,7 @@ public class PreFlightDialog {
                 "METHOD 5: SILICON-FUSED (F5-SILICON 2027+)",
                 String.format(Locale.US, "New Size: %.1f MB  •  Saves: %.1f MB (-%.1f%%)", m5Size, m5Saves, m5Pct),
                 "Quality: Zero-Copy DMA • AFGS1 Parametric Grain • Dual-Track",
-                String.format(Locale.US, "Speed: ~%ds  •  Battery: 0.05%% (<1.0W)  •  Heterogeneous ASIC/GPU/SME2", m5Eta),
+                String.format(Locale.US, "Speed: ~%ds  •  Battery: 0.05%% (<1.0W)  •  Heterogeneous ASIC & CPU SIMD", m5Eta),
                 "#00F5D4", "#00BBF9",
                 v -> {
                     dialog.dismiss();

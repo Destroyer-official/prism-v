@@ -495,7 +495,7 @@ Frontier 5 establishes a **production-grade zero-copy heterogeneous silicon arch
    - Slashes DRAM access bandwidth by **84.8%** ($1.40\text{ GB/s}$ vs $9.20\text{ GB/s}$ legacy unrolled pipelines).
 
 2. **User-Budgeted Heterogeneous Resource Governor (`HeterogeneousResourceGovernor`):**
-   - Dynamic user dials: RAM ceiling ($<512\text{ MB}$, $1\text{ GB}$, $4\text{ GB}$), CPU core mode (`ECO`, `BALANCED`, `TURBO`), GPU acceleration toggle, and power priority.
+   - Dynamic user dials: RAM ceiling ($<512\text{ MB}$, $1\text{ GB}$, $4\text{ GB}$), CPU core mode (`ECO`, `BALANCED`, `TURBO`), Hardware ASIC acceleration toggle, and power priority.
    - Translates settings directly into Linux CPU affinity bitmasks across ARM big.LITTLE / DynamIQ clusters:
      - `ECO` (nice +19): efficiency cores only (`0x0F` on 8-core).
      - `BALANCED` (nice 0): efficiency + mid cores (`0x7F` on 8-core, reserving prime core for UI responsiveness).
@@ -725,17 +725,18 @@ Every algorithmic invariant and mathematical property is verified through contin
 
 ### 5.1 Physical Hardware Device Testing
 
-Prism-V has been tested and verified directly on physical Android production devices:
+Prism-V has been tested and verified directly on physical Android production hardware:
 
-1. **Primary Target — Samsung Galaxy SM-E156B (Galaxy F15 / M15 5G class):**
-   - **OS:** Android 16 Preview (API Level 36, Build Baklava, Linux Kernel 6.1.109).
-   - **SoC:** MediaTek Dimensity 6100+ (MT6835), 8 Cores (2× Cortex-A76 @ 2.2 GHz + 6× Cortex-A55 @ 2.0 GHz).
-   - **GPU:** ARM Mali-G57 MC2 (Vulkan 1.3, OpenGL ES 3.2).
+1. **Primary Reference Target (Android 16 64-bit ARM):**
+   - **OS:** Android 16 (API Level 36, Build Baklava, Linux Kernel 6.1.109).
+   - **SoC Architecture:** 8 Cores (2× Cortex-A76 @ 2.2 GHz + 6× Cortex-A55 @ 2.0 GHz).
+   - **Video Hardware:** MediaCodec Fixed-Function Hardware ASIC (HEVC/AVC).
    - **Memory Configuration:** 5.4 GB LPDDR4X with native 16 KiB memory page alignment.
    - **Reliability:** **0 Native Crashes, 0 ANRs, 0 Memory Leaks** over 12 continuous hours of transcoding.
-2. **Secondary Target — Samsung Galaxy SM-A507FN (Galaxy A50s class):**
+2. **Secondary Reference Target (Android 11 64-bit ARM):**
    - **OS:** Android 11 (API Level 30).
-   - **SoC:** Samsung Exynos 9611 (4× Cortex-A73 @ 2.3 GHz + 4× Cortex-A53 @ 1.7 GHz), ARM Mali-G72 MP3.
+   - **SoC Architecture:** 8 cores (4× Cortex-A73 @ 2.3 GHz + 4× Cortex-A53 @ 1.7 GHz).
+   - **Video Hardware:** MediaCodec Fixed-Function Hardware ASIC (HEVC/AVC).
    - **Receipt:** **7 of 7 matrix hardware diagnostic checks verified passed**.
 
 Full logs, CTest scripts, and benchmark outputs are cataloged in [docs/VERIFICATION.md](docs/VERIFICATION.md).

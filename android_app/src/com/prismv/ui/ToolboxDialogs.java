@@ -4160,7 +4160,7 @@ public class ToolboxDialogs {
         foldCard.addView(tvFoldHdr);
 
         TextView tvFoldDesc = new TextView(context);
-        tvFoldDesc.setText("When half-folded on Galaxy Z Fold/Pixel Fold, upper screen shows Duo Comparison video and lower screen shows timeline dials.");
+        tvFoldDesc.setText("When half-folded on foldable devices, upper screen shows Duo Comparison video and lower screen shows timeline dials.");
         tvFoldDesc.setTextColor(ThemeStyles.COLOR_TEXT_MUTED);
         tvFoldDesc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
         tvFoldDesc.setPadding(0, dp(context, 4), 0, 0);

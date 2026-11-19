@@ -15,7 +15,7 @@ import java.io.File;
  * High-Precision Multi-Tier Video Frame Rate Detector for Prism-V.
  *
  * Tier 1: MediaExtractor Track Format KEY_FRAME_RATE (handles both float and int types safely)
- * Tier 2: MediaMetadataRetriever METADATA_KEY_CAPTURE_FRAMERATE (Samsung, Pixel, Xiaomi slow-mo 120/240fps)
+ * Tier 2: MediaMetadataRetriever METADATA_KEY_CAPTURE_FRAMERATE (OEM camera slow-mo 120/240fps)
  * Tier 3: MediaExtractor Ground-Truth Inter-Frame Interval Sampling (first 40 sample PTS deltas)
  * Tier 4: MediaMetadataRetriever METADATA_KEY_VIDEO_FRAME_COUNT / durationMs
  */
@@ -240,7 +240,7 @@ public class FpsExtractor {
         // -------------------------------------------------------------
         // DECISION MATRIX & RATE SNAPPING
         // -------------------------------------------------------------
-        // Priority 1: High-Speed Slow-Motion Capture (Samsung / Pixel 120fps, 240fps)
+        // Priority 1: High-Speed Slow-Motion Capture (OEM camera 120fps, 240fps)
         if (captureFps >= 50.0f) {
             int snapped = snapStandardFps(captureFps);
             return new FpsResult(snapped, captureFps, "CAPTURE_RATE", isVfr);

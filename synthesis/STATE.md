@@ -98,7 +98,7 @@ c:\Users\des\OneDrive\Desktop\video_compression\
 
 ## 4. Execution & UI/UX Live Verification Sign-Off
 
-The synthesis and complete Android UI/UX architecture have been built from scratch, compiled, and verified live on physical Android test hardware (`Samsung SM-E156B / RZCX80CEE7M`):
+The synthesis and complete Android UI/UX architecture have been built from scratch, compiled, and verified live on physical Android test hardware:
 
 1. **Top Bar & 4-Tier Persona Selector**: Seamlessly switches between `Basic` (Magic Mode), `Creator` (Target Size & Bitrates), `Matrix` (Dev Bitstream Inspector), and `Butler` (Autonomous Wi-Fi Optimization).
 2. **Tab 1 — Studio & Compression (`MainActivity.java`)**:

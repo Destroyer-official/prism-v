@@ -382,7 +382,7 @@ public class MainActivity extends Activity {
                         }
                         ThemeStyles.performSuccessHaptic(btnStartCompress);
                         PrismHud.showSuccess(MainActivity.this, String.format(Locale.US, "Reclaimed +%.1f MB! Saved to Movies/Prism-V/", freedMB));
-                        appendLog("[FGS] Compression completed. File indexed in Samsung Gallery.");
+                        appendLog("[FGS] Compression completed. File indexed in System Gallery.");
 
                         // Reset VIDEO SOURCE card to empty state
                         resetSourceState();
@@ -1736,8 +1736,8 @@ public class MainActivity extends Activity {
 
         addToolboxCard(root,
                 "PRIVACY BLUR & REDACTION BRUSH",
-                "Motion-tracked GPU bounding boxes to blur bystander faces, plates, and sensitive text.",
-                "GPU REDACTION", "#DC2626", "#F87171", "OPEN REDACTION BRUSH",
+                "Motion-tracked bounding boxes to blur bystander faces, plates, and sensitive text.",
+                "AI REDACTION", "#DC2626", "#F87171", "OPEN REDACTION BRUSH",
                 v -> ToolboxDialogs.showPrivacyBlurDialog(this, selectedVideoUri));
 
         // 5. STORAGE & TRANSFERS
@@ -2685,7 +2685,7 @@ public class MainActivity extends Activity {
 
         tvLiveGpu = new TextView(this);
         tvLiveGpu.setText("Measuring ASIC throughput...");
-        LinearLayout tileGpu = createLiveMetricTile("GPU/ASIC THROUGHPUT", tvLiveGpu, Color.parseColor("#F59E0B"));
+        LinearLayout tileGpu = createLiveMetricTile("ASIC THROUGHPUT", tvLiveGpu, Color.parseColor("#F59E0B"));
         LinearLayout.LayoutParams lpGpu = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
         lpGpu.setMargins(0, 0, dp(3), 0);
         tileGpu.setLayoutParams(lpGpu);
@@ -3394,7 +3394,7 @@ public class MainActivity extends Activity {
                 PrismLogger.d(TAG, "PhotoPicker fallback: " + e.getMessage());
             }
         }
-        // Fallback: ACTION_OPEN_DOCUMENT gives thumbnail grid on Samsung gallery
+        // Fallback: ACTION_OPEN_DOCUMENT gives thumbnail grid on document provider
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.setType("video/*");
         intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -4155,7 +4155,7 @@ public class MainActivity extends Activity {
                         mainHandler.post(() -> {
                             btnStartCompress.setEnabled(true);
                             if (cardProcessVisual != null) {
-                                updateProcessVisualProgress(100, "Transcode Finished! File indexed in Samsung Gallery.", "COMPLETED");
+                                updateProcessVisualProgress(100, "Transcode Finished! File indexed in System Gallery.", "COMPLETED");
                                 if (tvLiveEta != null) tvLiveEta.setText("COMPLETED");
                             }
                             showHeroDossier(dossier);
