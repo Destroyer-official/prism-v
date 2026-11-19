@@ -93,6 +93,12 @@ public final class HardwareVideoCompressor {
         void onLog(String message);
     }
 
+    private static volatile PrismErrorCode sLastErrorCode = PrismErrorCode.NONE;
+
+    public static PrismErrorCode getLastErrorCode() {
+        return sLastErrorCode;
+    }
+
     private HardwareVideoCompressor() {}
 
     public static boolean compress(String inputPath, String outputPath, String mode,
@@ -104,6 +110,7 @@ public final class HardwareVideoCompressor {
     public static boolean compress(String inputPath, String outputPath, CompressionOptions options,
                                    TranscodeListener listener) {
         if (options == null) options = new CompressionOptions();
+        sLastErrorCode = PrismErrorCode.NONE;
         PrismLogger.i(TAG, String.format(Locale.US,
                 "compress() START: in=%s out=%s mode=%s target=%dx%d fps=%d bitrate=%dkbps ar=%s fmt=%s audio=%s/%dkbps trim=[%d..%d,cut=%s] rot=%d speed=%.2f cfr=%s ram=%dMB",
                 inputPath, outputPath, options.mode, options.targetWidth, options.targetHeight,
@@ -122,13 +129,14 @@ public final class HardwareVideoCompressor {
         File tempAudioFile = null;
 
         try {
-            // Disk Guard: ensure at least 500 MB free space before starting hardware encode
+            // Disk Guard: ensure sufficient free space before starting hardware encode
             File outTarget = new File(outputPath);
             File outParent = outTarget.getParentFile();
             if (outParent != null && outParent.exists()) {
                 long usableBytes = outParent.getUsableSpace();
-                if (usableBytes > 0 && usableBytes < 500L * 1024 * 1024) {
-                    if (listener != null) listener.onLog("Disk Guard Abort: only " + (usableBytes / (1024 * 1024)) + " MB free. Minimum 500 MB required.");
+                if (usableBytes > 0 && usableBytes < 100L * 1024 * 1024) {
+                    sLastErrorCode = PrismErrorCode.E_STORAGE;
+                    if (listener != null) listener.onLog("Storage Guard: only " + (usableBytes / (1024 * 1024)) + " MB free. Minimum 100 MB required.");
                     return false;
                 }
             }
@@ -158,8 +166,9 @@ public final class HardwareVideoCompressor {
             }
 
             if (videoTrackIndex == -1) {
+                sLastErrorCode = PrismErrorCode.E_UNSUPPORTED_INPUT;
                 PrismLogger.e(TAG, "No video track found in input: " + inputPath + " (trackCount=" + trackCount + ")");
-                if (listener != null) listener.onLog("No video track found in input.");
+                if (listener != null) listener.onLog(PrismErrorCode.E_UNSUPPORTED_INPUT.message);
                 return false;
             }
             PrismLogger.i(TAG, "Tracks detected: total=" + trackCount + " videoTrack=" + videoTrackIndex
@@ -468,7 +477,7 @@ public final class HardwareVideoCompressor {
                 boolean isPcmOrBloated = false;
                 if (inputAudioFormat != null) {
                     String aMime = inputAudioFormat.getString(MediaFormat.KEY_MIME);
-                    if (aMime != null && (aMime.contains("raw") || aMime.contains("pcm") || aMime.contains("wav"))) {
+                    if (aMime != null && (aMime.contains("raw") || aMime.contains("pcm") || aMime.contains("wav") || !MediaFormat.MIMETYPE_AUDIO_AAC.equalsIgnoreCase(aMime))) {
                         isPcmOrBloated = true;
                     }
                     if (inputAudioFormat.containsKey(MediaFormat.KEY_BIT_RATE)) {
@@ -719,7 +728,13 @@ public final class HardwareVideoCompressor {
                     muxerVideoTrack = muxer.addTrack(newVidFmt);
 
                     if (inputAudioFormat != null && audioTrackIndex >= 0) {
-                        muxerAudioTrack = muxer.addTrack(inputAudioFormat);
+                        try {
+                            muxerAudioTrack = muxer.addTrack(inputAudioFormat);
+                        } catch (Throwable atEx) {
+                            PrismLogger.w(TAG, "MediaMuxer rejected audio track format (" + atEx.getMessage() + "), dropping audio track safely.");
+                            muxerAudioTrack = -1;
+                            audioDone = true;
+                        }
                     }
 
                     muxer.start();
@@ -968,8 +983,13 @@ public final class HardwareVideoCompressor {
             return true;
 
         } catch (Throwable e) {
-            PrismLogger.e(TAG, "Hardware transcode error: " + e.getMessage(), e);
-            if (listener != null) listener.onLog("Transcode error: " + e.getMessage());
+            if (isCancelRequested()) {
+                sLastErrorCode = PrismErrorCode.E_CANCELLED;
+            } else if (sLastErrorCode == PrismErrorCode.NONE) {
+                sLastErrorCode = PrismErrorCode.E_CODEC_EXCEPTION;
+            }
+            PrismLogger.e(TAG, "Hardware transcode error [" + sLastErrorCode.name() + "]: " + e.getMessage(), e);
+            if (listener != null) listener.onLog("Error (" + sLastErrorCode.name() + "): " + sLastErrorCode.message);
             return false;
         } finally {
             try { if (bufferPool != null) bufferPool.release(); } catch (Exception ignored) {}

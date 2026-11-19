@@ -46,8 +46,8 @@ IngestMediaInfo IngestRouter::probe_media(const uint8_t* header_data, size_t hea
             info.estimated_bbr_savings_ratio = 0.12; // heuristic default for HEVC
         } else if (contains_fourcc(header_data, header_len, "av01")) {
             info.family = CodecFamily::AV1;
-            info.codec_id = SourceCodecId::CODEC_H264;
-            info.estimated_bbr_savings_ratio = 0.02; // heuristic: AV1 usually favours remux
+            info.codec_id = SourceCodecId::CODEC_AV1;
+            info.estimated_bbr_savings_ratio = 0.02; // AV1 bitstreams have high entropy; favors remux or quality transcode
         } else {
             // Default H.264 / AVC
             info.family = CodecFamily::H264_AVC;
@@ -69,7 +69,7 @@ IngestMediaInfo IngestRouter::probe_media(const uint8_t* header_data, size_t hea
                 info.estimated_bbr_savings_ratio = 0.12;
             } else if (meta.video_codec == SourceCodecId::CODEC_AV1) {
                 info.family = CodecFamily::AV1;
-                info.codec_id = SourceCodecId::CODEC_H264;
+                info.codec_id = SourceCodecId::CODEC_AV1;
                 info.estimated_bbr_savings_ratio = 0.02;
             } else {
                 info.family = CodecFamily::H264_AVC;
@@ -120,10 +120,17 @@ RoutingDecision IngestRouter::route_media(const IngestMediaInfo& info, bool user
             }
         }
 
+        SourceCodecId rec_codec = SourceCodecId::CODEC_H264;
+        if (info.family == CodecFamily::H265_HEVC) {
+            rec_codec = SourceCodecId::CODEC_HEVC;
+        } else if (info.family == CodecFamily::AV1) {
+            rec_codec = SourceCodecId::CODEC_AV1;
+        }
+
         if (is_hyper_efficient) {
             decision.contract = LosslessContract::CONTRACT_A_BBR2;
             decision.is_lossless = true;
-            decision.recommended_codec_id = (info.family == CodecFamily::H265_HEVC) ? SourceCodecId::CODEC_HEVC : SourceCodecId::CODEC_H264;
+            decision.recommended_codec_id = rec_codec;
             decision.mode_name = "Mode L-BBR 2.0 (Hyper-Efficient Redirection)";
             decision.rationale = "Source video is already hyper-efficiently compressed (<1.5 Mbps for 1080p). Automatically redirected to Mode L-BBR 2.0 lossless bitstream recompression to eliminate file inflation and preserve master quality.";
             return decision;
@@ -133,7 +140,7 @@ RoutingDecision IngestRouter::route_media(const IngestMediaInfo& info, bool user
         decision.contract = LosslessContract::CONTRACT_A_BBR;
         decision.is_lossless = false;
         decision.mode_name = "Mode Y-Hybrid";
-        decision.recommended_codec_id = (info.family == CodecFamily::H265_HEVC) ? SourceCodecId::CODEC_HEVC : SourceCodecId::CODEC_H264;
+        decision.recommended_codec_id = rec_codec;
         decision.rationale = "Hardware MediaCodec base layer plus Cool-chic micro-residual and AFGS1 parametric film grain synthesis";
         return decision;
     }
@@ -178,7 +185,13 @@ RoutingDecision IngestRouter::route_media(const IngestMediaInfo& info, bool user
     } else {
         // Contract A: Mode L-BBR 2.0 (Frontier 1)
         decision.contract = LosslessContract::CONTRACT_A_BBR2;
-        decision.recommended_codec_id = (info.family == CodecFamily::H265_HEVC) ? SourceCodecId::CODEC_HEVC : SourceCodecId::CODEC_H264;
+        SourceCodecId rec_codec = SourceCodecId::CODEC_H264;
+        if (info.family == CodecFamily::H265_HEVC) {
+            rec_codec = SourceCodecId::CODEC_HEVC;
+        } else if (info.family == CodecFamily::AV1) {
+            rec_codec = SourceCodecId::CODEC_AV1;
+        }
+        decision.recommended_codec_id = rec_codec;
         decision.mode_name = "Mode L-BBR 2.0";
         decision.rationale = "Contract A (Frontier 1): Pre-existing compressed video. Bitstream recompression via Attentive Spatial Syntax Graph (SSG-CR4), C-MAVQ 64-symbol VCTs, and 16-way SIMD rANS with SHA-256 bit-exact contract.";
     }
