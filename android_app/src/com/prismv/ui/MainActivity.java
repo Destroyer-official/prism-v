@@ -731,6 +731,17 @@ public class MainActivity extends Activity {
         return ThemeStyles.createRoundedDrawable(bgColor, strokeColor, strokeWidth, radiusPx);
     }
 
+    private ScrollView getScrollViewForTab(int tabIndex) {
+        switch (tabIndex) {
+            case 0: return studioScrollView;
+            case 1: return duoScrollView;
+            case 2: return toolboxScrollView;
+            case 3: return matrixScrollView;
+            case 4: return settingsScrollView;
+            default: return null;
+        }
+    }
+
     private void switchTab(int tabIndex) {
         switchTab(tabIndex, true);
     }
@@ -738,6 +749,10 @@ public class MainActivity extends Activity {
     private void switchTab(int tabIndex, boolean addToHistory) {
         PrismLogger.d(TAG, "[TAB] switchTab: " + currentTab + " -> " + tabIndex + " (addToHistory=" + addToHistory + ", stack=" + tabHistory + ")");
         if (currentTab == tabIndex) {
+            final ScrollView target = getScrollViewForTab(tabIndex);
+            if (target != null) {
+                target.post(() -> target.smoothScrollTo(0, 0));
+            }
             return;
         }
 
@@ -769,6 +784,9 @@ public class MainActivity extends Activity {
         }
 
         if (tabIndex == 1) {
+            if (duoScrollView != null) {
+                duoScrollView.post(() -> duoScrollView.scrollTo(0, 0));
+            }
             if (duoCompressedVideosView != null) {
                 duoCompressedVideosView.refreshRecords("");
             }
