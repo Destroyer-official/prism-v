@@ -2456,8 +2456,38 @@ public class MainActivity extends Activity {
             tvPreFlightBatchBadge.setText("AUTO PROBE");
         }
 
+        int maxDim = Math.max(sourceWidth, sourceHeight);
+        if (maxDim <= 0) maxDim = 1920;
+
+        // Base Target Bitrates by Resolution:
+        int baseSmartBr;   // Method 0 (Balanced VMAF 95+)
+        int baseProBr;     // Method 1 (Broadcast VMAF 98+)
+        int baseSquishBr;  // Method 2 (Max Squish VMAF ~89)
+
+        if (maxDim >= 3840) {       // 4K UHD
+            baseSmartBr  = 8500;
+            baseProBr    = 14000;
+            baseSquishBr = 3500;
+        } else if (maxDim >= 2560) { // 2K QHD
+            baseSmartBr  = 5500;
+            baseProBr    = 9000;
+            baseSquishBr = 2500;
+        } else if (maxDim >= 1920) { // 1080p FHD
+            baseSmartBr  = 3800;
+            baseProBr    = 6000;
+            baseSquishBr = 1800;
+        } else if (maxDim >= 1280) { // 720p HD
+            baseSmartBr  = 2400;
+            baseProBr    = 4000;
+            baseSquishBr = 1100;
+        } else {                     // 480p SD / 360p
+            baseSmartBr  = 1200;
+            baseProBr    = 2200;
+            baseSquishBr = 600;
+        }
+
         // Method 0: Smart Compression (Keep Res & FPS)
-        int br0 = (customTargetBitrateKbps > 0 && selectedPreFlightMethod == 0) ? customTargetBitrateKbps : 3800;
+        int br0 = (customTargetBitrateKbps > 0 && selectedPreFlightMethod == 0) ? customTargetBitrateKbps : baseSmartBr;
         // Never-Worse Clamp: strictly ceiling to 70% of source bitrate
         br0 = Math.min(br0, Math.max(350, (int) (srcBitrateKbps * 0.70)));
         double m0Size = ((br0 + 192) * durSec) / 8192.0;
@@ -2471,11 +2501,12 @@ public class MainActivity extends Activity {
         tvMethodSpeed[0].setText(String.format(Locale.US, "3.2x (~%ds)", m0Eta));
 
         // Method 1: Pro Master High Fidelity
-        int br1 = (customTargetBitrateKbps > 0 && selectedPreFlightMethod == 1) ? customTargetBitrateKbps : 6000;
+        int br1 = (customTargetBitrateKbps > 0 && selectedPreFlightMethod == 1) ? customTargetBitrateKbps : baseProBr;
         // Never-Worse Clamp: strictly ceiling to 85% of source bitrate
-        br1 = Math.min(br1, Math.max(350, (int) (srcBitrateKbps * 0.85)));
+        br1 = Math.min(br1, Math.max(450, (int) (srcBitrateKbps * 0.85)));
         double m1Size = ((br1 + 320) * durSec) / 8192.0;
         if (m1Size >= srcMB * 0.85) m1Size = srcMB * 0.85;
+        if (m1Size <= m0Size) m1Size = Math.min(srcMB * 0.85, m0Size * 1.35);
         double m1Freed = Math.max(0.1, srcMB - m1Size);
         double m1Pct = Math.min(99.0, (m1Freed / srcMB) * 100.0);
         int m1Eta = Math.max(3, (int) Math.round(durSec / 2.2));
@@ -2485,9 +2516,11 @@ public class MainActivity extends Activity {
         tvMethodSpeed[1].setText(String.format(Locale.US, "2.2x (~%ds)", m1Eta));
 
         // Method 2: Quick Share Max Squish
-        int br2 = Math.max(250, (int) (srcBitrateKbps * 0.45));
+        int br2 = (customTargetBitrateKbps > 0 && selectedPreFlightMethod == 2) ? customTargetBitrateKbps : baseSquishBr;
+        br2 = Math.min(br2, Math.max(200, (int) (srcBitrateKbps * 0.35)));
         double m2Size = ((br2 + 96) * durSec) / 8192.0;
-        if (m2Size >= srcMB * 0.45) m2Size = srcMB * 0.45;
+        if (m2Size >= srcMB * 0.40) m2Size = srcMB * 0.40;
+        if (m2Size >= m0Size) m2Size = m0Size * 0.55; // Strictly smaller than Smart Compression
         double m2Freed = Math.max(0.1, srcMB - m2Size);
         double m2Pct = Math.min(99.0, (m2Freed / srcMB) * 100.0);
         int m2Eta = Math.max(1, (int) Math.round(durSec / 4.8));
