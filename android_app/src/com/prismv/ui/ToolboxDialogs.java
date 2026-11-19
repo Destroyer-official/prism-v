@@ -1314,18 +1314,24 @@ public class ToolboxDialogs {
         tvSub.setPadding(0, dp(context, 4), 0, dp(context, 10));
         root.addView(tvSub);
 
-        // Real Scan of Sample Videos, Movies/Prism-V & DCIM
+        // Real Scan of Movies/Prism-V, DCIM Camera & Video Folders
         List<File> allVideos = new ArrayList<>();
-        File sDir = new File("/sdcard/sample_video");
-        if (sDir.exists() && sDir.listFiles() != null) {
-            for (File f : sDir.listFiles()) {
-                if (f.isFile() && f.getName().toLowerCase().endsWith(".mp4")) allVideos.add(f);
-            }
-        }
         File mDir = PrismStorageManager.getOutputFolder(context);
         if (mDir.exists() && mDir.listFiles() != null) {
             for (File f : mDir.listFiles()) {
-                if (f.isFile() && f.getName().toLowerCase().endsWith(".mp4")) allVideos.add(f);
+                if (f.isFile() && f.getName().toLowerCase(Locale.US).endsWith(".mp4")) allVideos.add(f);
+            }
+        }
+        File dcim = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Camera");
+        if (dcim.exists() && dcim.listFiles() != null) {
+            for (File f : dcim.listFiles()) {
+                if (f.isFile() && f.getName().toLowerCase(Locale.US).endsWith(".mp4")) allVideos.add(f);
+            }
+        }
+        File sDir = new File(Environment.getExternalStorageDirectory(), "sample_video");
+        if (sDir.exists() && sDir.listFiles() != null) {
+            for (File f : sDir.listFiles()) {
+                if (f.isFile() && f.getName().toLowerCase(Locale.US).endsWith(".mp4")) allVideos.add(f);
             }
         }
 
@@ -1560,12 +1566,23 @@ public class ToolboxDialogs {
             }
         }
         if (clips.size() < 2) {
-            File s1 = new File("/sdcard/sample_video/sample.mp4");
-            File s2 = new File("/sdcard/sample_video/sample_action_reel.mp4");
-            File s3 = new File("/sdcard/sample_video/sample_vlog_pro.mp4");
+            File baseDir = new File(Environment.getExternalStorageDirectory(), "sample_video");
+            File s1 = new File(baseDir, "sample.mp4");
+            File s2 = new File(baseDir, "sample_action_reel.mp4");
+            File s3 = new File(baseDir, "sample_vlog_pro.mp4");
             if (s1.exists() && !clips.contains(Uri.fromFile(s1))) clips.add(Uri.fromFile(s1));
             if (s2.exists() && !clips.contains(Uri.fromFile(s2))) clips.add(Uri.fromFile(s2));
             if (s3.exists() && !clips.contains(Uri.fromFile(s3))) clips.add(Uri.fromFile(s3));
+            if (clips.size() < 2 && context != null) {
+                List<File> saved = PrismStorageManager.listSavedVideos(context);
+                for (File sf : saved) {
+                    Uri su = Uri.fromFile(sf);
+                    if (!clips.contains(su)) {
+                        clips.add(su);
+                        if (clips.size() >= 2) break;
+                    }
+                }
+            }
         }
 
         final TextView tvSummary = new TextView(context);

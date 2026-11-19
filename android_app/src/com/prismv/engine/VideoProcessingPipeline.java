@@ -3,6 +3,7 @@ package com.prismv.engine;
 import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Environment;
 import android.provider.OpenableColumns;
 import com.prismv.logging.PrismLogger;
 
@@ -443,14 +444,19 @@ public final class VideoProcessingPipeline {
             return appFiles.getAbsolutePath();
         }
 
-        File sdcardSample = new File("/sdcard/sample_video/" + displayName);
-        if (sdcardSample.exists() && sdcardSample.canRead() && sdcardSample.length() > 0) {
-            return sdcardSample.getAbsolutePath();
-        }
-
-        File dcim = new File("/sdcard/DCIM/Camera/" + displayName);
+        File dcim = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Camera/" + displayName);
         if (dcim.exists() && dcim.canRead() && dcim.length() > 0) {
             return dcim.getAbsolutePath();
+        }
+
+        File movies = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), displayName);
+        if (movies.exists() && movies.canRead() && movies.length() > 0) {
+            return movies.getAbsolutePath();
+        }
+
+        File sdcardSample = new File(Environment.getExternalStorageDirectory(), "sample_video/" + displayName);
+        if (sdcardSample.exists() && sdcardSample.canRead() && sdcardSample.length() > 0) {
+            return sdcardSample.getAbsolutePath();
         }
 
         // Cache copy fallback for ContentResolver URIs

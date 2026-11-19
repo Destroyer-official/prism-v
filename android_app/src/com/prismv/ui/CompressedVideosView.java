@@ -12,6 +12,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.media.MediaMetadataRetriever;
 import android.media.ThumbnailUtils;
 import android.net.Uri;
+import android.os.Environment;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.util.AttributeSet;
@@ -397,13 +398,16 @@ public class CompressedVideosView extends LinearLayout {
             base = base.substring(0, base.length() - "_optimized.mp4".length());
         }
 
+        File dcim = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM);
+        File movies = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES);
+        File downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+
         File[] searchDirs = new File[]{
-                new File("/sdcard/sample_video"),
-                new File("/sdcard/DCIM/Camera"),
-                new File("/storage/emulated/0/DCIM/Camera"),
-                new File("/storage/emulated/0/Movies"),
-                new File("/storage/emulated/0/Download"),
-                new File("/sdcard/Download")
+                new File(dcim, "Camera"),
+                dcim,
+                movies,
+                downloads,
+                new File(Environment.getExternalStorageDirectory(), "sample_video")
         };
 
         for (File dir : searchDirs) {

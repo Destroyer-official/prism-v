@@ -249,7 +249,7 @@ public class PrismMediaProcessingService extends Service {
             int targetWidth = intent.getIntExtra(EXTRA_TARGET_WIDTH, 0);
             int targetHeight = intent.getIntExtra(EXTRA_TARGET_HEIGHT, 0);
             int targetBitrate = intent.getIntExtra(EXTRA_TARGET_BITRATE, 3500);
-            int targetFps = intent.getIntExtra(EXTRA_TARGET_FPS, 30);
+            int targetFps = intent.getIntExtra(EXTRA_TARGET_FPS, 0); // 0 = match native source fps
             String aspectRatio = intent.getStringExtra(EXTRA_ASPECT_RATIO);
             if (aspectRatio == null) aspectRatio = "No Change";
             String outputFormat = intent.getStringExtra(EXTRA_OUTPUT_FORMAT);
