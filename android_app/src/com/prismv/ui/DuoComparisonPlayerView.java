@@ -1733,6 +1733,15 @@ public class DuoComparisonPlayerView extends LinearLayout {
         cinemaTopBar.setVisibility(GONE);
         cinemaBottomBar.setVisibility(GONE);
 
+        if (siliconOverlay != null) {
+            siliconOverlay.setAlpha(1f);
+            siliconOverlay.setVisibility(isFrontier5Mode() ? VISIBLE : GONE);
+        }
+        if (spatialOverlay != null) {
+            spatialOverlay.setAlpha(1f);
+            spatialOverlay.setVisibility(isSpatialMode() ? VISIBLE : GONE);
+        }
+
         // Notify parent activity to restore top navTabs
         if (fullscreenListener != null) {
             fullscreenListener.onFullscreenToggled(false);
@@ -1767,6 +1776,14 @@ public class DuoComparisonPlayerView extends LinearLayout {
             badgeCenterSync.animate().alpha(1f).setDuration(200).start();
         if (dividerHandle != null)
             dividerHandle.animate().alpha(1f).setDuration(200).start();
+        if (siliconOverlay != null && currentMode == ComparisonMode.FRONTIER5_SILICON) {
+            siliconOverlay.setVisibility(VISIBLE);
+            siliconOverlay.animate().alpha(1f).setDuration(200).start();
+        }
+        if (spatialOverlay != null && isSpatialMode()) {
+            spatialOverlay.setVisibility(VISIBLE);
+            spatialOverlay.animate().alpha(1f).setDuration(200).start();
+        }
 
         handler.postDelayed(autoHideCinemaHudRunnable, 3500);
     }
@@ -1796,6 +1813,18 @@ public class DuoComparisonPlayerView extends LinearLayout {
             badgeCenterSync.animate().alpha(0f).setDuration(250).start();
         if (dividerHandle != null)
             dividerHandle.animate().alpha(0.2f).setDuration(250).start();
+        if (siliconOverlay != null && siliconOverlay.getVisibility() == VISIBLE) {
+            siliconOverlay.animate().alpha(0f).setDuration(250).withEndAction(() -> {
+                if (!isCinemaHudVisible && siliconOverlay != null)
+                    siliconOverlay.setVisibility(GONE);
+            }).start();
+        }
+        if (spatialOverlay != null && spatialOverlay.getVisibility() == VISIBLE) {
+            spatialOverlay.animate().alpha(0f).setDuration(250).withEndAction(() -> {
+                if (!isCinemaHudVisible && spatialOverlay != null)
+                    spatialOverlay.setVisibility(GONE);
+            }).start();
+        }
     }
 
     public void toggleCinemaHud() {
@@ -3048,7 +3077,7 @@ public class DuoComparisonPlayerView extends LinearLayout {
                 scorecardOverlay.setVisibility(GONE);
                 if (cardOriginal != null) cardOriginal.setVisibility(VISIBLE);
                 if (cardCompressed != null) cardCompressed.setVisibility(VISIBLE);
-                if (badgeCenterSync != null) badgeCenterSync.setVisibility(VISIBLE);
+                if (badgeCenterSync != null) badgeCenterSync.setVisibility(GONE);
                 if (tvSplitRatio != null) tvSplitRatio.setVisibility(VISIBLE);
                 updateCurtainPosition(parentW / 2);
                 tvStatusBanner.setText("Prism-Spatial 6-DoF Curtain Active: Drag divider to wipe; touch right viewport to orbit 3D camera.");
@@ -3085,7 +3114,7 @@ public class DuoComparisonPlayerView extends LinearLayout {
                 scorecardOverlay.setVisibility(GONE);
                 if (cardOriginal != null) cardOriginal.setVisibility(VISIBLE);
                 if (cardCompressed != null) cardCompressed.setVisibility(VISIBLE);
-                if (badgeCenterSync != null) badgeCenterSync.setVisibility(VISIBLE);
+                if (badgeCenterSync != null) badgeCenterSync.setVisibility(GONE);
                 if (tvSplitRatio != null) tvSplitRatio.setVisibility(GONE);
                 updateCurtainPosition(parentW / 2);
                 tvStatusBanner.setText("Prism-Spatial XR Stereoscopic Active: Dual-eye binocular rendering (IPD: " + (int)virtualIpdMm + "mm, 22.4 Mbps).");
@@ -3107,7 +3136,7 @@ public class DuoComparisonPlayerView extends LinearLayout {
                 scorecardOverlay.setVisibility(GONE);
                 if (cardOriginal != null) cardOriginal.setVisibility(VISIBLE);
                 if (cardCompressed != null) cardCompressed.setVisibility(VISIBLE);
-                if (badgeCenterSync != null) badgeCenterSync.setVisibility(VISIBLE);
+                if (badgeCenterSync != null) badgeCenterSync.setVisibility(GONE);
                 if (tvSplitRatio != null) tvSplitRatio.setVisibility(VISIBLE);
                 updateCurtainPosition(parentW / 2);
                 tvStatusBanner.setText("Frontier 5 Silicon Pipeline: Zero-Copy DMA • Sub-1.0W SoC Envelope (0.950W) • AFGS1 Active.");
@@ -4281,65 +4310,84 @@ public class DuoComparisonPlayerView extends LinearLayout {
     private LinearLayout createSpatialOverlay(Context context) {
         LinearLayout spatial = new LinearLayout(context);
         spatial.setOrientation(VERTICAL);
-        spatial.setPadding(dp(14), dp(12), dp(14), dp(12));
-        spatial.setBackgroundColor(Color.parseColor("#E6050B18"));
-        spatial.setGravity(Gravity.CENTER);
+        spatial.setPadding(dp(12), dp(6), dp(12), dp(6));
+        spatial.setBackground(createRoundedDrawable(Color.parseColor("#CC050B18"), Color.parseColor("#3300E5FF"), dp(1), dp(10)));
+        spatial.setGravity(Gravity.CENTER_HORIZONTAL);
 
-        // Title Row
+        FrameLayout.LayoutParams spatialLp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        spatialLp.gravity = Gravity.BOTTOM;
+        spatialLp.setMargins(dp(8), 0, dp(8), dp(6));
+        spatial.setLayoutParams(spatialLp);
+
+        // Title Row: [Dot] PRISM-SPATIAL 4DGS [Spacer] [▲ DETAILS] [✕]
         LinearLayout titleRow = new LinearLayout(context);
         titleRow.setOrientation(HORIZONTAL);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        titleRow.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         View pulseDot = new View(context);
-        LinearLayout.LayoutParams dotParams = new LinearLayout.LayoutParams(dp(8), dp(8));
+        LinearLayout.LayoutParams dotParams = new LinearLayout.LayoutParams(dp(7), dp(7));
         dotParams.setMargins(0, 0, dp(6), 0);
         pulseDot.setLayoutParams(dotParams);
         pulseDot.setBackground(createRoundedDrawable(ThemeStyles.COLOR_CYAN_PRIMARY, ThemeStyles.COLOR_CYAN_PRIMARY, 0, dp(4)));
         titleRow.addView(pulseDot);
 
         TextView tvSpTitle = new TextView(context);
-        tvSpTitle.setText("PRISM-SPATIAL 4DGS 6-DoF");
+        tvSpTitle.setText("PRISM-SPATIAL 4DGS");
         tvSpTitle.setTextColor(ThemeStyles.COLOR_CYAN_NEON);
-        tvSpTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        tvSpTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         tvSpTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
         titleRow.addView(tvSpTitle);
 
         TextView tvSpSub = new TextView(context);
-        tvSpSub.setText("  •  VULKAN 1.3 4K60 RASTERIZER");
+        tvSpSub.setText(" • 4K60 RASTERIZER");
         tvSpSub.setTextColor(ThemeStyles.COLOR_TEXT_MUTED);
         tvSpSub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
         titleRow.addView(tvSpSub);
 
+        // Spacer to push action buttons right
+        View spacer = new View(context);
+        LinearLayout.LayoutParams spacerLp = new LinearLayout.LayoutParams(0, 1, 1.0f);
+        spacer.setLayoutParams(spacerLp);
+        titleRow.addView(spacer);
+
+        // Toggle Details button
+        TextView btnToggleDetails = new TextView(context);
+        btnToggleDetails.setText("▲ DETAILS");
+        btnToggleDetails.setTextColor(ThemeStyles.COLOR_CYAN_TEXT);
+        btnToggleDetails.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
+        btnToggleDetails.setTypeface(Typeface.DEFAULT_BOLD);
+        btnToggleDetails.setPadding(dp(8), dp(3), dp(8), dp(3));
+        btnToggleDetails.setBackground(createRoundedDrawable(Color.parseColor("#2200E5FF"), Color.parseColor("#5500E5FF"), dp(1), dp(6)));
+        LinearLayout.LayoutParams toggleLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        toggleLp.setMargins(0, 0, dp(6), 0);
+        btnToggleDetails.setLayoutParams(toggleLp);
+        titleRow.addView(btnToggleDetails);
+
+        // Dismiss / Close button
+        TextView btnClose = new TextView(context);
+        btnClose.setText("✕");
+        btnClose.setTextColor(Color.parseColor("#94A3B8"));
+        btnClose.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        btnClose.setTypeface(Typeface.DEFAULT_BOLD);
+        btnClose.setPadding(dp(6), dp(2), dp(6), dp(2));
+        btnClose.setBackground(createRoundedDrawable(Color.parseColor("#22334155"), Color.parseColor("#4464748B"), dp(1), dp(6)));
+        btnClose.setOnClickListener(v -> {
+            spatial.setVisibility(GONE);
+            if (badgeCenterSync != null) badgeCenterSync.setVisibility(VISIBLE);
+        });
+        titleRow.addView(btnClose);
+
         spatial.addView(titleRow);
-
-        // Metrics Row (3 cards: Splats, Bitrate, CVVDP)
-        LinearLayout rowMetrics = new LinearLayout(context);
-        rowMetrics.setOrientation(HORIZONTAL);
-        rowMetrics.setWeightSum(3);
-        rowMetrics.setPadding(0, dp(8), 0, dp(8));
-
-        tvSpatialSplatsVal = addScorecardMetricReturningVal(context, rowMetrics, "ACTIVE SPLATS", "650,000",
-                ThemeStyles.COLOR_CYAN_TEXT, "76.9% Static Anchors");
-        tvSpatialBitrateVal = addScorecardMetricReturningVal(context, rowMetrics, "4DGS BITRATE", "22.4 Mbps",
-                ThemeStyles.COLOR_MINT_TEXT, "-61.4% vs MV-HEVC");
-        tvSpatialCvvdpVal = addScorecardMetricReturningVal(context, rowMetrics, "CVVDP Q-SCORE", "9.4 / 10",
-                ThemeStyles.COLOR_AMBER_SUNSET, "Zero-Drift 60 fps");
-        spatial.addView(rowMetrics);
-
-        // Orbit Attitude Readout Row
-        tvSpatialOrbitVal = new TextView(context);
-        tvSpatialOrbitVal.setText("ATTITUDE: Yaw: +0.0°  |  Pitch: +0.0°  |  Virtual IPD: 63mm");
-        tvSpatialOrbitVal.setTextColor(ThemeStyles.COLOR_CYAN_TEXT);
-        tvSpatialOrbitVal.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
-        tvSpatialOrbitVal.setTypeface(Typeface.MONOSPACE);
-        tvSpatialOrbitVal.setGravity(Gravity.CENTER);
-        tvSpatialOrbitVal.setPadding(0, 0, 0, dp(8));
-        spatial.addView(tvSpatialOrbitVal);
 
         // Sub-mode pill buttons row: [6-DoF Curtain] [6-DoF Solo] [XR Stereo] [Reset ⟲]
         LinearLayout rowBtns = new LinearLayout(context);
         rowBtns.setOrientation(HORIZONTAL);
         rowBtns.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams rowBtnsLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rowBtnsLp.setMargins(0, dp(4), 0, 0);
+        rowBtns.setLayoutParams(rowBtnsLp);
 
         String[] subLabels = new String[] { "6-DoF Curtain", "6-DoF Solo", "XR Stereo", "Reset ⟲" };
         spatialSubModeButtons = new TextView[subLabels.length];
@@ -4347,11 +4395,12 @@ public class DuoComparisonPlayerView extends LinearLayout {
             final int idx = i;
             TextView btn = new TextView(context);
             btn.setText(subLabels[i]);
-            btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+            btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
             btn.setTypeface(Typeface.DEFAULT_BOLD);
-            btn.setPadding(dp(8), dp(4), dp(8), dp(4));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            lp.setMargins(dp(3), 0, dp(3), 0);
+            btn.setPadding(dp(8), dp(3), dp(8), dp(3));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+            lp.setMargins(dp(2), 0, dp(2), 0);
+            btn.setGravity(Gravity.CENTER);
             btn.setLayoutParams(lp);
 
             btn.setOnClickListener(v -> {
@@ -4370,6 +4419,48 @@ public class DuoComparisonPlayerView extends LinearLayout {
             rowBtns.addView(btn);
         }
         spatial.addView(rowBtns);
+
+        // Details Container (Collapsible - GONE by default so video is fully visible!)
+        LinearLayout detailsContainer = new LinearLayout(context);
+        detailsContainer.setOrientation(VERTICAL);
+        detailsContainer.setVisibility(GONE);
+
+        // Metrics Row (3 cards: Splats, Bitrate, CVVDP)
+        LinearLayout rowMetrics = new LinearLayout(context);
+        rowMetrics.setOrientation(HORIZONTAL);
+        rowMetrics.setWeightSum(3);
+        rowMetrics.setPadding(0, dp(6), 0, dp(4));
+
+        tvSpatialSplatsVal = addScorecardMetricReturningVal(context, rowMetrics, "ACTIVE SPLATS", "650,000",
+                ThemeStyles.COLOR_CYAN_TEXT, "76.9% Static Anchors");
+        tvSpatialBitrateVal = addScorecardMetricReturningVal(context, rowMetrics, "4DGS BITRATE", "22.4 Mbps",
+                ThemeStyles.COLOR_MINT_TEXT, "-61.4% vs MV-HEVC");
+        tvSpatialCvvdpVal = addScorecardMetricReturningVal(context, rowMetrics, "CVVDP Q-SCORE", "9.4 / 10",
+                ThemeStyles.COLOR_AMBER_SUNSET, "Zero-Drift 60 fps");
+        detailsContainer.addView(rowMetrics);
+
+        // Orbit Attitude Readout Row
+        tvSpatialOrbitVal = new TextView(context);
+        tvSpatialOrbitVal.setText("ATTITUDE: Yaw: +0.0°  |  Pitch: +0.0°  |  Virtual IPD: 63mm");
+        tvSpatialOrbitVal.setTextColor(ThemeStyles.COLOR_CYAN_TEXT);
+        tvSpatialOrbitVal.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
+        tvSpatialOrbitVal.setTypeface(Typeface.MONOSPACE);
+        tvSpatialOrbitVal.setGravity(Gravity.CENTER);
+        tvSpatialOrbitVal.setPadding(0, 0, 0, dp(4));
+        detailsContainer.addView(tvSpatialOrbitVal);
+
+        spatial.addView(detailsContainer);
+
+        // Hook up Toggle button
+        btnToggleDetails.setOnClickListener(v -> {
+            if (detailsContainer.getVisibility() == GONE) {
+                detailsContainer.setVisibility(VISIBLE);
+                btnToggleDetails.setText("▼ LESS");
+            } else {
+                detailsContainer.setVisibility(GONE);
+                btnToggleDetails.setText("▲ DETAILS");
+            }
+        });
 
         updateSpatialSubModeButtons();
         return spatial;
@@ -4424,70 +4515,84 @@ public class DuoComparisonPlayerView extends LinearLayout {
     private LinearLayout createSiliconOverlay(Context context) {
         LinearLayout silicon = new LinearLayout(context);
         silicon.setOrientation(VERTICAL);
-        silicon.setPadding(dp(14), dp(8), dp(14), dp(8));
-        silicon.setBackgroundColor(Color.parseColor("#E6050B18"));
-        silicon.setGravity(Gravity.CENTER);
+        silicon.setPadding(dp(12), dp(6), dp(12), dp(6));
+        silicon.setBackground(createRoundedDrawable(Color.parseColor("#CC050B18"), Color.parseColor("#3300F5D4"), dp(1), dp(10)));
+        silicon.setGravity(Gravity.CENTER_HORIZONTAL);
 
         FrameLayout.LayoutParams siliconLp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         siliconLp.gravity = Gravity.BOTTOM;
+        siliconLp.setMargins(dp(8), 0, dp(8), dp(6));
         silicon.setLayoutParams(siliconLp);
 
-        // Title Row
+        // Header Row: [Dot] ⚡ FRONTIER 5 SILICON [Spacer] [▲ DETAILS] [✕]
         LinearLayout titleRow = new LinearLayout(context);
         titleRow.setOrientation(HORIZONTAL);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        titleRow.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         View pulseDot = new View(context);
-        LinearLayout.LayoutParams dotParams = new LinearLayout.LayoutParams(dp(8), dp(8));
+        LinearLayout.LayoutParams dotParams = new LinearLayout.LayoutParams(dp(7), dp(7));
         dotParams.setMargins(0, 0, dp(6), 0);
         pulseDot.setLayoutParams(dotParams);
         pulseDot.setBackground(createRoundedDrawable(Color.parseColor("#00F5D4"), Color.parseColor("#00F5D4"), 0, dp(4)));
         titleRow.addView(pulseDot);
 
         TextView tvSilTitle = new TextView(context);
-        tvSilTitle.setText("⚡ FRONTIER 5 SILICON PIPELINE");
+        tvSilTitle.setText("⚡ FRONTIER 5 SILICON");
         tvSilTitle.setTextColor(Color.parseColor("#00F5D4"));
-        tvSilTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        tvSilTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         tvSilTitle.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
         titleRow.addView(tvSilTitle);
 
         TextView tvSilSub = new TextView(context);
-        tvSilSub.setText("  •  SUB-1.0W ZERO-COPY HETEROGENEOUS");
+        tvSilSub.setText(" • 0.95W CAT-DMA");
         tvSilSub.setTextColor(ThemeStyles.COLOR_TEXT_MUTED);
         tvSilSub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
         titleRow.addView(tvSilSub);
 
+        // Spacer to push action buttons to right
+        View spacer = new View(context);
+        LinearLayout.LayoutParams spacerLp = new LinearLayout.LayoutParams(0, 1, 1.0f);
+        spacer.setLayoutParams(spacerLp);
+        titleRow.addView(spacer);
+
+        // Toggle Details button
+        TextView btnToggleDetails = new TextView(context);
+        btnToggleDetails.setText("▲ DETAILS");
+        btnToggleDetails.setTextColor(Color.parseColor("#00F5D4"));
+        btnToggleDetails.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
+        btnToggleDetails.setTypeface(Typeface.DEFAULT_BOLD);
+        btnToggleDetails.setPadding(dp(8), dp(3), dp(8), dp(3));
+        btnToggleDetails.setBackground(createRoundedDrawable(Color.parseColor("#2200F5D4"), Color.parseColor("#5500F5D4"), dp(1), dp(6)));
+        LinearLayout.LayoutParams toggleLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        toggleLp.setMargins(0, 0, dp(6), 0);
+        btnToggleDetails.setLayoutParams(toggleLp);
+        titleRow.addView(btnToggleDetails);
+
+        // Dismiss / Close button
+        TextView btnClose = new TextView(context);
+        btnClose.setText("✕");
+        btnClose.setTextColor(Color.parseColor("#94A3B8"));
+        btnClose.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        btnClose.setTypeface(Typeface.DEFAULT_BOLD);
+        btnClose.setPadding(dp(6), dp(2), dp(6), dp(2));
+        btnClose.setBackground(createRoundedDrawable(Color.parseColor("#22334155"), Color.parseColor("#4464748B"), dp(1), dp(6)));
+        btnClose.setOnClickListener(v -> {
+            silicon.setVisibility(GONE);
+            if (badgeCenterSync != null) badgeCenterSync.setVisibility(VISIBLE);
+        });
+        titleRow.addView(btnClose);
+
         silicon.addView(titleRow);
-
-        // Metrics Row (3 cards: Total SoC Power, DRAM Bandwidth, Dual-Track Bitrate)
-        LinearLayout rowMetrics = new LinearLayout(context);
-        rowMetrics.setOrientation(HORIZONTAL);
-        rowMetrics.setWeightSum(3);
-        rowMetrics.setPadding(0, dp(8), 0, dp(8));
-
-        tvSiliconSocVal = addScorecardMetricReturningVal(context, rowMetrics, "TOTAL SOC POWER", "0.950 W",
-                Color.parseColor("#00F5D4"), "Sub-1.0W Budget Met");
-        tvSiliconDramVal = addScorecardMetricReturningVal(context, rowMetrics, "DRAM BANDWIDTH", "1.40 GB/s",
-                ThemeStyles.COLOR_CYAN_TEXT, "CAT-Ring Zero-Copy DMA");
-        tvSiliconBitrateVal = addScorecardMetricReturningVal(context, rowMetrics, "DUAL-TRACK STREAM", "1.8 + 0.15M",
-                ThemeStyles.COLOR_MINT_TEXT, "Layer 1 ASIC + L2 PRMR");
-        silicon.addView(rowMetrics);
-
-        // Subsystem Power Breakdown Readout Row
-        tvSiliconSubPowerVal = new TextView(context);
-        tvSiliconSubPowerVal.setText("ISP: 330mW | MediaCodec: 220mW | Vulkan: 170mW | SME2: 120mW | DRAM: 80mW");
-        tvSiliconSubPowerVal.setTextColor(Color.parseColor("#80EEF6"));
-        tvSiliconSubPowerVal.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
-        tvSiliconSubPowerVal.setTypeface(Typeface.MONOSPACE);
-        tvSiliconSubPowerVal.setGravity(Gravity.CENTER);
-        tvSiliconSubPowerVal.setPadding(0, 0, 0, dp(8));
-        silicon.addView(tvSiliconSubPowerVal);
 
         // Sub-mode pill buttons row: [Dual Curtain] [Base Only] [Residual Δ] [AFGS1 Grain]
         LinearLayout rowBtns = new LinearLayout(context);
         rowBtns.setOrientation(HORIZONTAL);
         rowBtns.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams rowBtnsLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rowBtnsLp.setMargins(0, dp(4), 0, 0);
+        rowBtns.setLayoutParams(rowBtnsLp);
 
         String[] subLabels = new String[] { "Dual Curtain", "Base Only", "Residual Δ", "AFGS1 Grain" };
         siliconSubModeButtons = new TextView[subLabels.length];
@@ -4495,19 +4600,62 @@ public class DuoComparisonPlayerView extends LinearLayout {
             final int subIdx = i;
             TextView btn = new TextView(context);
             btn.setText(subLabels[i]);
-            btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+            btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
             btn.setTypeface(Typeface.DEFAULT_BOLD);
-            btn.setPadding(dp(10), dp(5), dp(10), dp(5));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            lp.setMargins(dp(3), 0, dp(3), 0);
+            btn.setPadding(dp(8), dp(3), dp(8), dp(3));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+            lp.setMargins(dp(2), 0, dp(2), 0);
+            btn.setGravity(Gravity.CENTER);
             btn.setLayoutParams(lp);
             btn.setOnClickListener(v -> onSiliconSubModeSelected(subIdx));
             siliconSubModeButtons[i] = btn;
             rowBtns.addView(btn);
         }
         silicon.addView(rowBtns);
-        updateSiliconSubModeButtons();
 
+        // Details Container (Collapsible - GONE by default so video is fully visible!)
+        LinearLayout detailsContainer = new LinearLayout(context);
+        detailsContainer.setOrientation(VERTICAL);
+        detailsContainer.setVisibility(GONE);
+
+        // Metrics Row (3 cards: Total SoC Power, DRAM Bandwidth, Dual-Track Bitrate)
+        LinearLayout rowMetrics = new LinearLayout(context);
+        rowMetrics.setOrientation(HORIZONTAL);
+        rowMetrics.setWeightSum(3);
+        rowMetrics.setPadding(0, dp(6), 0, dp(4));
+
+        tvSiliconSocVal = addScorecardMetricReturningVal(context, rowMetrics, "TOTAL SOC POWER", "0.950 W",
+                Color.parseColor("#00F5D4"), "Sub-1.0W Budget Met");
+        tvSiliconDramVal = addScorecardMetricReturningVal(context, rowMetrics, "DRAM BANDWIDTH", "1.40 GB/s",
+                ThemeStyles.COLOR_CYAN_TEXT, "CAT-Ring Zero-Copy DMA");
+        tvSiliconBitrateVal = addScorecardMetricReturningVal(context, rowMetrics, "DUAL-TRACK STREAM", "1.8 + 0.15M",
+                ThemeStyles.COLOR_MINT_TEXT, "Layer 1 ASIC + L2 PRMR");
+        detailsContainer.addView(rowMetrics);
+
+        // Subsystem Power Breakdown Readout Row
+        tvSiliconSubPowerVal = new TextView(context);
+        tvSiliconSubPowerVal.setText("ISP: 330mW | MediaCodec: 220mW | Vulkan: 170mW | SME2: 120mW | DRAM: 80mW");
+        tvSiliconSubPowerVal.setTextColor(Color.parseColor("#80EEF6"));
+        tvSiliconSubPowerVal.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
+        tvSiliconSubPowerVal.setTypeface(Typeface.MONOSPACE);
+        tvSiliconSubPowerVal.setGravity(Gravity.CENTER);
+        tvSiliconSubPowerVal.setPadding(0, 0, 0, dp(4));
+        detailsContainer.addView(tvSiliconSubPowerVal);
+
+        silicon.addView(detailsContainer);
+
+        // Hook up Toggle button
+        btnToggleDetails.setOnClickListener(v -> {
+            if (detailsContainer.getVisibility() == GONE) {
+                detailsContainer.setVisibility(VISIBLE);
+                btnToggleDetails.setText("▼ LESS");
+            } else {
+                detailsContainer.setVisibility(GONE);
+                btnToggleDetails.setText("▲ DETAILS");
+            }
+        });
+
+        updateSiliconSubModeButtons();
         return silicon;
     }
 
