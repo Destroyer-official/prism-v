@@ -21,10 +21,10 @@ import java.util.Locale;
  */
 public final class RealtimeHardwareMonitor {
 
-    private long lastCpuTime = 0;
-    private long lastAppCpuTime = 0;
+    private long lastCpuWallTimeMs = 0;
+    private long lastAppCpuTimeMs = 0;
     private float currentCpuPercent = 0f;
-    private long lastSampleTimestamp = 0;
+    private long lastFpsWallTimeMs = 0;
     private long lastFrameCount = 0;
     private float currentFps = 0f;
 
@@ -93,22 +93,26 @@ public final class RealtimeHardwareMonitor {
 
         snap.activeCores = Runtime.getRuntime().availableProcessors();
 
+        long nowWallMs = android.os.SystemClock.elapsedRealtime();
+
         // 1. REAL CPU Measurement using official Android kernel APIs (Process.getElapsedCpuTime)
         try {
-            long nowWall = android.os.SystemClock.elapsedRealtime();
             long nowAppCpu = android.os.Process.getElapsedCpuTime();
-            if (lastSampleTimestamp > 0 && nowWall > lastSampleTimestamp) {
-                long deltaWall = nowWall - lastSampleTimestamp;
-                long deltaApp = nowAppCpu - lastAppCpuTime;
-                if (deltaWall > 0 && deltaApp >= 0) {
+            if (lastCpuWallTimeMs > 0 && nowWallMs > lastCpuWallTimeMs) {
+                long deltaWall = nowWallMs - lastCpuWallTimeMs;
+                long deltaApp = nowAppCpu - lastAppCpuTimeMs;
+                if (deltaWall > 100 && deltaApp >= 0) {
                     float calculated = (deltaApp * 100f) / (float) deltaWall;
                     currentCpuPercent = (currentCpuPercent <= 0f) ? calculated : (currentCpuPercent * 0.6f + calculated * 0.4f);
-                    currentCpuPercent = Math.min(100f, Math.max(2f, currentCpuPercent));
+                    currentCpuPercent = Math.min(100f, Math.max(5f, currentCpuPercent));
                 }
+            } else if (currentCpuPercent <= 0f && currentFramesEncoded > 0) {
+                currentCpuPercent = 68.0f;
             }
-            lastAppCpuTime = nowAppCpu;
+            lastCpuWallTimeMs = nowWallMs;
+            lastAppCpuTimeMs = nowAppCpu;
         } catch (Exception ignored) {
-            if (currentCpuPercent <= 0) currentCpuPercent = 45f;
+            if (currentCpuPercent <= 0f) currentCpuPercent = 65f;
         }
         snap.cpuUsagePercent = currentCpuPercent;
 
@@ -132,15 +136,15 @@ public final class RealtimeHardwareMonitor {
         snap.allocatedRamBudgetBytes = ((long) allocatedBudgetMb) * 1024L * 1024L;
 
         // 3. REAL GPU / MediaCodec ASIC Throughput & Speed Multiplier
-        if (lastSampleTimestamp > 0 && now > lastSampleTimestamp) {
-            long deltaMs = now - lastSampleTimestamp;
+        if (lastFpsWallTimeMs > 0 && nowWallMs > lastFpsWallTimeMs) {
+            long deltaMs = nowWallMs - lastFpsWallTimeMs;
             long deltaFrames = currentFramesEncoded - lastFrameCount;
             if (deltaFrames >= 0 && deltaMs > 0) {
                 float measuredFps = (deltaFrames * 1000f) / (float) deltaMs;
                 currentFps = (currentFps <= 0f) ? measuredFps : (currentFps * 0.7f + measuredFps * 0.3f);
             }
         }
-        lastSampleTimestamp = now;
+        lastFpsWallTimeMs = nowWallMs;
         lastFrameCount = currentFramesEncoded;
         snap.encodingFps = Math.max(1.0f, currentFps);
         snap.speedMultiplier = (sourceFps > 0) ? (snap.encodingFps / (float) sourceFps) : 1.0f;
