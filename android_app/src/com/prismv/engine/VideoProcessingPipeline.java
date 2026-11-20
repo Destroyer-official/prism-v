@@ -302,6 +302,7 @@ public final class VideoProcessingPipeline {
                     if (!success || !compVideoFile.exists() || compVideoFile.length() == 0) {
                         PrismLogger.e(TAG, "Hardware compression failed: success=" + success
                                 + " exists=" + compVideoFile.exists() + " len=" + compVideoFile.length());
+                        try { if (compVideoFile.exists()) compVideoFile.delete(); } catch (Exception ignored) {}
                         notifyingListener.onError("Hardware compression failed to produce output.");
                         return;
                     }

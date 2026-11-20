@@ -2761,13 +2761,17 @@ public class DuoComparisonPlayerView extends LinearLayout {
 
         int drift = posOrig - posComp;
         int absDrift = Math.abs(drift);
-        int origFrameIdx = Math.max(0, Math.round((posOrig * origFps) / 1000.0f));
-        int compFrameIdx = Math.max(0, Math.round((posComp * compFps) / 1000.0f));
 
         // When physically rendering within half-frame tolerance, lock original displayed
         // timestamp to compressed for true 0 ms sub-frame parity.
         int displayOrigPos = (absDrift <= halfFrame) ? posComp : posOrig;
         int displayCompPos = posComp;
+
+        int origFrameIdx = Math.max(0, Math.round((displayOrigPos * origFps) / 1000.0f));
+        int compFrameIdx = Math.max(0, Math.round((displayCompPos * compFps) / 1000.0f));
+        if (absDrift <= halfFrame && Math.abs(origFps - compFps) < 0.1f) {
+            origFrameIdx = compFrameIdx;
+        }
 
         // Check for timeline duration mismatch (e.g. legacy files where video duration was shrunken by 25%)
         int durOrig = (playerOriginal != null && isOriginalPrepared) ? playerOriginal.getDuration() : 0;

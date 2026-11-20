@@ -132,6 +132,7 @@ public final class HardwareVideoCompressor {
         Surface inputSurface = null;
         HardwareRamBufferPool bufferPool = null;
         File tempAudioFile = null;
+        boolean muxerStarted = false;
 
         try {
             // Disk Guard: ensure sufficient free space before starting hardware encode
@@ -535,6 +536,7 @@ public final class HardwareVideoCompressor {
                                 options.audioBitrateKbps, targetCh, tempAudioFile);
                         if (isCancelRequested()) {
                             PrismLogger.w(TAG, "Compression cancelled during audio preparation.");
+                            try { if (outputPath != null) new File(outputPath).delete(); } catch (Exception ignored) {}
                             return false;
                         }
                         if (aOk && tempAudioFile.exists() && tempAudioFile.length() > 0) {
@@ -560,6 +562,7 @@ public final class HardwareVideoCompressor {
 
             if (isCancelRequested()) {
                 PrismLogger.w(TAG, "Compression cancelled before video codec startup.");
+                try { if (outputPath != null) new File(outputPath).delete(); } catch (Exception ignored) {}
                 return false;
             }
 
@@ -637,7 +640,7 @@ public final class HardwareVideoCompressor {
 
             int muxerVideoTrack = -1;
             int muxerAudioTrack = -1;
-            boolean muxerStarted = false;
+            muxerStarted = false;
 
             MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
             boolean extractorDone = false;
@@ -1079,6 +1082,15 @@ public final class HardwareVideoCompressor {
             }
             PrismLogger.e(TAG, "Hardware transcode error [" + sLastErrorCode.name() + "]: " + e.getMessage(), e);
             if (listener != null) listener.onLog("Error (" + sLastErrorCode.name() + "): " + sLastErrorCode.message);
+            try {
+                if (outputPath != null) {
+                    File partialFile = new File(outputPath);
+                    if (partialFile.exists()) {
+                        partialFile.delete();
+                        PrismLogger.w(TAG, "Purged incomplete partial output file on error: " + outputPath);
+                    }
+                }
+            } catch (Exception ignored) {}
             return false;
         } finally {
             try { if (bufferPool != null) bufferPool.release(); } catch (Exception ignored) {}
@@ -1092,7 +1104,9 @@ public final class HardwareVideoCompressor {
             }
             try { if (inputSurface != null) inputSurface.release(); } catch (Exception ignored) {}
             if (muxer != null) {
-                try { muxer.stop(); } catch (Exception ignored) {}
+                if (muxerStarted) {
+                    try { muxer.stop(); } catch (Exception ignored) {}
+                }
                 try { muxer.release(); } catch (Exception ignored) {}
             }
             try { videoExtractor.release(); } catch (Exception ignored) {}
@@ -1177,6 +1191,9 @@ public final class HardwareVideoCompressor {
         } catch (Throwable e) {
             PrismLogger.e(TAG, "Lossless trim error: " + e.getMessage(), e);
             if (listener != null) listener.onLog("Lossless trim error: " + e.getMessage());
+            try {
+                if (outputFile != null && outputFile.exists()) outputFile.delete();
+            } catch (Exception ignored) {}
             return false;
         } finally {
             if (muxer != null) {
@@ -1318,6 +1335,9 @@ public final class HardwareVideoCompressor {
             return true;
         } catch (Throwable e) {
             PrismLogger.e(TAG, "Metadata strip error: " + e.getMessage(), e);
+            try {
+                if (outputFile != null && outputFile.exists()) outputFile.delete();
+            } catch (Exception ignored) {}
             return false;
         } finally {
             if (muxer != null) {
@@ -1456,6 +1476,9 @@ public final class HardwareVideoCompressor {
             return true;
         } catch (Throwable e) {
             PrismLogger.e(TAG, "Concat error: " + e.getMessage(), e);
+            try {
+                if (outputFile != null && outputFile.exists()) outputFile.delete();
+            } catch (Exception ignored) {}
             return false;
         } finally {
             if (muxer != null) {

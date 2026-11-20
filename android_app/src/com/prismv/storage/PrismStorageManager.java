@@ -162,7 +162,9 @@ public final class PrismStorageManager {
             if (files != null) {
                 for (File f : files) {
                     if (f.isFile() && (f.getName().endsWith(".mp4") || f.getName().endsWith(".mkv") || f.getName().endsWith(".mov"))) {
-                        list.add(f);
+                        if (f.length() > 1024) {
+                            list.add(f);
+                        }
                     }
                 }
             }
