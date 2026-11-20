@@ -221,18 +221,18 @@ public final class SkinManager {
 
             case LIQUID_GLASS:
             default:
-                ThemeStyles.COLOR_BG_CANVAS = Color.parseColor("#040711");
-                ThemeStyles.COLOR_BG_TOPBAR = Color.parseColor("#070D1B");
-                ThemeStyles.COLOR_BG_SURFACE = Color.parseColor("#091020");
-                ThemeStyles.COLOR_BG_CARD = Color.parseColor("#0C1527");
-                ThemeStyles.COLOR_BG_CARD_ACTIVE = Color.parseColor("#0F233E");
-                ThemeStyles.COLOR_BORDER_SUBTLE = Color.parseColor("#1B2942");
+                ThemeStyles.COLOR_BG_CANVAS = Color.parseColor("#060A12");
+                ThemeStyles.COLOR_BG_TOPBAR = Color.parseColor("#080E1C");
+                ThemeStyles.COLOR_BG_SURFACE = Color.parseColor("#0C1425");
+                ThemeStyles.COLOR_BG_CARD = Color.parseColor("#0F1A2F");
+                ThemeStyles.COLOR_BG_CARD_ACTIVE = Color.parseColor("#142646");
+                ThemeStyles.COLOR_BORDER_SUBTLE = Color.parseColor("#1C2B46");
                 ThemeStyles.COLOR_BORDER_ACTIVE = Color.parseColor("#00E5FF");
                 ThemeStyles.COLOR_CYAN_NEON = Color.parseColor("#00E5FF");
                 ThemeStyles.COLOR_CYAN_PRIMARY = Color.parseColor("#0284C7");
                 ThemeStyles.COLOR_CYAN_TEXT = Color.parseColor("#38BDF8");
                 ThemeStyles.COLOR_EMERALD_NEON = Color.parseColor("#10B981");
-                ThemeStyles.COLOR_TEXT_PRIMARY = Color.WHITE;
+                ThemeStyles.COLOR_TEXT_PRIMARY = Color.parseColor("#F8FAFC");
                 ThemeStyles.COLOR_TEXT_SECONDARY = Color.parseColor("#94A3B8");
                 ThemeStyles.COLOR_TEXT_MUTED = Color.parseColor("#64748B");
                 ThemeStyles.IS_LIGHT_THEME = false;

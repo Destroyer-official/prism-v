@@ -123,7 +123,7 @@ public class LayeredSettingsView extends LinearLayout {
         searchBox.setOrientation(HORIZONTAL);
         searchBox.setGravity(Gravity.CENTER_VERTICAL);
         searchBox.setPadding(dp(12), dp(2), dp(12), dp(2));
-        searchBox.setBackground(createRoundedDrawable(Color.parseColor("#0C1527"), ThemeStyles.COLOR_CYAN_PRIMARY, dp(1), dp(14)));
+        searchBox.setBackground(createRoundedDrawable(Color.parseColor("#0C1527"), ThemeStyles.COLOR_BORDER_SUBTLE, dp(1), dp(14)));
         LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46));
         searchParams.setMargins(0, 0, 0, dp(14));
         searchBox.setLayoutParams(searchParams);

@@ -1643,28 +1643,26 @@ public class CompressedVideosView extends LinearLayout {
         Dialog dialog = new Dialog(context);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         dialog.setCancelable(true);
-        dialog.setCanceledOnTouchOutside(false);
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-        }
-        DialogTracker.register(dialog);
-        dialog.setOnDismissListener(d -> DialogTracker.unregister(dialog));
+        dialog.setCanceledOnTouchOutside(true);
 
         ScrollView scroll = new ScrollView(context);
+        scroll.setBackgroundColor(ThemeStyles.COLOR_BG_CANVAS);
+        scroll.setFillViewport(true);
+
         CompressedVideosView libView = new CompressedVideosView(context);
         libView.setOnCompareRequestedListener(r -> {
             dialog.dismiss();
             if (listener != null) listener.onCompareRequested(r);
         });
 
-        // Add a close button at top of view
+        // Add a sleek close button at top of view
         Button btnClose = new Button(context);
-        btnClose.setText("CLOSE LIBRARY");
-        btnClose.setTextColor(ThemeStyles.COLOR_TEXT_MUTED);
-        btnClose.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-        btnClose.setBackground(ThemeStyles.createRoundedDrawable(Color.TRANSPARENT, ThemeStyles.COLOR_BORDER_SUBTLE, ThemeStyles.dp(context, 1), ThemeStyles.dp(context, 10)));
-        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ThemeStyles.dp(context, 40));
+        btnClose.setText("✕  CLOSE VAULT & LIBRARY");
+        btnClose.setTextColor(Color.WHITE);
+        btnClose.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        btnClose.setTypeface(Typeface.DEFAULT_BOLD);
+        btnClose.setBackground(ThemeStyles.createRoundedDrawable(Color.parseColor("#142035"), ThemeStyles.COLOR_BORDER_SUBTLE, ThemeStyles.dp(context, 1), ThemeStyles.dp(context, 12)));
+        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ThemeStyles.dp(context, 44));
         cp.setMargins(0, 0, 0, ThemeStyles.dp(context, 12));
         btnClose.setLayoutParams(cp);
         btnClose.setOnClickListener(v -> dialog.dismiss());
@@ -1672,7 +1670,15 @@ public class CompressedVideosView extends LinearLayout {
 
         scroll.addView(libView);
         dialog.setContentView(scroll);
+
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawable(new ColorDrawable(ThemeStyles.COLOR_BG_CANVAS));
+            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        }
+        DialogTracker.register(dialog);
+        dialog.setOnDismissListener(d -> DialogTracker.unregister(dialog));
         dialog.show();
+        libView.refreshRecords("");
         return dialog;
     }
 }

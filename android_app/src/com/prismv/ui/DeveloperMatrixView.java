@@ -287,8 +287,8 @@ public class DeveloperMatrixView extends LinearLayout {
     private LinearLayout createCard(Context context, String title) {
         LinearLayout card = new LinearLayout(context);
         card.setOrientation(VERTICAL);
-        card.setPadding(dp(14), dp(14), dp(14), dp(14));
-        card.setBackground(createRoundedDrawable(Color.parseColor("#0C1322"), Color.parseColor("#1E293B"), dp(1), dp(14)));
+        card.setPadding(dp(16), dp(16), dp(16), dp(16));
+        card.setBackground(createRoundedDrawable(ThemeStyles.COLOR_BG_CARD, ThemeStyles.COLOR_BORDER_SUBTLE, dp(1), dp(16)));
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -297,7 +297,7 @@ public class DeveloperMatrixView extends LinearLayout {
 
         TextView tvTitle = new TextView(context);
         tvTitle.setText(title);
-        tvTitle.setTextColor(Color.parseColor("#10B981"));
+        tvTitle.setTextColor(Color.parseColor("#38BDF8"));
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         tvTitle.setTypeface(Typeface.DEFAULT_BOLD);
         tvTitle.setPadding(0, 0, 0, dp(8));

@@ -424,10 +424,15 @@ public class MainActivity extends Activity {
         if (statusBarHeight <= 0) statusBarHeight = dp(28);
 
         navTabs = new LinearLayout(this);
-        navTabs.setOrientation(LinearLayout.HORIZONTAL);
-        navTabs.setWeightSum(5);
+        navTabs.setOrientation(LinearLayout.VERTICAL);
         navTabs.setBackgroundColor(ThemeStyles.COLOR_BG_TOPBAR);
-        navTabs.setPadding(dp(10), statusBarHeight + dp(6), dp(10), dp(8));
+        navTabs.setPadding(dp(12), statusBarHeight + dp(6), dp(12), dp(8));
+
+        LinearLayout segmentTrack = new LinearLayout(this);
+        segmentTrack.setOrientation(LinearLayout.HORIZONTAL);
+        segmentTrack.setWeightSum(5);
+        segmentTrack.setBackground(ThemeStyles.createSegmentTrackDrawable(this));
+        segmentTrack.setPadding(dp(3), dp(3), dp(3), dp(3));
 
         String[] tabTitles = new String[]{"Studio", "Duo", "Tools", "Matrix", "Settings"};
         navTabButtons = new TextView[5];
@@ -436,19 +441,19 @@ public class MainActivity extends Activity {
             final int tabIdx = i;
             TextView tabBtn = new TextView(this);
             tabBtn.setText(tabTitles[i]);
-            tabBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+            tabBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
             tabBtn.setTypeface(Typeface.DEFAULT_BOLD);
             tabBtn.setGravity(Gravity.CENTER);
-            tabBtn.setPadding(dp(4), dp(10), dp(4), dp(10));
+            tabBtn.setPadding(dp(2), dp(8), dp(2), dp(8));
 
-            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
-            p.setMargins(dp(2), 0, dp(2), 0);
+            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, dp(36), 1.0f);
             tabBtn.setLayoutParams(p);
 
             tabBtn.setOnClickListener(v -> switchTab(tabIdx));
             navTabButtons[i] = tabBtn;
-            navTabs.addView(tabBtn);
+            segmentTrack.addView(tabBtn);
         }
+        navTabs.addView(segmentTrack);
         mainLayout.addView(navTabs);
 
         // ==========================================
@@ -824,7 +829,7 @@ public class MainActivity extends Activity {
         currentTab = tabIndex;
         for (int i = 0; i < navTabButtons.length; i++) {
             boolean active = (i == tabIndex);
-            navTabButtons[i].setBackground(ThemeStyles.createPillDrawable(this, active));
+            navTabButtons[i].setBackground(ThemeStyles.createSegmentPillDrawable(this, active));
             navTabButtons[i].setTextColor(active ? Color.WHITE : ThemeStyles.COLOR_TEXT_SECONDARY);
             if (active) ThemeStyles.performHaptic(navTabButtons[i]);
         }
@@ -1195,30 +1200,45 @@ public class MainActivity extends Activity {
         ivVideoThumbnail.setVisibility(View.GONE);
         cardStudio.addView(ivVideoThumbnail);
 
-        btnPickFile = new Button(this);
-        LinearLayout.LayoutParams pickFileLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(48));
-        pickFileLp.setMargins(0, dp(8), 0, dp(4));
-        btnPickFile.setLayoutParams(pickFileLp);
-        btnPickFile.setText("CHOOSE VIDEO(S) FROM DEVICE");
-        btnPickFile.setTextColor(Color.WHITE);
-        btnPickFile.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        btnPickFile.setTypeface(Typeface.DEFAULT_BOLD);
-        btnPickFile.setBackground(createRoundedDrawable(Color.parseColor("#0284C7"), Color.parseColor("#06B6D4"), dp(1), dp(14)));
-        btnPickFile.setOnClickListener(v -> launchFilePicker());
-        cardStudio.addView(btnPickFile);
+        // Action row: In empty state or loaded state, two clean side-by-side studio action buttons
+        LinearLayout rowActions = new LinearLayout(this);
+        rowActions.setOrientation(LinearLayout.HORIZONTAL);
+        rowActions.setWeightSum(2);
+        LinearLayout.LayoutParams actLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        actLp.setMargins(0, dp(6), 0, 0);
+        rowActions.setLayoutParams(actLp);
 
-        Button btnOpenLibrary = createOutlinedButton("COMPRESSED VIDEOS VAULT & HISTORY");
+        btnPickFile = new Button(this);
+        LinearLayout.LayoutParams pickFileLp = new LinearLayout.LayoutParams(0, dp(44), 1.0f);
+        pickFileLp.setMargins(0, 0, dp(4), 0);
+        btnPickFile.setLayoutParams(pickFileLp);
+        btnPickFile.setText("📁 CHOOSE VIDEO(S)");
+        btnPickFile.setTextColor(Color.WHITE);
+        btnPickFile.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        btnPickFile.setTypeface(Typeface.DEFAULT_BOLD);
+        btnPickFile.setBackground(createRoundedDrawable(Color.parseColor("#0C2540"), Color.parseColor("#0284C7"), dp(1), dp(12)));
+        btnPickFile.setOnClickListener(v -> launchFilePicker());
+        rowActions.addView(btnPickFile);
+
+        Button btnOpenLibrary = new Button(this);
+        LinearLayout.LayoutParams libLp = new LinearLayout.LayoutParams(0, dp(44), 1.0f);
+        libLp.setMargins(dp(4), 0, 0, 0);
+        btnOpenLibrary.setLayoutParams(libLp);
+        btnOpenLibrary.setText("📂 VAULT & HISTORY");
         btnOpenLibrary.setTextColor(ThemeStyles.COLOR_CYAN_TEXT);
+        btnOpenLibrary.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        btnOpenLibrary.setTypeface(Typeface.DEFAULT_BOLD);
+        btnOpenLibrary.setBackground(createRoundedDrawable(Color.parseColor("#0B1527"), ThemeStyles.COLOR_BORDER_SUBTLE, dp(1), dp(12)));
         btnOpenLibrary.setOnClickListener(v -> CompressedVideosView.showLibraryDialog(this, record -> {
-            if (record.isCompressedFileExisting()) {
+            mainHandler.postDelayed(() -> {
                 switchTab(1);
                 if (duoPlayerView != null) {
                     duoPlayerView.loadFromHistoryRecord(record);
                 }
-            }
+            }, 50);
         }));
-        cardStudio.addView(btnOpenLibrary);
+        rowActions.addView(btnOpenLibrary);
+        cardStudio.addView(rowActions);
 
         // Deep Input Video DNA Inspector Card (collapsible / expandable)
         cardVideoDna = buildVideoDnaInspector();
@@ -1233,7 +1253,7 @@ public class MainActivity extends Activity {
         // ==========================================
         // PRIMARY CTA BUTTON & REAL-TIME PROCESS VISUALIZATION
         // ==========================================
-        btnStartCompress = createBigCtaButton(" CHOOSE VIDEO(S) TO OPTIMIZE");
+        btnStartCompress = createBigCtaButton("▶  IMPORT VIDEO(S) TO OPTIMIZE");
         btnStartCompress.setOnClickListener(v -> {
             if (selectedVideoUri == null && batchVideoList.isEmpty()) {
                 launchFilePicker();
@@ -1932,7 +1952,7 @@ public class MainActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(16), dp(16), dp(16), dp(16));
-        card.setBackground(createRoundedDrawable(ThemeStyles.COLOR_BG_CARD, Color.parseColor(borderHex), dp(1), dp(16)));
+        card.setBackground(createRoundedDrawable(ThemeStyles.COLOR_BG_CARD, ThemeStyles.COLOR_BORDER_SUBTLE, dp(1), dp(16)));
 
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1945,7 +1965,7 @@ public class MainActivity extends Activity {
 
         TextView tvT = new TextView(this);
         tvT.setText(title);
-        tvT.setTextColor(Color.parseColor(accentHex));
+        tvT.setTextColor(Color.WHITE);
         tvT.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         tvT.setTypeface(Typeface.DEFAULT_BOLD);
         LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
@@ -1958,23 +1978,23 @@ public class MainActivity extends Activity {
         tvTag.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
         tvTag.setTypeface(Typeface.DEFAULT_BOLD);
         tvTag.setPadding(dp(8), dp(3), dp(8), dp(3));
-        tvTag.setBackground(createRoundedDrawable(Color.parseColor("#091020"), Color.parseColor(borderHex), dp(1), dp(8)));
+        tvTag.setBackground(createRoundedDrawable(Color.parseColor("#0C1628"), Color.parseColor(accentHex), dp(1), dp(8)));
         rowHeader.addView(tvTag);
         card.addView(rowHeader);
 
         TextView tvD = new TextView(this);
         tvD.setText(desc);
-        tvD.setTextColor(Color.WHITE);
-        tvD.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        tvD.setTextColor(ThemeStyles.COLOR_TEXT_SECONDARY);
+        tvD.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         tvD.setPadding(0, dp(6), 0, dp(12));
         card.addView(tvD);
 
         Button btn = new Button(this);
-        btn.setText(btnLabel);
-        btn.setTextColor(Color.WHITE);
+        btn.setText(btnLabel + " →");
+        btn.setTextColor(Color.parseColor(accentHex));
         btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         btn.setTypeface(Typeface.DEFAULT_BOLD);
-        btn.setBackground(ThemeStyles.createGradientButton(Color.parseColor("#0F2038"), Color.parseColor(borderHex), dp(10)));
+        btn.setBackground(createRoundedDrawable(Color.parseColor("#101C30"), Color.parseColor(accentHex), dp(1), dp(12)));
         btn.setOnClickListener(onClick);
         card.addView(btn);
 
@@ -2229,7 +2249,7 @@ public class MainActivity extends Activity {
         cardPreFlightMatrix = new LinearLayout(this);
         cardPreFlightMatrix.setOrientation(LinearLayout.VERTICAL);
         cardPreFlightMatrix.setPadding(dp(16), dp(14), dp(16), dp(14));
-        cardPreFlightMatrix.setBackground(createRoundedDrawable(ThemeStyles.COLOR_BG_SURFACE, ThemeStyles.COLOR_CYAN_PRIMARY, dp(1), dp(18)));
+        cardPreFlightMatrix.setBackground(createRoundedDrawable(ThemeStyles.COLOR_BG_SURFACE, ThemeStyles.COLOR_BORDER_SUBTLE, dp(1), dp(18)));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.setMargins(0, 0, 0, dp(14));
         cardPreFlightMatrix.setLayoutParams(lp);
@@ -2239,19 +2259,19 @@ public class MainActivity extends Activity {
         head.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView tvT = new TextView(this);
-        tvT.setText("COMPRESSION PROFILES (DEFAULT: KEEP RES & FPS)");
+        tvT.setText("COMPRESSION PROFILES");
         tvT.setTextColor(ThemeStyles.COLOR_TEXT_PRIMARY);
-        tvT.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        tvT.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         tvT.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
         head.addView(tvT);
 
         tvPreFlightBatchBadge = new TextView(this);
-        tvPreFlightBatchBadge.setText("AUTO PROBE");
+        tvPreFlightBatchBadge.setText("⚡ ASIC DIRECT");
         tvPreFlightBatchBadge.setTextColor(ThemeStyles.COLOR_CYAN_NEON);
         tvPreFlightBatchBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
         tvPreFlightBatchBadge.setTypeface(Typeface.DEFAULT_BOLD);
         tvPreFlightBatchBadge.setPadding(dp(6), dp(3), dp(6), dp(3));
-        tvPreFlightBatchBadge.setBackground(createRoundedDrawable(Color.parseColor("#0F2847"), ThemeStyles.COLOR_CYAN_PRIMARY, dp(1), dp(8)));
+        tvPreFlightBatchBadge.setBackground(createRoundedDrawable(Color.parseColor("#0C233C"), Color.parseColor("#0284C7"), dp(1), dp(8)));
         LinearLayout.LayoutParams bLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         bLp.setMargins(dp(8), 0, 0, 0);
         tvPreFlightBatchBadge.setLayoutParams(bLp);
@@ -2259,7 +2279,7 @@ public class MainActivity extends Activity {
         cardPreFlightMatrix.addView(head);
 
         TextView tvSub = new TextView(this);
-        tvSub.setText("Select your profile. By default, your exact resolution, frame rate and original audio are 100% preserved:");
+        tvSub.setText("Select profile. Native resolution, frame rate & studio audio 100% preserved:");
         tvSub.setTextColor(ThemeStyles.COLOR_TEXT_SECONDARY);
         tvSub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
         tvSub.setPadding(0, dp(3), 0, dp(10));
@@ -2326,8 +2346,10 @@ public class MainActivity extends Activity {
             r2.setOrientation(LinearLayout.HORIZONTAL);
             r2.setWeightSum(4);
 
-            tvMethodSizes[i] = addPreFlightMetric(r2, "OUTPUT", "--", "#38BDF8");
-            tvMethodFreed[i] = addPreFlightMetric(r2, "FREED", "Select Video", "#34D399");
+            String estOut = (i == 0) ? "~30% Size" : (i == 1) ? "~55% Size" : (i == 2) ? "~15% Size" : "Streamlined";
+            String estFreed = (i == 0) ? "~70% Freed" : (i == 1) ? "~45% Freed" : (i == 2) ? "~85% Freed" : "Bit-Exact";
+            tvMethodSizes[i] = addPreFlightMetric(r2, "OUTPUT", estOut, "#38BDF8");
+            tvMethodFreed[i] = addPreFlightMetric(r2, "FREED", estFreed, "#34D399");
             tvMethodVmaf[i] = addPreFlightMetric(r2, "QUALITY", i == 0 ? "VMAF 95+" : i == 1 ? "VMAF 98.4" : i == 2 ? "VMAF ~90" : "Bit-Exact", "#FBBF24");
             tvMethodSpeed[i] = addPreFlightMetric(r2, "SPEED", i == 0 ? "3.5x Turbo" : i == 1 ? "2.2x Master" : i == 2 ? "5.0x Fast" : "6.5x Quick", "#A78BFA");
             mCard.addView(r2);
@@ -3178,6 +3200,13 @@ public class MainActivity extends Activity {
 
     private void updateCtaButtonText() {
         if (btnStartCompress == null) return;
+        if (selectedVideoUri == null && batchVideoList.isEmpty()) {
+            btnStartCompress.setText("▶  IMPORT VIDEO(S) TO OPTIMIZE");
+            btnStartCompress.setBackground(ThemeStyles.createGradientButton(Color.parseColor("#0284C7"), Color.parseColor("#0369A1"), dp(16)));
+            return;
+        }
+
+        btnStartCompress.setBackground(ThemeStyles.createGradientButton(Color.parseColor("#059669"), Color.parseColor("#10B981"), dp(16)));
         String ext = "Default".equals(selectedOutputFormat) ? "MP4" : selectedOutputFormat;
         if (isBatchMode && batchVideoList.size() > 1) {
             long totalBytes = 0;
@@ -3186,8 +3215,8 @@ public class MainActivity extends Activity {
             double ratio = (selectedPreFlightMethod == 0) ? 0.77 : (selectedPreFlightMethod == 1) ? 0.63 : (selectedPreFlightMethod == 2) ? 0.89 : 0.18;
             double freedMB = srcMB * ratio;
             btnStartCompress.setText(String.format(Locale.US,
-                    " START BATCH COMPRESSION (%d Videos • Keep Res & FPS • Frees +%.1f MB • %s)",
-                    batchVideoList.size(), freedMB, ext));
+                    "⚡ BATCH OPTIMIZE (%d Videos • Frees +%.1f MB)",
+                    batchVideoList.size(), freedMB));
         } else {
             int tw = (customTargetWidth > 0) ? customTargetWidth : (sourceWidth > 0 ? sourceWidth : 1920);
             int th = (customTargetHeight > 0) ? customTargetHeight : (sourceHeight > 0 ? sourceHeight : 1080);
@@ -3200,13 +3229,9 @@ public class MainActivity extends Activity {
             double freedMB = Math.max(0.0, srcMB - estMB);
             double pctSaved = srcMB > 0 ? Math.min(99.0, (freedMB / srcMB) * 100.0) : 0.0;
 
-            String keepLabel = (selectedResIndex == 5 || (sourceWidth > 0 && tw == sourceWidth && th == sourceHeight))
-                    ? "Keep " + tw + "x" + th + " @" + tfps + "fps (Native)"
-                    : tw + "x" + th + " @" + tfps + "fps";
-
             btnStartCompress.setText(String.format(Locale.US,
-                    " START COMPRESSION (%s • ~%.1f MB [-%.0f%%] • %s)",
-                    keepLabel, estMB, pctSaved, ext));
+                    "⚡ COMPRESS NOW • ~%.1f MB (-%.0f%%) • %s",
+                    estMB, pctSaved, ext));
         }
     }
 
@@ -4547,7 +4572,7 @@ public class MainActivity extends Activity {
             ivVideoThumbnail.setImageBitmap(null);
         }
         if (cardVideoDna != null) cardVideoDna.setVisibility(View.GONE);
-        if (btnPickFile != null) btnPickFile.setText("📁 CHOOSE VIDEO(S) FROM DEVICE");
+        if (btnPickFile != null) btnPickFile.setText("📁 CHOOSE VIDEO(S)");
 
         // Re-select default profile so projections reset cleanly
         selectedPreFlightMethod = 0;

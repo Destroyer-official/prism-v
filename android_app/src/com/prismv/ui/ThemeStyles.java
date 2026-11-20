@@ -13,13 +13,13 @@ import android.util.TypedValue;
  */
 public final class ThemeStyles {
 
-    // Core Canvas & Surface
-    public static int COLOR_BG_CANVAS = Color.parseColor("#040711"); // Deepest Titanium Obsidian
-    public static int COLOR_BG_TOPBAR = Color.parseColor("#070D1B"); // Top bar surface
-    public static int COLOR_BG_SURFACE = Color.parseColor("#091020"); // Surface card
-    public static int COLOR_BG_CARD = Color.parseColor("#0C1527"); // Interactive card background
-    public static int COLOR_BG_CARD_ACTIVE = Color.parseColor("#0F233E"); // Active card background
-    public static int COLOR_BORDER_SUBTLE = Color.parseColor("#1B2942"); // 1px glass border
+    // Core Canvas & Surface (Pro Studio Obsidian & Glass)
+    public static int COLOR_BG_CANVAS = Color.parseColor("#060A12"); // Deepest Titanium Obsidian
+    public static int COLOR_BG_TOPBAR = Color.parseColor("#080E1C"); // Top bar surface
+    public static int COLOR_BG_SURFACE = Color.parseColor("#0C1425"); // Surface card
+    public static int COLOR_BG_CARD = Color.parseColor("#0F1A2F"); // Interactive card background
+    public static int COLOR_BG_CARD_ACTIVE = Color.parseColor("#142646"); // Active card background
+    public static int COLOR_BORDER_SUBTLE = Color.parseColor("#1C2B46"); // 1px glass border
     public static int COLOR_BORDER_ACTIVE = Color.parseColor("#00E5FF"); // Neon Cyan active border
 
     // Accents & Signals
@@ -33,7 +33,7 @@ public final class ThemeStyles {
     public static int COLOR_RED_ALERT = Color.parseColor("#EF4444");
 
     // Text & Content
-    public static int COLOR_TEXT_PRIMARY = Color.WHITE;
+    public static int COLOR_TEXT_PRIMARY = Color.parseColor("#F8FAFC"); // Slate 50
     public static int COLOR_TEXT_SECONDARY = Color.parseColor("#94A3B8"); // Slate 400
     public static int COLOR_TEXT_MUTED = Color.parseColor("#64748B"); // Slate 500
 
@@ -74,10 +74,30 @@ public final class ThemeStyles {
             d.setColor(COLOR_CYAN_PRIMARY);
             d.setStroke(dp(context, 1), COLOR_CYAN_NEON);
         } else {
-            d.setColor(IS_LIGHT_THEME ? Color.parseColor("#E6E0D2") : Color.parseColor("#121B2D"));
+            d.setColor(IS_LIGHT_THEME ? Color.parseColor("#E6E0D2") : Color.parseColor("#0E1626"));
             d.setStroke(dp(context, 1), COLOR_BORDER_SUBTLE);
         }
         d.setCornerRadius(dp(context, 20));
+        return d;
+    }
+
+    public static GradientDrawable createSegmentTrackDrawable(Context context) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(IS_LIGHT_THEME ? Color.parseColor("#E5DFC8") : Color.parseColor("#09101D"));
+        d.setStroke(dp(context, 1), COLOR_BORDER_SUBTLE);
+        d.setCornerRadius(dp(context, 24));
+        return d;
+    }
+
+    public static GradientDrawable createSegmentPillDrawable(Context context, boolean active) {
+        GradientDrawable d = new GradientDrawable();
+        if (active) {
+            d.setColor(COLOR_CYAN_PRIMARY);
+            d.setCornerRadius(dp(context, 20));
+        } else {
+            d.setColor(Color.TRANSPARENT);
+            d.setCornerRadius(dp(context, 20));
+        }
         return d;
     }
 
