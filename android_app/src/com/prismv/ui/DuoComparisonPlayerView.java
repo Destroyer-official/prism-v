@@ -147,6 +147,7 @@ public class DuoComparisonPlayerView extends LinearLayout {
     private volatile boolean origSeekBusy = false;
     private volatile boolean compSeekBusy = false;
     private int pendingSeekMs = -1; // queued seek target during active seek
+    private volatile long lastStateChangeMs = 0;
     private boolean pendingResumeAfterSeek = false; // resume play when seek finishes
 
     private Uri originalUri;
@@ -1588,9 +1589,13 @@ public class DuoComparisonPlayerView extends LinearLayout {
 
                     case MotionEvent.ACTION_UP:
                     case MotionEvent.ACTION_CANCEL:
-                        if (isFullscreen && !isCurtainDragging && Math.abs(x - touchDownX) < dp(14)
+                        if (!isCurtainDragging && Math.abs(x - touchDownX) < dp(14)
                                 && Math.abs(y - touchDownY) < dp(14)) {
-                            toggleCinemaHud();
+                            if (isFullscreen) {
+                                toggleCinemaHud();
+                            } else {
+                                togglePlayPause();
+                            }
                         }
                         isCurtainDragging = false;
                         if (v.getParent() != null)
@@ -2323,8 +2328,15 @@ public class DuoComparisonPlayerView extends LinearLayout {
         }
 
         // Guard: block re-entrant calls from rapid tapping or postDelayed callbacks
-        if (isPauseInProgress || isStartInProgress)
-            return;
+        if (isPauseInProgress || isStartInProgress) {
+            if (SystemClock.elapsedRealtime() - lastStateChangeMs > 600) {
+                isPauseInProgress = false;
+                isStartInProgress = false;
+            } else {
+                return;
+            }
+        }
+        lastStateChangeMs = SystemClock.elapsedRealtime();
 
         if (isPlaying) {
             // ── PAUSE (Atomic Dual-Player Pause) ──
@@ -2446,11 +2458,8 @@ public class DuoComparisonPlayerView extends LinearLayout {
             }
 
             if (dur > 0 && curPos >= dur - 100) {
-                syncSeekExact(0);
-                handler.postDelayed(() -> {
-                    isStartInProgress = false;
-                    startBothPlayers();
-                }, 150);
+                isStartInProgress = false;
+                performSyncSeek(0, true, true);
                 return;
             }
 
@@ -2470,13 +2479,10 @@ public class DuoComparisonPlayerView extends LinearLayout {
                 isStartInProgress = false;
                 startBothPlayers();
             } else {
-                // Align to compressed player's position (master clock)
+                // Align to compressed player's position (master clock) and resume immediately upon seek finish
+                isStartInProgress = false;
                 int alignPos = (isCompressedPrepared && playerCompressed != null) ? compPos : origPos;
-                syncSeekExact(alignPos);
-                handler.postDelayed(() -> {
-                    isStartInProgress = false;
-                    startBothPlayers();
-                }, 150);
+                performSyncSeek(alignPos, true, true);
             }
         }
     }
