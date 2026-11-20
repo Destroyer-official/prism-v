@@ -163,6 +163,7 @@ public class MainActivity extends Activity {
     // Inline Pre-Flight Method Matrix UI
     private LinearLayout cardPreFlightMatrix;
     private LinearLayout[] preFlightMethodCards;
+    private TextView[] preFlightBadges;
     private TextView[] tvMethodSizes;
     private TextView[] tvMethodFreed;
     private TextView[] tvMethodVmaf;
@@ -1027,12 +1028,12 @@ public class MainActivity extends Activity {
 
         // Hardware Silicon Acceleration Badge (Real HW status, zero gimmick)
         TextView tvHwBadge = new TextView(this);
-        tvHwBadge.setText("HW ASIC ACTIVE");
-        tvHwBadge.setTextColor(ThemeStyles.COLOR_EMERALD_NEON);
+        tvHwBadge.setText("● ASIC ACCELERATED");
+        tvHwBadge.setTextColor(Color.parseColor("#34D399"));
         tvHwBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
-        tvHwBadge.setTypeface(Typeface.MONOSPACE);
-        tvHwBadge.setPadding(dp(8), dp(4), dp(8), dp(4));
-        tvHwBadge.setBackground(createRoundedDrawable(Color.parseColor("#10192A"), ThemeStyles.COLOR_EMERALD_NEON, dp(1), dp(10)));
+        tvHwBadge.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        tvHwBadge.setPadding(dp(10), dp(5), dp(10), dp(5));
+        tvHwBadge.setBackground(createRoundedDrawable(Color.parseColor("#062419"), Color.parseColor("#059669"), dp(1), dp(12)));
         LinearLayout.LayoutParams hwParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         hwParams.setMargins(0, 0, dp(6), 0);
         tvHwBadge.setLayoutParams(hwParams);
@@ -1040,12 +1041,12 @@ public class MainActivity extends Activity {
 
         // Copilot Quick Button
         TextView tvCopilotBtn = new TextView(this);
-        tvCopilotBtn.setText("AI COPILOT");
-        tvCopilotBtn.setTextColor(Color.WHITE);
+        tvCopilotBtn.setText("✦ AI COPILOT");
+        tvCopilotBtn.setTextColor(Color.parseColor("#E0E7FF"));
         tvCopilotBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
-        tvCopilotBtn.setTypeface(Typeface.DEFAULT_BOLD);
-        tvCopilotBtn.setPadding(dp(8), dp(4), dp(8), dp(4));
-        tvCopilotBtn.setBackground(ThemeStyles.createGradientButton(Color.parseColor("#4338CA"), Color.parseColor("#7C3AED"), dp(10)));
+        tvCopilotBtn.setTypeface(Typeface.create("sans-serif-bold", Typeface.BOLD));
+        tvCopilotBtn.setPadding(dp(10), dp(5), dp(10), dp(5));
+        tvCopilotBtn.setBackground(ThemeStyles.createGradientButton(Color.parseColor("#3730A3"), Color.parseColor("#6366F1"), dp(12)));
         tvCopilotBtn.setOnClickListener(v -> openGeminiCopilot());
         studioHeaderRow.addView(tvCopilotBtn);
 
@@ -1960,7 +1961,7 @@ public class MainActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(16), dp(16), dp(16), dp(16));
-        card.setBackground(createRoundedDrawable(ThemeStyles.COLOR_BG_CARD, ThemeStyles.COLOR_BORDER_SUBTLE, dp(1), dp(16)));
+        card.setBackground(createRoundedDrawable(Color.parseColor("#0A1424"), Color.parseColor("#172A45"), dp(1), dp(16)));
 
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1975,7 +1976,7 @@ public class MainActivity extends Activity {
         tvT.setText(title);
         tvT.setTextColor(Color.WHITE);
         tvT.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        tvT.setTypeface(Typeface.DEFAULT_BOLD);
+        tvT.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
         LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
         tvT.setLayoutParams(tp);
         rowHeader.addView(tvT);
@@ -1986,7 +1987,7 @@ public class MainActivity extends Activity {
         tvTag.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
         tvTag.setTypeface(Typeface.DEFAULT_BOLD);
         tvTag.setPadding(dp(8), dp(3), dp(8), dp(3));
-        tvTag.setBackground(createRoundedDrawable(Color.parseColor("#0C1628"), Color.parseColor(accentHex), dp(1), dp(8)));
+        tvTag.setBackground(createRoundedDrawable(Color.parseColor("#0C182B"), Color.parseColor(accentHex), dp(1), dp(8)));
         rowHeader.addView(tvTag);
         card.addView(rowHeader);
 
@@ -2002,8 +2003,20 @@ public class MainActivity extends Activity {
         btn.setTextColor(Color.parseColor(accentHex));
         btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         btn.setTypeface(Typeface.DEFAULT_BOLD);
-        btn.setBackground(createRoundedDrawable(Color.parseColor("#101C30"), Color.parseColor(accentHex), dp(1), dp(12)));
+        btn.setBackground(createRoundedDrawable(Color.parseColor("#101E34"), Color.parseColor("#1F3556"), dp(1), dp(10)));
         btn.setOnClickListener(onClick);
+        btn.setOnTouchListener((v, event) -> {
+            switch (event.getAction()) {
+                case android.view.MotionEvent.ACTION_DOWN:
+                    v.animate().scaleX(0.98f).scaleY(0.98f).setDuration(60).start();
+                    break;
+                case android.view.MotionEvent.ACTION_UP:
+                case android.view.MotionEvent.ACTION_CANCEL:
+                    v.animate().scaleX(1.0f).scaleY(1.0f).setDuration(100).start();
+                    break;
+            }
+            return false;
+        });
         card.addView(btn);
 
         card.setClickable(true);
@@ -2294,6 +2307,7 @@ public class MainActivity extends Activity {
         cardPreFlightMatrix.addView(tvSub);
 
         preFlightMethodCards = new LinearLayout[4];
+        preFlightBadges = new TextView[4];
         tvMethodSizes = new TextView[4];
         tvMethodFreed = new TextView[4];
         tvMethodVmaf = new TextView[4];
@@ -2341,6 +2355,7 @@ public class MainActivity extends Activity {
             tvBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
             tvBadge.setTypeface(Typeface.DEFAULT_BOLD);
             r1.addView(tvBadge);
+            preFlightBadges[i] = tvBadge;
             mCard.addView(r1);
 
             TextView tvTarg = new TextView(this);
@@ -2409,6 +2424,11 @@ public class MainActivity extends Activity {
         for (int i = 0; i < 4; i++) {
             if (preFlightMethodCards != null && preFlightMethodCards[i] != null) {
                 updatePreFlightCardStyle(preFlightMethodCards[i], i == selectedPreFlightMethod, accentColors[i]);
+            }
+            if (preFlightBadges != null && preFlightBadges[i] != null) {
+                boolean active = (i == selectedPreFlightMethod);
+                preFlightBadges[i].setText(active ? "● ACTIVE" : "SELECT");
+                preFlightBadges[i].setTextColor(active ? Color.parseColor(accentColors[i]) : ThemeStyles.COLOR_TEXT_MUTED);
             }
         }
 
@@ -3397,7 +3417,7 @@ public class MainActivity extends Activity {
         btn.setTextColor(Color.WHITE);
         btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         btn.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
-        btn.setBackground(ThemeStyles.createGradientButton(Color.parseColor("#059669"), Color.parseColor("#10B981"), dp(16)));
+        btn.setBackground(ThemeStyles.createGradientButton(Color.parseColor("#0284C7"), Color.parseColor("#0369A1"), dp(16)));
         btn.setOnTouchListener((v, event) -> {
             switch (event.getAction()) {
                 case android.view.MotionEvent.ACTION_DOWN:

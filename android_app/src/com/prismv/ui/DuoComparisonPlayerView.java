@@ -3582,11 +3582,15 @@ public class DuoComparisonPlayerView extends LinearLayout {
     }
 
     public void loadFromHistoryRecord(CompressionHistoryManager.Record r) {
+        loadFromHistoryRecord(r, true);
+    }
+
+    public void loadFromHistoryRecord(CompressionHistoryManager.Record r, boolean notifyUser) {
         if (r == null)
             return;
         Uri compUri = r.getCompressedUri();
         if (compUri == null || !r.isCompressedFileExisting()) {
-            if (getContext() instanceof Activity) {
+            if (notifyUser && getContext() instanceof Activity) {
                 PrismHud.showWarning((Activity) getContext(), "Compressed video file not found on disk");
             }
             return;
@@ -3599,7 +3603,7 @@ public class DuoComparisonPlayerView extends LinearLayout {
                     r.title != null ? r.title : "Compressed",
                     r.compressedSizeBytes / (1024.0 * 1024.0));
             loadOutputVideoSolo(compUri, compTitle);
-            if (getContext() instanceof Activity) {
+            if (notifyUser && getContext() instanceof Activity) {
                 PrismHud.showInfo((Activity) getContext(), "Master source not available; playing compressed output.");
             }
             return;
@@ -3609,7 +3613,7 @@ public class DuoComparisonPlayerView extends LinearLayout {
         String compTitle = String.format(Locale.US, "● PRISM-V (%.1f MB • -%.1f%%)",
                 r.compressedSizeBytes / (1024.0 * 1024.0), r.percentReduction);
         loadVideoPair(origUri, compUri, origTitle, compTitle);
-        if (getContext() instanceof Activity) {
+        if (notifyUser && getContext() instanceof Activity) {
             PrismHud.showSuccess((Activity) getContext(), "Loaded pair: " + (r.title != null ? r.title : "Comparison"));
         }
     }
@@ -3621,7 +3625,7 @@ public class DuoComparisonPlayerView extends LinearLayout {
             CompressionHistoryManager history = CompressionHistoryManager.get(getContext());
             CompressionHistoryManager.Record latest = history.getLatestRecord();
             if (latest != null && latest.isCompressedFileExisting()) {
-                loadFromHistoryRecord(latest);
+                loadFromHistoryRecord(latest, false);
                 return;
             }
         } catch (Exception ignored) {

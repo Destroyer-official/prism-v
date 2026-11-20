@@ -77,8 +77,8 @@ public final class PrismHud {
             final LinearLayout pill = new LinearLayout(activity);
             pill.setOrientation(LinearLayout.HORIZONTAL);
             pill.setGravity(Gravity.CENTER);
-            int padH = dp(activity, 20);
-            int padV = dp(activity, 12);
+            int padH = dp(activity, 18);
+            int padV = dp(activity, 10);
             pill.setPadding(padH, padV, padH, padV);
 
             GradientDrawable bg = new GradientDrawable();
@@ -86,6 +86,7 @@ public final class PrismHud {
             bg.setStroke(dp(activity, 1), strokeColor);
             bg.setCornerRadius(dp(activity, 24));
             pill.setBackground(bg);
+            pill.setElevation(dp(activity, 8));
 
             TextView tv = new TextView(activity);
             tv.setText(message);
@@ -96,12 +97,13 @@ public final class PrismHud {
 
             FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            lp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
-            lp.setMargins(0, 0, 0, dp(activity, 70));
+            lp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+            lp.setMargins(0, dp(activity, 68), 0, 0);
             pill.setLayoutParams(lp);
 
+            hudContainer.removeAllViews();
             pill.setAlpha(0.0f);
-            pill.setTranslationY(dp(activity, 20));
+            pill.setTranslationY(-dp(activity, 20));
             final FrameLayout finalContainer = hudContainer;
             finalContainer.addView(pill);
 
@@ -114,7 +116,7 @@ public final class PrismHud {
             new Handler(Looper.getMainLooper()).postDelayed(() -> {
                 pill.animate()
                         .alpha(0.0f)
-                        .translationY(-dp(activity, 15))
+                        .translationY(-dp(activity, 20))
                         .setDuration(220)
                         .withEndAction(() -> finalContainer.removeView(pill))
                         .start();
