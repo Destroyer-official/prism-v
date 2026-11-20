@@ -49,6 +49,55 @@ public class CompressedVideosView extends LinearLayout {
         void onCompareRequested(CompressionHistoryManager.Record record);
     }
 
+    public static class RecordViewModel {
+        public final CompressionHistoryManager.Record record;
+        public final File srcFile;
+        public final File trashedFile;
+        public final boolean hasSourceOnDisk;
+        public final boolean isTrashed;
+
+        public RecordViewModel(CompressionHistoryManager.Record record, File srcFile, File trashedFile, boolean hasSourceOnDisk, boolean isTrashed) {
+            this.record = record;
+            this.srcFile = srcFile;
+            this.trashedFile = trashedFile;
+            this.hasSourceOnDisk = hasSourceOnDisk;
+            this.isTrashed = isTrashed;
+        }
+    }
+
+    public static class LibraryScanData {
+        public final List<RecordViewModel> items;
+        public final long totalOrig;
+        public final long totalComp;
+        public final int countSourceOnDisk;
+        public final int countInTrash;
+        public final long potentialSourceBytes;
+        public final int trashCount;
+        public final long totalTrashBytes;
+
+        public LibraryScanData(List<RecordViewModel> items, long totalOrig, long totalComp, int countSourceOnDisk, int countInTrash, long potentialSourceBytes, int trashCount, long totalTrashBytes) {
+            this.items = items;
+            this.totalOrig = totalOrig;
+            this.totalComp = totalComp;
+            this.countSourceOnDisk = countSourceOnDisk;
+            this.countInTrash = countInTrash;
+            this.potentialSourceBytes = potentialSourceBytes;
+            this.trashCount = trashCount;
+            this.totalTrashBytes = totalTrashBytes;
+        }
+    }
+
+    private static volatile LibraryScanData sCachedScanData = null;
+    private static long sLastScanTimestamp = 0;
+    private static final ExecutorService SCAN_EXECUTOR = Executors.newSingleThreadExecutor();
+    private static final Object SCAN_LOCK = new Object();
+    private static boolean sIsScanning = false;
+
+    public static void invalidateCache() {
+        sCachedScanData = null;
+        sLastScanTimestamp = 0;
+    }
+
     private static final LruCache<String, Bitmap> THUMB_CACHE = new LruCache<>(32);
     private static final ExecutorService THUMB_EXECUTOR = Executors.newFixedThreadPool(2);
 
@@ -272,7 +321,8 @@ public class CompressedVideosView extends LinearLayout {
                             r.isSourceTrashed = true;
                             history.updateRecord(r);
                         }
-                        refreshRecords(etSearch.getText().toString());
+                        invalidateCache();
+                        refreshRecords(etSearch != null ? etSearch.getText().toString() : "");
                         if (context instanceof Activity) {
                             PrismHud.showSuccess((Activity) context, String.format(Locale.US, "Moved %d sources to 30D Vault! Reclaimed %.1f MB.", moved, finalBytes / (1024.0 * 1024.0)));
                         }
@@ -439,12 +489,18 @@ public class CompressedVideosView extends LinearLayout {
     }
 
     public static File findTrashedSourceFile(Context context, CompressionHistoryManager.Record r) {
+        return findTrashedSourceFile(context, r, null);
+    }
+
+    public static File findTrashedSourceFile(Context context, CompressionHistoryManager.Record r, List<File> trashed) {
         if (r == null) return null;
         if (r.trashedSourcePath != null && !r.trashedSourcePath.isEmpty()) {
             File f = new File(r.trashedSourcePath);
             if (f.exists() && f.length() > 0) return f;
         }
-        List<File> trashed = com.prismv.storage.PrismStorageManager.listTrashVideos(context);
+        if (trashed == null) {
+            trashed = com.prismv.storage.PrismStorageManager.listTrashVideos(context);
+        }
         for (File tf : trashed) {
             String name = tf.getName().toLowerCase(Locale.US);
             if (r.title != null) {
@@ -467,79 +523,83 @@ public class CompressedVideosView extends LinearLayout {
         return null;
     }
 
-    public void refreshRecords(String filterQuery) {
-        listContainer.removeAllViews();
+    public static LibraryScanData performFullDiskScan(Context context) {
+        if (context == null) return new LibraryScanData(new java.util.ArrayList<>(), 0, 0, 0, 0, 0, 0, 0);
 
         // 1. Auto-cleanup any trashed files older than 30 days
-        com.prismv.storage.PrismStorageManager.cleanupExpiredTrash(getContext());
+        try {
+            com.prismv.storage.PrismStorageManager.cleanupExpiredTrash(context);
+        } catch (Throwable ignored) {}
+
+        CompressionHistoryManager history = CompressionHistoryManager.get(context);
 
         // 2. Sync with physical files on disk in Movies/Prism-V/
-        List<File> diskFiles = com.prismv.storage.PrismStorageManager.listSavedVideos(getContext());
-        List<CompressionHistoryManager.Record> currentRecords = history.getRecords();
-        for (File df : diskFiles) {
-            boolean found = false;
-            for (CompressionHistoryManager.Record r : currentRecords) {
-                if (r.compressedPath != null) {
-                    String rName = new File(r.compressedPath).getName();
-                    String cleanRName = rName.startsWith("input_") ? rName.substring(6) : rName;
-                    String cleanDfName = df.getName().startsWith("input_") ? df.getName().substring(6) : df.getName();
-                    if (r.compressedPath.equals(df.getAbsolutePath()) || rName.equals(df.getName()) || cleanRName.equals(cleanDfName)) {
-                        found = true;
-                        // Heal record with real source file if missing
-                        if (r.originalSizeBytes <= 0 || r.getOriginalUri() == null) {
-                            File src = findPossibleSourceFile(cleanDfName);
-                            if (src != null && src.exists()) {
-                                r.originalPath = src.getAbsolutePath();
-                                r.originalSizeBytes = src.length();
-                                r.spaceSavedBytes = Math.max(0, r.originalSizeBytes - r.compressedSizeBytes);
-                                r.percentReduction = r.originalSizeBytes > 0 ? (r.spaceSavedBytes / (double) r.originalSizeBytes) * 100.0 : 0.0;
+        try {
+            List<File> diskFiles = com.prismv.storage.PrismStorageManager.listSavedVideos(context);
+            List<CompressionHistoryManager.Record> currentRecords = history.getRecords();
+            for (File df : diskFiles) {
+                boolean found = false;
+                for (CompressionHistoryManager.Record r : currentRecords) {
+                    if (r.compressedPath != null) {
+                        String rName = new File(r.compressedPath).getName();
+                        String cleanRName = rName.startsWith("input_") ? rName.substring(6) : rName;
+                        String cleanDfName = df.getName().startsWith("input_") ? df.getName().substring(6) : df.getName();
+                        if (r.compressedPath.equals(df.getAbsolutePath()) || rName.equals(df.getName()) || cleanRName.equals(cleanDfName)) {
+                            found = true;
+                            // Heal record with real source file if missing
+                            if (r.originalSizeBytes <= 0 || r.getOriginalUri() == null) {
+                                File src = findPossibleSourceFile(cleanDfName);
+                                if (src != null && src.exists()) {
+                                    r.originalPath = src.getAbsolutePath();
+                                    r.originalSizeBytes = src.length();
+                                    r.spaceSavedBytes = Math.max(0, r.originalSizeBytes - r.compressedSizeBytes);
+                                    r.percentReduction = r.originalSizeBytes > 0 ? (r.spaceSavedBytes / (double) r.originalSizeBytes) * 100.0 : 0.0;
+                                }
                             }
+                            break;
                         }
-                        break;
                     }
                 }
+                if (!found) {
+                    File possibleSrc = findPossibleSourceFile(df.getName());
+                    long origSize = (possibleSrc != null && possibleSrc.exists()) ? possibleSrc.length() : (long) (df.length() * 3.5);
+                    Uri origUri = (possibleSrc != null && possibleSrc.exists()) ? Uri.fromFile(possibleSrc) : null;
+                    String origPath = (possibleSrc != null && possibleSrc.exists()) ? possibleSrc.getAbsolutePath() : null;
+                    history.recordCompression(
+                            df.getName(),
+                            origUri,
+                            origPath,
+                            origSize,
+                            df.getAbsolutePath(),
+                            df.length(),
+                            "H-ARCH (Movies/Prism-V)",
+                            1920,
+                            1080,
+                            2500,
+                            30,
+                            60000L
+                    );
+                }
             }
-            if (!found) {
-                File possibleSrc = findPossibleSourceFile(df.getName());
-                long origSize = (possibleSrc != null && possibleSrc.exists()) ? possibleSrc.length() : (long) (df.length() * 3.5);
-                Uri origUri = (possibleSrc != null && possibleSrc.exists()) ? Uri.fromFile(possibleSrc) : null;
-                String origPath = (possibleSrc != null && possibleSrc.exists()) ? possibleSrc.getAbsolutePath() : null;
-                history.recordCompression(
-                        df.getName(),
-                        origUri,
-                        origPath,
-                        origSize,
-                        df.getAbsolutePath(),
-                        df.length(),
-                        "H-ARCH (Movies/Prism-V)",
-                        1920,
-                        1080,
-                        2500,
-                        30,
-                        60000L
-                );
-            }
-        }
+        } catch (Throwable ignored) {}
 
         List<CompressionHistoryManager.Record> records = history.getRecords();
-        String query = filterQuery != null ? filterQuery.trim().toLowerCase(Locale.US) : "";
+        List<File> trashList = com.prismv.storage.PrismStorageManager.listTrashVideos(context);
+        long totalTrashBytes = com.prismv.storage.PrismStorageManager.getTrashTotalSizeBytes(context);
 
         long totalOrig = 0;
         long totalComp = 0;
         int countSourceOnDisk = 0;
         int countInTrash = 0;
         long potentialSourceBytes = 0;
-        int matchingCount = 0;
 
-        List<File> trashList = com.prismv.storage.PrismStorageManager.listTrashVideos(getContext());
-        long totalTrashBytes = com.prismv.storage.PrismStorageManager.getTrashTotalSizeBytes(getContext());
-
+        List<RecordViewModel> items = new java.util.ArrayList<>(records.size());
         for (CompressionHistoryManager.Record r : records) {
             totalOrig += r.originalSizeBytes;
             totalComp += r.compressedSizeBytes;
 
             File sf = resolveSourceFile(r);
-            File tf = findTrashedSourceFile(getContext(), r);
+            File tf = findTrashedSourceFile(context, r, trashList);
             boolean hasSourceOnDisk = (sf != null && sf.exists());
             boolean isTrashed = (tf != null && tf.exists()) || r.isSourceTrashed;
 
@@ -551,49 +611,104 @@ public class CompressedVideosView extends LinearLayout {
                 countInTrash++;
             }
 
+            items.add(new RecordViewModel(r, sf, tf, hasSourceOnDisk, isTrashed));
+        }
+
+        return new LibraryScanData(items, totalOrig, totalComp, countSourceOnDisk, countInTrash, potentialSourceBytes, trashList.size(), totalTrashBytes);
+    }
+
+    public void refreshRecords(final String filterQuery) {
+        final Context ctx = getContext();
+        if (ctx == null) return;
+
+        // 1. If we have cached data, immediately render it (0ms latency, zero dropped frames)
+        if (sCachedScanData != null) {
+            renderScanData(sCachedScanData, filterQuery);
+        }
+
+        // 2. Trigger asynchronous background scan if cache is stale (> 8 seconds) or empty
+        long now = System.currentTimeMillis();
+        if (sCachedScanData == null || (now - sLastScanTimestamp > 8000)) {
+            synchronized (SCAN_LOCK) {
+                if (sIsScanning) return;
+                sIsScanning = true;
+            }
+
+            SCAN_EXECUTOR.execute(() -> {
+                try {
+                    LibraryScanData data = performFullDiskScan(ctx.getApplicationContext());
+                    sCachedScanData = data;
+                    sLastScanTimestamp = System.currentTimeMillis();
+                    post(() -> {
+                        String currentQuery = etSearch != null ? etSearch.getText().toString() : filterQuery;
+                        renderScanData(data, currentQuery);
+                    });
+                } catch (Throwable t) {
+                    com.prismv.logging.PrismLogger.w("CompressedVideosView", "Background scan error: " + t.getMessage(), t);
+                } finally {
+                    synchronized (SCAN_LOCK) {
+                        sIsScanning = false;
+                    }
+                }
+            });
+        }
+    }
+
+    private void renderScanData(LibraryScanData data, String filterQuery) {
+        if (data == null || listContainer == null) return;
+
+        listContainer.removeAllViews();
+        String query = filterQuery != null ? filterQuery.trim().toLowerCase(Locale.US) : "";
+        int matchingCount = 0;
+
+        for (RecordViewModel vm : data.items) {
             // Filter mode check
-            if ("SOURCE_ON_DISK".equals(currentFilterMode) && !hasSourceOnDisk) {
+            if ("SOURCE_ON_DISK".equals(currentFilterMode) && !vm.hasSourceOnDisk) {
                 continue;
             }
-            if ("IN_TRASH".equals(currentFilterMode) && !isTrashed) {
+            if ("IN_TRASH".equals(currentFilterMode) && !vm.isTrashed) {
                 continue;
             }
 
             if (!query.isEmpty()) {
-                String title = r.title != null ? r.title.toLowerCase(Locale.US) : "";
-                String date = r.formattedDate != null ? r.formattedDate.toLowerCase(Locale.US) : "";
-                String mode = r.mode != null ? r.mode.toLowerCase(Locale.US) : "";
+                String title = vm.record.title != null ? vm.record.title.toLowerCase(Locale.US) : "";
+                String date = vm.record.formattedDate != null ? vm.record.formattedDate.toLowerCase(Locale.US) : "";
+                String mode = vm.record.mode != null ? vm.record.mode.toLowerCase(Locale.US) : "";
                 if (!title.contains(query) && !date.contains(query) && !mode.contains(query)) {
                     continue;
                 }
             }
 
             matchingCount++;
-            addRecordCard(getContext(), r);
+            addRecordCard(getContext(), vm);
         }
 
-        long totalSaved = Math.max(0, totalOrig - totalComp);
-        double totalPct = totalOrig > 0 ? (totalSaved / (double) totalOrig) * 100.0 : 0.0;
-        tvTotalSaved.setText(String.format(Locale.US, "%.1f MB Saved (-%.1f%%)",
-                totalSaved / (1024.0 * 1024.0), totalPct));
-        tvTotalCount.setText(records.size() + " Total Videos");
+        long totalSaved = Math.max(0, data.totalOrig - data.totalComp);
+        double totalPct = data.totalOrig > 0 ? (totalSaved / (double) data.totalOrig) * 100.0 : 0.0;
+        if (tvTotalSaved != null) {
+            tvTotalSaved.setText(String.format(Locale.US, "%.1f MB Saved (-%.1f%%)",
+                    totalSaved / (1024.0 * 1024.0), totalPct));
+        }
+        if (tvTotalCount != null) {
+            tvTotalCount.setText(data.items.size() + " Total Videos");
+        }
 
         if (btnTrashVaultHeader != null) {
-            btnTrashVaultHeader.setText(String.format(Locale.US, "🗑 30d Vault (%d)", trashList.size()));
+            btnTrashVaultHeader.setText(String.format(Locale.US, "🗑 30d Vault (%d)", data.trashCount));
         }
 
         if (tvTrashVaultSummary != null) {
             tvTrashVaultSummary.setText(String.format(Locale.US,
                     "30-Day Vault: %d files (%.1f MB) • Sources on Disk: %d (%.1f MB reclaimable)",
-                    trashList.size(), totalTrashBytes / (1024.0 * 1024.0),
-                    countSourceOnDisk, potentialSourceBytes / (1024.0 * 1024.0)));
+                    data.trashCount, data.totalTrashBytes / (1024.0 * 1024.0),
+                    data.countSourceOnDisk, data.potentialSourceBytes / (1024.0 * 1024.0)));
         }
 
         if (btnSafeTrashAll != null) {
-            if (countSourceOnDisk > 0) {
+            if (data.countSourceOnDisk > 0) {
                 btnSafeTrashAll.setVisibility(VISIBLE);
                 btnSafeTrashAll.setText(String.format(Locale.US, "TRASH ALL %d SOURCES (+%.1f MB TO 30D VAULT)",
-                        countSourceOnDisk, potentialSourceBytes / (1024.0 * 1024.0)));
+                        data.countSourceOnDisk, data.potentialSourceBytes / (1024.0 * 1024.0)));
             } else {
                 btnSafeTrashAll.setVisibility(GONE);
             }
@@ -601,7 +716,7 @@ public class CompressedVideosView extends LinearLayout {
 
         // Update Filter Buttons UI
         if (btnFilterAll != null) {
-            btnFilterAll.setText("ALL (" + records.size() + ")");
+            btnFilterAll.setText("ALL (" + data.items.size() + ")");
             boolean active = "ALL".equals(currentFilterMode);
             btnFilterAll.setBackground(active
                     ? ThemeStyles.createGradientButton(Color.parseColor("#0E7490"), Color.parseColor("#06B6D4"), dp(8))
@@ -609,7 +724,7 @@ public class CompressedVideosView extends LinearLayout {
             btnFilterAll.setTextColor(active ? Color.WHITE : Color.parseColor("#94A3B8"));
         }
         if (btnFilterSourceDisk != null) {
-            btnFilterSourceDisk.setText("🟢 ON DISK (" + countSourceOnDisk + ")");
+            btnFilterSourceDisk.setText("🟢 ON DISK (" + data.countSourceOnDisk + ")");
             boolean active = "SOURCE_ON_DISK".equals(currentFilterMode);
             btnFilterSourceDisk.setBackground(active
                     ? ThemeStyles.createGradientButton(Color.parseColor("#059669"), Color.parseColor("#10B981"), dp(8))
@@ -617,7 +732,7 @@ public class CompressedVideosView extends LinearLayout {
             btnFilterSourceDisk.setTextColor(active ? Color.WHITE : Color.parseColor("#94A3B8"));
         }
         if (btnFilterTrashed != null) {
-            btnFilterTrashed.setText("🟡 IN 30D VAULT (" + countInTrash + ")");
+            btnFilterTrashed.setText("🟡 IN 30D VAULT (" + data.countInTrash + ")");
             boolean active = "IN_TRASH".equals(currentFilterMode);
             btnFilterTrashed.setBackground(active
                     ? ThemeStyles.createGradientButton(Color.parseColor("#B45309"), Color.parseColor("#F59E0B"), dp(8))
@@ -632,7 +747,7 @@ public class CompressedVideosView extends LinearLayout {
             } else if ("IN_TRASH".equals(currentFilterMode)) {
                 emptyView.setText("No sources currently in the 30-Day Recycle Bin.\nUse 'Trash Source' on any video to protect it in the vault.");
             } else {
-                emptyView.setText(records.isEmpty()
+                emptyView.setText(data.items.isEmpty()
                         ? "No compressed videos yet.\nCompress a video in Studio to see detailed metrics and compare in Duo Player."
                         : "No videos match '" + filterQuery + "'.");
             }
@@ -644,7 +759,12 @@ public class CompressedVideosView extends LinearLayout {
         }
     }
 
-    private void addRecordCard(Context context, CompressionHistoryManager.Record r) {
+    private void addRecordCard(Context context, RecordViewModel vm) {
+        final CompressionHistoryManager.Record r = vm.record;
+        File srcFile = vm.srcFile;
+        File trashedFile = vm.trashedFile;
+        boolean hasSourceOnDisk = vm.hasSourceOnDisk;
+        boolean isTrashed = vm.isTrashed;
         LinearLayout card = new LinearLayout(context);
         card.setOrientation(VERTICAL);
         card.setPadding(dp(14), dp(12), dp(14), dp(12));
@@ -783,11 +903,6 @@ public class CompressedVideosView extends LinearLayout {
         card.addView(rowSize);
 
         // ROW 3: SOURCE VIDEO STATUS & 30-DAY RECYCLE BIN MANAGEMENT
-        File srcFile = resolveSourceFile(r);
-        File trashedFile = findTrashedSourceFile(context, r);
-        boolean hasSourceOnDisk = (srcFile != null && srcFile.exists());
-        boolean isTrashed = (trashedFile != null && trashedFile.exists()) || r.isSourceTrashed;
-
         LinearLayout rowSource = new LinearLayout(context);
         rowSource.setOrientation(HORIZONTAL);
         rowSource.setGravity(Gravity.CENTER_VERTICAL);
@@ -837,7 +952,8 @@ public class CompressedVideosView extends LinearLayout {
                             if (ok) {
                                 r.isSourceTrashed = true;
                                 history.updateRecord(r);
-                                refreshRecords(etSearch.getText().toString());
+                                invalidateCache();
+                                refreshRecords(etSearch != null ? etSearch.getText().toString() : "");
                                 if (context instanceof Activity) {
                                     PrismHud.showSuccess((Activity) context, String.format(Locale.US, "Source moved to 30-Day Vault! Reclaimed %.1f MB.", origMB));
                                 }
@@ -876,7 +992,8 @@ public class CompressedVideosView extends LinearLayout {
                         r.isSourceTrashed = false;
                         r.trashedSourcePath = null;
                         history.updateRecord(r);
-                        refreshRecords(etSearch.getText().toString());
+                        invalidateCache();
+                        refreshRecords(etSearch != null ? etSearch.getText().toString() : "");
                         if (context instanceof Activity) {
                             PrismHud.showSuccess((Activity) context, "Source restored to Movies/Prism-V & Indexed in Gallery!");
                         }
@@ -939,11 +1056,12 @@ public class CompressedVideosView extends LinearLayout {
 
         // 3. Share Button
         Button btnShare = new Button(context);
-        btnShare.setText("");
+        btnShare.setText("SHARE");
         btnShare.setTextColor(Color.WHITE);
-        btnShare.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        btnShare.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        btnShare.setTypeface(Typeface.DEFAULT_BOLD);
         btnShare.setBackground(createRoundedDrawable(Color.parseColor("#121B2D"), ThemeStyles.COLOR_BORDER_SUBTLE, dp(1), dp(10)));
-        LinearLayout.LayoutParams shareParams = new LinearLayout.LayoutParams(dp(44), dp(40));
+        LinearLayout.LayoutParams shareParams = new LinearLayout.LayoutParams(0, dp(40), 0.8f);
         shareParams.setMargins(0, 0, dp(4), 0);
         btnShare.setLayoutParams(shareParams);
         btnShare.setOnClickListener(v -> {
@@ -954,11 +1072,12 @@ public class CompressedVideosView extends LinearLayout {
 
         // 4. Delete Button
         Button btnDel = new Button(context);
-        btnDel.setText("");
+        btnDel.setText("DEL");
         btnDel.setTextColor(Color.parseColor("#EF4444"));
-        btnDel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        btnDel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        btnDel.setTypeface(Typeface.DEFAULT_BOLD);
         btnDel.setBackground(createRoundedDrawable(Color.parseColor("#1A1118"), Color.parseColor("#7F1D1D"), dp(1), dp(10)));
-        LinearLayout.LayoutParams delParams = new LinearLayout.LayoutParams(dp(44), dp(40));
+        LinearLayout.LayoutParams delParams = new LinearLayout.LayoutParams(0, dp(40), 0.6f);
         btnDel.setLayoutParams(delParams);
         btnDel.setOnClickListener(v -> {
             ThemeStyles.performHaptic(v);
@@ -970,7 +1089,8 @@ public class CompressedVideosView extends LinearLayout {
                             new File(r.compressedPath).delete();
                         }
                         history.deleteRecord(r.id);
-                        refreshRecords(etSearch.getText().toString());
+                        invalidateCache();
+                        refreshRecords(etSearch != null ? etSearch.getText().toString() : "");
                         if (context instanceof Activity) {
                             PrismHud.showSuccess((Activity) context, "File deleted from storage");
                         }
@@ -1610,6 +1730,7 @@ public class CompressedVideosView extends LinearLayout {
                             hm.updateRecord(r);
                         }
                     }
+                    invalidateCache();
                 } catch (Throwable ignored) {}
 
                 dialog.dismiss();
@@ -1678,7 +1799,6 @@ public class CompressedVideosView extends LinearLayout {
         DialogTracker.register(dialog);
         dialog.setOnDismissListener(d -> DialogTracker.unregister(dialog));
         dialog.show();
-        libView.refreshRecords("");
         return dialog;
     }
 }

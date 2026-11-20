@@ -854,7 +854,11 @@ public class MainActivity extends Activity {
             if (duoPlayerView != null) {
                 duoPlayerView.updateLibraryCountBadge();
                 if (duoPlayerView.getCompressedUri() == null) {
-                    duoPlayerView.loadDefaultSampleFiles();
+                    duoPlayerView.postDelayed(() -> {
+                        if (currentTab == 1 && duoPlayerView != null && duoPlayerView.getCompressedUri() == null) {
+                            duoPlayerView.loadDefaultSampleFiles();
+                        }
+                    }, 120);
                 }
             }
         }
@@ -1212,10 +1216,12 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams pickFileLp = new LinearLayout.LayoutParams(0, dp(44), 1.0f);
         pickFileLp.setMargins(0, 0, dp(4), 0);
         btnPickFile.setLayoutParams(pickFileLp);
-        btnPickFile.setText("📁 CHOOSE VIDEO(S)");
+        btnPickFile.setText("CHOOSE VIDEO(S)");
         btnPickFile.setTextColor(Color.WHITE);
         btnPickFile.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         btnPickFile.setTypeface(Typeface.DEFAULT_BOLD);
+        btnPickFile.setCompoundDrawablesWithIntrinsicBounds(ThemeStyles.createFolderIcon(this, Color.WHITE, 16), null, null, null);
+        btnPickFile.setCompoundDrawablePadding(dp(6));
         btnPickFile.setBackground(createRoundedDrawable(Color.parseColor("#0C2540"), Color.parseColor("#0284C7"), dp(1), dp(12)));
         btnPickFile.setOnClickListener(v -> launchFilePicker());
         rowActions.addView(btnPickFile);
@@ -1224,10 +1230,12 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams libLp = new LinearLayout.LayoutParams(0, dp(44), 1.0f);
         libLp.setMargins(dp(4), 0, 0, 0);
         btnOpenLibrary.setLayoutParams(libLp);
-        btnOpenLibrary.setText("📂 VAULT & HISTORY");
+        btnOpenLibrary.setText("VAULT & HISTORY");
         btnOpenLibrary.setTextColor(ThemeStyles.COLOR_CYAN_TEXT);
         btnOpenLibrary.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         btnOpenLibrary.setTypeface(Typeface.DEFAULT_BOLD);
+        btnOpenLibrary.setCompoundDrawablesWithIntrinsicBounds(ThemeStyles.createVaultIcon(this, ThemeStyles.COLOR_CYAN_TEXT, 16), null, null, null);
+        btnOpenLibrary.setCompoundDrawablePadding(dp(6));
         btnOpenLibrary.setBackground(createRoundedDrawable(Color.parseColor("#0B1527"), ThemeStyles.COLOR_BORDER_SUBTLE, dp(1), dp(12)));
         btnOpenLibrary.setOnClickListener(v -> CompressedVideosView.showLibraryDialog(this, record -> {
             mainHandler.postDelayed(() -> {
@@ -3737,7 +3745,9 @@ public class MainActivity extends Activity {
 
         // Update pick-file button label so user knows they can re-pick
         if (btnPickFile != null) {
-            btnPickFile.setText("🔄 CHANGE VIDEO(S)");
+            btnPickFile.setText("CHANGE VIDEO(S)");
+            btnPickFile.setCompoundDrawablesWithIntrinsicBounds(ThemeStyles.createRefreshIcon(this, Color.WHITE, 16), null, null, null);
+            btnPickFile.setCompoundDrawablePadding(dp(6));
         }
 
         // Extract and show video thumbnail preview
@@ -4572,7 +4582,11 @@ public class MainActivity extends Activity {
             ivVideoThumbnail.setImageBitmap(null);
         }
         if (cardVideoDna != null) cardVideoDna.setVisibility(View.GONE);
-        if (btnPickFile != null) btnPickFile.setText("📁 CHOOSE VIDEO(S)");
+        if (btnPickFile != null) {
+            btnPickFile.setText("CHOOSE VIDEO(S)");
+            btnPickFile.setCompoundDrawablesWithIntrinsicBounds(ThemeStyles.createFolderIcon(this, Color.WHITE, 16), null, null, null);
+            btnPickFile.setCompoundDrawablePadding(dp(6));
+        }
 
         // Re-select default profile so projections reset cleanly
         selectedPreFlightMethod = 0;
