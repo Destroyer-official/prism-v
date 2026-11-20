@@ -39,16 +39,20 @@ public final class HardwareRamBufferPool {
         release();
         this.requestedBudgetMb = budgetMb;
 
-        long safeMaxBytes = 128L * 1024L * 1024L; // Default 128 MB safe baseline
+        if (context == null) {
+            context = PrismLogger.getAppContext();
+        }
+
+        long requestedBytes = ((long) budgetMb) * 1024L * 1024L;
+        long safeMaxBytes = requestedBytes;
         if (context != null) {
             ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
             if (am != null) {
                 ActivityManager.MemoryInfo mi = new ActivityManager.MemoryInfo();
                 am.getMemoryInfo(mi);
-                // Safe upper bound: up to 40% of currently available free RAM or requested budget
-                long requestedBytes = ((long) budgetMb) * 1024L * 1024L;
-                long safeAvailable = (long) (mi.availMem * 0.40);
-                safeMaxBytes = Math.min(requestedBytes, Math.max(64L * 1024L * 1024L, safeAvailable));
+                // Respect user-allocated budget up to 85% of available free RAM so system remains stable
+                long maxSafeFromAvail = Math.max(64L * 1024L * 1024L, (long) (mi.availMem * 0.85));
+                safeMaxBytes = Math.min(requestedBytes, maxSafeFromAvail);
             }
         }
 

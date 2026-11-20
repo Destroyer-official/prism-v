@@ -334,15 +334,17 @@ public class LayeredSettingsView extends LinearLayout {
                 String.format(Locale.US, "15%% (~%.1f GB)", totalRamGb * 0.15),
                 String.format(Locale.US, "30%% (~%.1f GB)", totalRamGb * 0.30),
                 String.format(Locale.US, "50%% (~%.1f GB)", totalRamGb * 0.50),
-                String.format(Locale.US, "75%% (~%.1f GB)", totalRamGb * 0.75),
+                String.format(Locale.US, "70%% (~%.1f GB)", totalRamGb * 0.70),
+                String.format(Locale.US, "80%% (~%.1f GB)", totalRamGb * 0.80),
                 String.format(Locale.US, "90%% (~%.1f GB)", totalRamGb * 0.90)
         };
         int activeRamIdx = 2; // 50% default
         if (currentRamPct <= 20) activeRamIdx = 0;
         else if (currentRamPct <= 35) activeRamIdx = 1;
-        else if (currentRamPct <= 60) activeRamIdx = 2;
-        else if (currentRamPct <= 80) activeRamIdx = 3;
-        else activeRamIdx = 4;
+        else if (currentRamPct <= 55) activeRamIdx = 2;
+        else if (currentRamPct <= 72) activeRamIdx = 3;
+        else if (currentRamPct <= 82) activeRamIdx = 4;
+        else activeRamIdx = 5;
 
         addPillSelectorSetting(context, sec, "System RAM Allocation (%)", ramSub,
                 ramOpts, ramOpts[activeRamIdx], (selected) -> {
@@ -350,7 +352,8 @@ public class LayeredSettingsView extends LinearLayout {
                     if (selected.startsWith("15%")) pct = 15;
                     else if (selected.startsWith("30%")) pct = 30;
                     else if (selected.startsWith("50%")) pct = 50;
-                    else if (selected.startsWith("75%")) pct = 75;
+                    else if (selected.startsWith("70%")) pct = 70;
+                    else if (selected.startsWith("80%")) pct = 80;
                     else if (selected.startsWith("90%")) pct = 90;
                     prefs.setRamPercent(pct);
                     int allocatedMb = prefs.getAllocatedRamBudgetMb(context);
@@ -366,21 +369,24 @@ public class LayeredSettingsView extends LinearLayout {
         String[] cpuOpts = new String[]{
                 String.format(Locale.US, "25%% (%d Cores)", Math.max(1, cores / 4)),
                 String.format(Locale.US, "50%% (%d Cores)", Math.max(2, cores / 2)),
-                String.format(Locale.US, "75%% (%d Cores)", Math.max(3, (cores * 3) / 4)),
+                String.format(Locale.US, "70%% (%d Cores)", Math.max(3, (cores * 7) / 10)),
+                String.format(Locale.US, "85%% (%d Cores)", Math.max(3, (cores * 85) / 100)),
                 String.format(Locale.US, "100%% (%d Cores Max)", cores)
         };
-        int activeCpuIdx = 2; // 75% default
+        int activeCpuIdx = 2; // 70% default
         if (currentCpuPct <= 35) activeCpuIdx = 0;
         else if (currentCpuPct <= 60) activeCpuIdx = 1;
-        else if (currentCpuPct <= 85) activeCpuIdx = 2;
-        else activeCpuIdx = 3;
+        else if (currentCpuPct <= 75) activeCpuIdx = 2;
+        else if (currentCpuPct <= 90) activeCpuIdx = 3;
+        else activeCpuIdx = 4;
 
         addPillSelectorSetting(context, sec, "CPU & Processing Power Allocation", cpuSub,
                 cpuOpts, cpuOpts[activeCpuIdx], (selected) -> {
-                    int pct = 75;
+                    int pct = 70;
                     if (selected.startsWith("25%")) pct = 25;
                     else if (selected.startsWith("50%")) pct = 50;
-                    else if (selected.startsWith("75%")) pct = 75;
+                    else if (selected.startsWith("70%")) pct = 70;
+                    else if (selected.startsWith("85%")) pct = 85;
                     else if (selected.startsWith("100%")) pct = 100;
                     prefs.setCpuPercent(pct);
                     if (getContext() instanceof Activity) {

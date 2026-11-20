@@ -66,6 +66,7 @@ public final class HardwareVideoCompressor {
         public boolean preserveTimestamp = true;
         public boolean enableCfrNormalization = true; // VFR -> CFR constant frame rate timestamp sanitizer
         public int ramBudgetMb = 2048;
+        public Context context = null;
         public boolean isBatch = false;
         public int batchIndex = 1;
         public int batchTotal = 1;
@@ -422,10 +423,9 @@ public final class HardwareVideoCompressor {
             outputFormat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1);
             try {
                 outputFormat.setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR);
-                outputFormat.setInteger(MediaFormat.KEY_PRIORITY, 0); // Realtime encoder priority
-                // Clamped operating rate: prevents MediaTek/Snapdragon thermal throttle panic and configure failures
-                int safeOpRate = Math.min(Math.max(targetFps, 30), 120);
-                outputFormat.setInteger(MediaFormat.KEY_OPERATING_RATE, safeOpRate);
+                outputFormat.setInteger(MediaFormat.KEY_PRIORITY, 1); // Non-realtime priority for batch transcoding throughput
+                // Turbo operating rate: unlocks hardware encoder clock frequency
+                outputFormat.setInteger(MediaFormat.KEY_OPERATING_RATE, 240);
             } catch (Exception ignored) {}
 
             // Preserve input color metadata / HDR transfer characteristics if present (W3 / F09)
@@ -581,9 +581,8 @@ public final class HardwareVideoCompressor {
             // Configure MediaCodec Decoder with native scaling onto the encoder Surface
             String decoderMime = inputVideoFormat.getString(MediaFormat.KEY_MIME);
             try {
-                inputVideoFormat.setInteger(MediaFormat.KEY_PRIORITY, 0);
-                int safeDecOpRate = Math.min(Math.max(origFps, 30), 120);
-                inputVideoFormat.setInteger(MediaFormat.KEY_OPERATING_RATE, safeDecOpRate);
+                inputVideoFormat.setInteger(MediaFormat.KEY_PRIORITY, 1);
+                inputVideoFormat.setInteger(MediaFormat.KEY_OPERATING_RATE, 240);
             } catch (Exception ignored) {}
 
             try {
@@ -659,7 +658,8 @@ public final class HardwareVideoCompressor {
             int lastPercent = -1;
 
             bufferPool = new HardwareRamBufferPool();
-            bufferPool.acquire(null, options.ramBudgetMb);
+            Context poolCtx = (options != null && options.context != null) ? options.context : PrismLogger.getAppContext();
+            bufferPool.acquire(poolCtx, options.ramBudgetMb);
 
             long transcodeStartMs = SystemClock.elapsedRealtime();
             long framesEncoded = 0;
@@ -684,9 +684,8 @@ public final class HardwareVideoCompressor {
                 }
                 boolean hadActivity = false;
 
-                // 1. Feed input from videoExtractor to decoder
-                // Check trim skips BEFORE dequeuing a decoder input buffer so buffers are never leaked!
-                if (!extractorDone) {
+                // 1. Feed input from videoExtractor to decoder (drain all available input slots)
+                while (!extractorDone) {
                     boolean skipThisSample = false;
                     boolean hitTrimEnd = false;
                     long peekPts = videoExtractor.getSampleTime();
@@ -705,263 +704,277 @@ public final class HardwareVideoCompressor {
                             skipThisSample = true;
                         }
                     }
-                    if (!skipThisSample) {
-                        int inIndex = decoder.dequeueInputBuffer(TIMEOUT_US);
-                        if (inIndex >= 0) {
-                            hadActivity = true;
-                            if (hitTrimEnd) {
+                    if (skipThisSample) {
+                        continue;
+                    }
+                    int inIndex = decoder.dequeueInputBuffer(0); // non-blocking instant poll
+                    if (inIndex < 0) {
+                        break; // Decoder input ring is full right now
+                    }
+                    hadActivity = true;
+                    if (hitTrimEnd) {
+                        decoder.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+                        extractorDone = true;
+                        break;
+                    } else {
+                        ByteBuffer inBuf = decoder.getInputBuffer(inIndex);
+                        if (inBuf != null) {
+                            int size = videoExtractor.readSampleData(inBuf, 0);
+                            if (size < 0) {
                                 decoder.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
                                 extractorDone = true;
+                                break;
                             } else {
-                                ByteBuffer inBuf = decoder.getInputBuffer(inIndex);
-                                if (inBuf != null) {
-                                    int size = videoExtractor.readSampleData(inBuf, 0);
-                                    if (size < 0) {
-                                        decoder.queueInputBuffer(inIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
-                                        extractorDone = true;
-                                    } else {
-                                        long pts = videoExtractor.getSampleTime();
-                                        decoder.queueInputBuffer(inIndex, 0, size, pts, 0);
-                                        videoExtractor.advance();
-                                    }
-                                }
+                                long pts = videoExtractor.getSampleTime();
+                                decoder.queueInputBuffer(inIndex, 0, size, pts, 0);
+                                videoExtractor.advance();
                             }
                         }
                     }
                 }
 
-                // 2. Dequeue from decoder and render onto encoder's surface
-                if (!decoderDone) {
-                    int decIndex = decoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_US);
-                    if (decIndex >= 0) {
-                        hadActivity = true;
-                        boolean isEos = (bufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0;
-                        if (bufferInfo.size > 0 || isEos) {
-                            // Check if we need frame decimation for reduced FPS
-                            if (!isEos && minFrameIntervalUs > 0 && lastRenderedSrcPtsUs >= 0
-                                    && (bufferInfo.presentationTimeUs - lastRenderedSrcPtsUs) < (minFrameIntervalUs * 0.85)) {
-                                decoder.releaseOutputBuffer(decIndex, false); // drop frame for lower fps
-                            } else {
-                                // VFR -> CFR Sanitizer & Monotonic Timestamp Normalization.
-                                // Quantize the *source* timestamp onto the target CFR grid instead of
-                                // stamping frames by a running counter. A counter-based stamp
-                                // (frameIndex / targetFps) shrinks the whole timeline whenever the
-                                // source cadence differs from targetFps - e.g. a 24 fps source
-                                // transcoded at 30 fps played 25% too fast, ran out of video ~53 s
-                                // before the copied audio ended, and could never lockstep with the
-                                // original in the Duo comparison player.
-                                long renderPtsUs;
-                                if (!isEos && firstVideoPtsUs < 0) {
-                                    firstVideoPtsUs = bufferInfo.presentationTimeUs;
-                                }
-                                long srcRelPtsUs = (firstVideoPtsUs >= 0)
-                                        ? Math.max(0, bufferInfo.presentationTimeUs - firstVideoPtsUs)
-                                        : Math.max(0, bufferInfo.presentationTimeUs);
-                                if (options != null && options.speedMultiplier > 0.05f && Math.abs(options.speedMultiplier - 1.0f) > 0.05f) {
-                                    srcRelPtsUs = (long) (srcRelPtsUs / options.speedMultiplier);
-                                }
-                                if (options != null && options.enableCfrNormalization) {
-                                    long targetIntervalUs = Math.max(1L, 1000000L / (targetFps > 0 ? targetFps : 30));
-                                    long slot = (srcRelPtsUs + targetIntervalUs / 2) / targetIntervalUs;
-                                    if (slot <= lastCfrSlot) slot = lastCfrSlot + 1; // keep PTS strictly increasing
-                                    lastCfrSlot = slot;
-                                    renderPtsUs = slot * targetIntervalUs;
-                                    framesRenderedCount = slot + 1;
-                                } else {
-                                    renderPtsUs = srcRelPtsUs;
-                                }
-                                if (renderPtsUs < 0) renderPtsUs = 0;
-                                if (!isEos) {
-                                    lastRenderedPtsUs = renderPtsUs;
-                                    lastRenderedSrcPtsUs = bufferInfo.presentationTimeUs;
-                                }
-                                decoder.releaseOutputBuffer(decIndex, renderPtsUs * 1000L);
-                            }
+                // 2. Dequeue from decoder and render onto encoder's surface (burst drain ready decoded frames)
+                while (!decoderDone) {
+                    int decIndex = decoder.dequeueOutputBuffer(bufferInfo, 0); // non-blocking instant poll
+                    if (decIndex < 0) {
+                        break; // No more decoded frames ready right now
+                    }
+                    hadActivity = true;
+                    boolean isEos = (bufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0;
+                    if (bufferInfo.size > 0) {
+                        // Check if we need frame decimation for reduced FPS
+                        if (!isEos && minFrameIntervalUs > 0 && lastRenderedSrcPtsUs >= 0
+                                && (bufferInfo.presentationTimeUs - lastRenderedSrcPtsUs) < (minFrameIntervalUs * 0.85)) {
+                            decoder.releaseOutputBuffer(decIndex, false); // drop frame for lower fps
                         } else {
-                            decoder.releaseOutputBuffer(decIndex, false);
+                            // VFR -> CFR Sanitizer & Monotonic Timestamp Normalization.
+                            long renderPtsUs;
+                            if (firstVideoPtsUs < 0) {
+                                firstVideoPtsUs = bufferInfo.presentationTimeUs;
+                            }
+                            long srcRelPtsUs = (firstVideoPtsUs >= 0)
+                                    ? Math.max(0, bufferInfo.presentationTimeUs - firstVideoPtsUs)
+                                    : Math.max(0, bufferInfo.presentationTimeUs);
+                            if (options != null && options.speedMultiplier > 0.05f && Math.abs(options.speedMultiplier - 1.0f) > 0.05f) {
+                                srcRelPtsUs = (long) (srcRelPtsUs / options.speedMultiplier);
+                            }
+                            if (options != null && options.targetFps > 0 && options.enableCfrNormalization) {
+                                // Explicit user-requested frame rate conversion (e.g. 30fps or 60fps)
+                                long targetIntervalUs = Math.max(1L, 1000000L / options.targetFps);
+                                long slot = (srcRelPtsUs + targetIntervalUs / 2) / targetIntervalUs;
+                                if (slot <= lastCfrSlot) slot = lastCfrSlot + 1; // keep PTS strictly increasing
+                                lastCfrSlot = slot;
+                                renderPtsUs = slot * targetIntervalUs;
+                                framesRenderedCount = slot + 1;
+                            } else {
+                                // Default / Native source cadence: 100% 1:1 PTS preservation with monotonic sanity
+                                renderPtsUs = srcRelPtsUs;
+                                if (lastRenderedPtsUs >= 0 && renderPtsUs <= lastRenderedPtsUs) {
+                                    renderPtsUs = lastRenderedPtsUs + 1000L; // +1ms minimum monotonic gap
+                                }
+                                framesRenderedCount++;
+                            }
+                            if (renderPtsUs < 0) renderPtsUs = 0;
+                            lastRenderedPtsUs = renderPtsUs;
+                            lastRenderedSrcPtsUs = bufferInfo.presentationTimeUs;
+                            decoder.releaseOutputBuffer(decIndex, renderPtsUs * 1000L);
                         }
-                        if (isEos) {
-                            decoderDone = true;
-                            encoder.signalEndOfInputStream();
-                        }
+                    } else {
+                        // Empty buffer or pure EOS indicator: DO NOT render to surface (prevents phantom frame)
+                        decoder.releaseOutputBuffer(decIndex, false);
+                    }
+                    if (isEos) {
+                        decoderDone = true;
+                        encoder.signalEndOfInputStream();
+                        break;
                     }
                 }
 
-                // 3. Dequeue from encoder and write to muxer
-                int encIndex = encoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_US);
-                if (encIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                    hadActivity = true;
-                    if (muxerStarted) {
-                        throw new RuntimeException("Muxer format changed after start!");
+                // 3. Dequeue from encoder and write to muxer (burst drain ready encoded packets)
+                while (!encoderDone) {
+                    int encIndex = encoder.dequeueOutputBuffer(bufferInfo, 0); // non-blocking instant poll
+                    if (encIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                        break; // No more encoded frames ready right now
                     }
-                    MediaFormat newVidFmt = encoder.getOutputFormat();
-                    muxerVideoTrack = muxer.addTrack(newVidFmt);
-
-                    if (inputAudioFormat != null && audioTrackIndex >= 0) {
-                        try {
-                            muxerAudioTrack = muxer.addTrack(inputAudioFormat);
-                        } catch (Throwable atEx) {
-                            PrismLogger.w(TAG, "MediaMuxer rejected audio track format (" + atEx.getMessage() + "), dropping audio track safely.");
-                            muxerAudioTrack = -1;
-                            audioDone = true;
+                    if (encIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                        hadActivity = true;
+                        if (muxerStarted) {
+                            throw new RuntimeException("Muxer format changed after start!");
                         }
-                    }
+                        MediaFormat newVidFmt = encoder.getOutputFormat();
+                        muxerVideoTrack = muxer.addTrack(newVidFmt);
 
-                    muxer.start();
-                    muxerStarted = true;
-
-                } else if (encIndex >= 0) {
-                    hadActivity = true;
-                    ByteBuffer encBuf = encoder.getOutputBuffer(encIndex);
-                    if (encBuf != null) {
-                        if ((bufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
-                            bufferInfo.size = 0; // Handled by format
+                        if (inputAudioFormat != null && audioTrackIndex >= 0) {
+                            try {
+                                muxerAudioTrack = muxer.addTrack(inputAudioFormat);
+                            } catch (Throwable atEx) {
+                                PrismLogger.w(TAG, "MediaMuxer rejected audio track format (" + atEx.getMessage() + "), dropping audio track safely.");
+                                muxerAudioTrack = -1;
+                                audioDone = true;
+                            }
                         }
 
-                        if (bufferInfo.size > 0 && muxerStarted) {
-                            encBuf.position(bufferInfo.offset);
-                            encBuf.limit(bufferInfo.offset + bufferInfo.size);
-                            muxer.writeSampleData(muxerVideoTrack, encBuf, bufferInfo);
-                            currentVideoPtsUs = bufferInfo.presentationTimeUs;
-                            framesEncoded++;
-                            totalBytesWritten += bufferInfo.size;
-
-                            // Fail-Safe Never-Worse File Guard & Closed-Loop Rate Governor
-                            if (sourceSizeBytes > 0 && durationUs > 0) {
-                                double progressRatio = (double) currentVideoPtsUs / (double) durationUs;
-                                double budgetExpectedSoFar = (sourceSizeBytes * 0.70) * progressRatio;
-
-                                // Step-Down 1: Progress > 8% and cumulative bytes exceed nominal budget pace by > 15%
-                                if (progressRatio > 0.08 && !didStepDownBitrate) {
-                                    if (totalBytesWritten > budgetExpectedSoFar * 1.15) {
-                                        didStepDownBitrate = true;
-                                        int steppedDown = Math.max(350000, (int) (targetBitrateBps * 0.75));
-                                        try {
-                                            android.os.Bundle p = new android.os.Bundle();
-                                            p.putInt(MediaCodec.PARAMETER_KEY_VIDEO_BITRATE, steppedDown);
-                                            encoder.setParameters(p);
-                                            if (listener != null) {
-                                                listener.onLog("⚡ [Never-Worse Governor] Closed-loop Step-Down 1: reducing bitrate to " + (steppedDown / 1000) + " kbps");
-                                            }
-                                        } catch (Exception ignored) {}
-                                    }
-                                }
-
-                                // Step-Down 2 (Floor): Progress > 20% and cumulative bytes exceed nominal budget pace by > 25%
-                                if (progressRatio > 0.20 && !didStepDownFloor) {
-                                    if (totalBytesWritten > budgetExpectedSoFar * 1.25) {
-                                        didStepDownFloor = true;
-                                        int floorBitrate = Math.max(250000, (int) (targetBitrateBps * 0.40));
-                                        try {
-                                            android.os.Bundle p = new android.os.Bundle();
-                                            p.putInt(MediaCodec.PARAMETER_KEY_VIDEO_BITRATE, floorBitrate);
-                                            encoder.setParameters(p);
-                                            if (listener != null) {
-                                                listener.onLog("⚡ [Never-Worse Governor] Closed-loop Step-Down 2 (Floor): emergency throttle to " + (floorBitrate / 1000) + " kbps");
-                                            }
-                                        } catch (Exception ignored) {}
-                                    }
-                                }
-
-                                // Strict 95% Hard Remux Abort (Never-Worse Invariant Guarantee)
-                                if (totalBytesWritten >= (long) (sourceSizeBytes * 0.95)) {
-                                    if (listener != null) {
-                                        listener.onLog("⚠️ [Never-Worse Guard Alert] Encoded stream reached 95% of source file size. Aborting encode and activating clean stream-copy remux (0.00% expansion guarantee)!");
-                                    }
-                                    hitNeverWorseAbort = true;
-                                    break;
-                                }
+                        muxer.start();
+                        muxerStarted = true;
+                        continue;
+                    }
+                    if (encIndex >= 0) {
+                        hadActivity = true;
+                        ByteBuffer encBuf = encoder.getOutputBuffer(encIndex);
+                        if (encBuf != null) {
+                            if ((bufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
+                                bufferInfo.size = 0; // Handled by format
                             }
 
-                            long nowMs = SystemClock.elapsedRealtime();
-                            long elapsedMs = nowMs - transcodeStartMs;
-                            if (nowMs - lastFpsCalcTime >= 300) {
-                                long dMs = nowMs - lastFpsCalcTime;
-                                long dFrames = framesEncoded - lastFpsCalcFrame;
-                                if (dMs > 0) {
-                                    float instFps = (dFrames * 1000f) / (float) dMs;
-                                    smoothedFps = (smoothedFps <= 0f) ? instFps : (smoothedFps * 0.7f) + (instFps * 0.3f);
-                                }
-                                lastFpsCalcTime = nowMs;
-                                lastFpsCalcFrame = framesEncoded;
-                            }
+                            if (bufferInfo.size > 0 && muxerStarted) {
+                                encBuf.position(bufferInfo.offset);
+                                encBuf.limit(bufferInfo.offset + bufferInfo.size);
+                                muxer.writeSampleData(muxerVideoTrack, encBuf, bufferInfo);
+                                currentVideoPtsUs = bufferInfo.presentationTimeUs;
+                                framesEncoded++;
+                                totalBytesWritten += bufferInfo.size;
 
-                            if (durationUs > 0 && listener != null) {
-                                int pct = (int) Math.min(95, (currentVideoPtsUs * 95L) / durationUs);
-                                if (pct != lastPercent || (nowMs - lastProgressCallbackMs >= 200)) {
-                                    lastPercent = pct;
-                                    lastProgressCallbackMs = nowMs;
-                                    int etaSeconds = 0;
-                                    String etaString = "Calculating...";
-                                    if (currentVideoPtsUs > 0 && elapsedMs > 250) {
-                                        double ratio = (double) currentVideoPtsUs / (double) durationUs;
-                                        if (ratio > 0.001) {
-                                            double totalEstMs = (double) elapsedMs / ratio;
-                                            double remainingMs = Math.max(0, totalEstMs - (double) elapsedMs);
-                                            etaSeconds = (int) Math.max(1, Math.round(remainingMs / 1000.0));
-                                            etaString = RealtimeHardwareMonitor.formatEta(etaSeconds);
+                                // Fail-Safe Never-Worse File Guard & Closed-Loop Rate Governor
+                                if (sourceSizeBytes > 0 && durationUs > 0) {
+                                    double progressRatio = (double) currentVideoPtsUs / (double) durationUs;
+                                    double budgetExpectedSoFar = (sourceSizeBytes * 0.70) * progressRatio;
+
+                                    // Step-Down 1: Progress > 8% and cumulative bytes exceed nominal budget pace by > 15%
+                                    if (progressRatio > 0.08 && !didStepDownBitrate) {
+                                        if (totalBytesWritten > budgetExpectedSoFar * 1.15) {
+                                            didStepDownBitrate = true;
+                                            int steppedDown = Math.max(350000, (int) (targetBitrateBps * 0.75));
+                                            try {
+                                                android.os.Bundle p = new android.os.Bundle();
+                                                p.putInt(MediaCodec.PARAMETER_KEY_VIDEO_BITRATE, steppedDown);
+                                                encoder.setParameters(p);
+                                                if (listener != null) {
+                                                    listener.onLog("⚡ [Never-Worse Governor] Closed-loop Step-Down 1: reducing bitrate to " + (steppedDown / 1000) + " kbps");
+                                                }
+                                            } catch (Exception ignored) {}
                                         }
                                     }
-                                    listener.onProgressDetailed(pct, currentVideoPtsUs, durationUs, framesEncoded, smoothedFps, etaSeconds, etaString);
-                                }
-                            }
-                        }
 
-                        if ((bufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
-                            encoderDone = true;
-                        }
-                    }
-                    encoder.releaseOutputBuffer(encIndex, false);
-
-                    // Interleave audio samples up to current video PTS with exact monotonic synchronization
-                    if (muxerStarted && !audioDone && muxerAudioTrack >= 0) {
-                        while (!audioDone) {
-                            long audioPts = audioExtractor.getSampleTime();
-                            if (audioPts < 0) {
-                                audioDone = true;
-                                break;
-                            }
-                            if (options.trimEndUs > 0) {
-                                if (!options.trimCutOutSelected) {
-                                    if (audioPts < options.trimStartUs) {
-                                        audioExtractor.advance();
-                                        continue;
+                                    // Step-Down 2 (Floor): Progress > 20% and cumulative bytes exceed nominal budget pace by > 25%
+                                    if (progressRatio > 0.20 && !didStepDownFloor) {
+                                        if (totalBytesWritten > budgetExpectedSoFar * 1.25) {
+                                            didStepDownFloor = true;
+                                            int floorBitrate = Math.max(250000, (int) (targetBitrateBps * 0.40));
+                                            try {
+                                                android.os.Bundle p = new android.os.Bundle();
+                                                p.putInt(MediaCodec.PARAMETER_KEY_VIDEO_BITRATE, floorBitrate);
+                                                encoder.setParameters(p);
+                                                if (listener != null) {
+                                                    listener.onLog("⚡ [Never-Worse Governor] Closed-loop Step-Down 2 (Floor): emergency throttle to " + (floorBitrate / 1000) + " kbps");
+                                                }
+                                            } catch (Exception ignored) {}
+                                        }
                                     }
-                                    if (audioPts > options.trimEndUs) {
-                                        audioDone = true;
+
+                                    // Strict 95% Hard Remux Abort (Never-Worse Invariant Guarantee)
+                                    if (totalBytesWritten >= (long) (sourceSizeBytes * 0.95)) {
+                                        if (listener != null) {
+                                            listener.onLog("⚠️ [Never-Worse Guard Alert] Encoded stream reached 95% of source file size. Aborting encode and activating clean stream-copy remux (0.00% expansion guarantee)!");
+                                        }
+                                        hitNeverWorseAbort = true;
                                         break;
                                     }
-                                } else {
-                                    if (audioPts >= options.trimStartUs && audioPts <= options.trimEndUs) {
-                                        audioExtractor.seekTo(options.trimEndUs, MediaExtractor.SEEK_TO_NEXT_SYNC);
-                                        continue;
+                                }
+
+                                long nowMs = SystemClock.elapsedRealtime();
+                                long elapsedMs = nowMs - transcodeStartMs;
+                                if (nowMs - lastFpsCalcTime >= 300) {
+                                    long dMs = nowMs - lastFpsCalcTime;
+                                    long dFrames = framesEncoded - lastFpsCalcFrame;
+                                    if (dMs > 0) {
+                                        float instFps = (dFrames * 1000f) / (float) dMs;
+                                        smoothedFps = (smoothedFps <= 0f) ? instFps : (smoothedFps * 0.7f) + (instFps * 0.3f);
+                                    }
+                                    lastFpsCalcTime = nowMs;
+                                    lastFpsCalcFrame = framesEncoded;
+                                }
+
+                                if (durationUs > 0 && listener != null) {
+                                    int pct = (int) Math.min(95, (currentVideoPtsUs * 95L) / durationUs);
+                                    if (pct != lastPercent || (nowMs - lastProgressCallbackMs >= 200)) {
+                                        lastPercent = pct;
+                                        lastProgressCallbackMs = nowMs;
+                                        int etaSeconds = 0;
+                                        String etaString = "Calculating...";
+                                        if (currentVideoPtsUs > 0 && elapsedMs > 250) {
+                                            double ratio = (double) currentVideoPtsUs / (double) durationUs;
+                                            if (ratio > 0.001) {
+                                                double totalEstMs = (double) elapsedMs / ratio;
+                                                double remainingMs = Math.max(0, totalEstMs - (double) elapsedMs);
+                                                etaSeconds = (int) Math.max(1, Math.round(remainingMs / 1000.0));
+                                                etaString = RealtimeHardwareMonitor.formatEta(etaSeconds);
+                                            }
+                                        }
+                                        listener.onProgressDetailed(pct, currentVideoPtsUs, durationUs, framesEncoded, smoothedFps, etaSeconds, etaString);
                                     }
                                 }
                             }
-                            if (firstAudioPtsUs < 0) {
-                                firstAudioPtsUs = audioPts;
-                            }
-                            long normAudioPts = Math.max(0, audioPts - firstAudioPtsUs);
-                            if (options != null && options.speedMultiplier > 0.05f && Math.abs(options.speedMultiplier - 1.0f) > 0.05f) {
-                                normAudioPts = (long) (normAudioPts / options.speedMultiplier);
-                            }
 
-                            if (normAudioPts > currentVideoPtsUs && !encoderDone) {
-                                break; // Keep audio in sync with video
+                            if ((bufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                                encoderDone = true;
                             }
-                            int aSize = audioExtractor.readSampleData(audioBuf, 0);
-                            if (aSize < 0) {
-                                audioDone = true;
-                                break;
-                            }
-                            audioInfo.offset = 0;
-                            audioInfo.size = aSize;
-                            audioInfo.presentationTimeUs = normAudioPts;
-                            audioInfo.flags = audioExtractor.getSampleFlags();
+                        }
+                        encoder.releaseOutputBuffer(encIndex, false);
 
-                            muxer.writeSampleData(muxerAudioTrack, audioBuf, audioInfo);
-                            totalBytesWritten += aSize;
-                            audioExtractor.advance();
+                        // Interleave audio samples up to current video PTS with exact monotonic synchronization
+                        if (muxerStarted && !audioDone && muxerAudioTrack >= 0) {
+                            while (!audioDone) {
+                                long audioPts = audioExtractor.getSampleTime();
+                                if (audioPts < 0) {
+                                    audioDone = true;
+                                    break;
+                                }
+                                if (options.trimEndUs > 0) {
+                                    if (!options.trimCutOutSelected) {
+                                        if (audioPts < options.trimStartUs) {
+                                            audioExtractor.advance();
+                                            continue;
+                                        }
+                                        if (audioPts > options.trimEndUs) {
+                                            audioDone = true;
+                                            break;
+                                        }
+                                    } else {
+                                        if (audioPts >= options.trimStartUs && audioPts <= options.trimEndUs) {
+                                            audioExtractor.seekTo(options.trimEndUs, MediaExtractor.SEEK_TO_NEXT_SYNC);
+                                            continue;
+                                        }
+                                    }
+                                }
+                                if (firstAudioPtsUs < 0) {
+                                    firstAudioPtsUs = audioPts;
+                                }
+                                long normAudioPts = Math.max(0, audioPts - firstAudioPtsUs);
+                                if (options != null && options.speedMultiplier > 0.05f && Math.abs(options.speedMultiplier - 1.0f) > 0.05f) {
+                                    normAudioPts = (long) (normAudioPts / options.speedMultiplier);
+                                }
+
+                                if (normAudioPts > currentVideoPtsUs && !encoderDone) {
+                                    break; // Keep audio in sync with video
+                                }
+                                int aSize = audioExtractor.readSampleData(audioBuf, 0);
+                                if (aSize < 0) {
+                                    audioDone = true;
+                                    break;
+                                }
+                                audioInfo.offset = 0;
+                                audioInfo.size = aSize;
+                                audioInfo.presentationTimeUs = normAudioPts;
+                                audioInfo.flags = audioExtractor.getSampleFlags();
+
+                                muxer.writeSampleData(muxerAudioTrack, audioBuf, audioInfo);
+                                totalBytesWritten += aSize;
+                                audioExtractor.advance();
+                            }
+                        }
+
+                        if (hitNeverWorseAbort || encoderDone) {
+                            break;
                         }
                     }
                 }
@@ -978,7 +991,7 @@ public final class HardwareVideoCompressor {
                         try { new File(outputPath).delete(); } catch (Exception ignored) {}
                         return false;
                     }
-                    LockSupport.parkNanos(500_000); // 0.5ms fallback only when pipeline has no ready buffer
+                    LockSupport.parkNanos(250_000); // 250 µs fallback only when pipeline has no ready buffer
                 }
             }
 

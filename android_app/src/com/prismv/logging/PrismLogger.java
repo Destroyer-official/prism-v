@@ -128,6 +128,10 @@ public final class PrismLogger {
 
     private PrismLogger() {}
 
+    public static Context getAppContext() {
+        return appContext;
+    }
+
     public static synchronized void init(Context context) {
         if (context == null) return;
         appContext = context.getApplicationContext();

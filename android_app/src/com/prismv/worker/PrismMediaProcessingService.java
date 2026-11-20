@@ -339,6 +339,7 @@ public class PrismMediaProcessingService extends Service {
 
                 final long itemStart = SystemClock.elapsedRealtime();
                 final com.prismv.engine.RealtimeHardwareMonitor fgsMonitor = new com.prismv.engine.RealtimeHardwareMonitor();
+                options.context = this;
 
                 boolean success = HardwareVideoCompressor.compress(inPath, outPath, options, new HardwareVideoCompressor.TranscodeListener() {
                     @Override
